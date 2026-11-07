@@ -115,6 +115,29 @@ const SHOW_FLAGS: FlagSpec[] = [
   REF_ALL,
 ];
 
+// find (specs/cli.md#find)
+const FIND_FLAGS: FlagSpec[] = [
+  { name: "regex", value: "boolean", describe: "the phrase is a JavaScript regular expression (case-insensitive)" },
+  { name: "file", value: "string", arg: "<pattern>", describe: "files touched: a substring, or a glob when it has * ? or [ (* crosses /)" },
+  { name: "tool", value: "string", arg: "<name>", describe: "case-insensitive substring of the tool name; alone, every call of that tool" },
+  { name: "kind", value: "string", arg: "<a,b>", describe: "search only these kinds (they are also the context rows)", default: "all but thinking,result" },
+  FROM,
+  TO,
+  SINCE,
+  { name: "context", value: "number", arg: "<n>", describe: "visible rows on each side of a hit; 0 prints hits only", default: "1" },
+  { name: "before", value: "number", arg: "<n>", describe: "rows before each hit (overrides that side of --context)" },
+  { name: "after", value: "number", arg: "<n>", describe: "rows after each hit (overrides that side of --context)" },
+  { name: "limit", value: "number", arg: "<n>", describe: "hits to show; 0 = no cap", default: "20" },
+  HEAD,
+  FULL,
+  FIELDS,
+  { name: "deep", value: "boolean", describe: "also search persisted-output files (slow)" },
+  { ...REF_PROJECT, describe: "resolve <session> in this project (a path, encoded dir name, or unique cwd substring)" },
+  { ...REF_ALL, describe: "resolve <session> across every project" },
+  { name: "window", value: "string", arg: "<k|last|all>", describe: "one compaction window; only all until window selection lands (planned: views)" },
+  JSON_OUT,
+];
+
 export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "kind", "parent"] as const;
 
 export const COMMAND_GROUPS: CommandGroup[] = [
@@ -209,7 +232,19 @@ export const COMMAND_GROUPS: CommandGroup[] = [
   {
     group: "search",
     commands: [
-      { name: "find", usage: "find [<session>] [<phrase>] [--file <pattern>] [--tool <name>] [--kind <a,b>]", summary: "search one session, the project, or everything", status: { planned: "find" } },
+      {
+        name: "find",
+        usage:
+          "find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--from <when|id>] [--to <when|id>] [--since <span>] [--context <n>] [--before <n>] [--after <n>] [--limit <n>] [--deep] [--project <p> | --all]",
+        summary: "search a session by phrase, file, tool or kind; each hit says why it matched",
+        status: "available",
+        args: [
+          `${SESSION_ARG} (with one positional, it is the session when it has that form, else the phrase)`,
+          "<phrase>: case-insensitive substring of row text, call inputs and (through its call) a tool's output",
+        ],
+        flags: FIND_FLAGS,
+        examples: ['find latest "redirect"', "find 7a2f1c3e --file '*.env' --context 0", 'find 7a2f1c3e --tool bash "test" --since 1h', "find 7a2f1c3e --regex 'redir\\w+' --deep"],
+      },
       { name: "recall", usage: "recall <phrase> [--since <span>]", summary: "have I dealt with this before? across every project", status: { planned: "sessions-and-recall" } },
     ],
   },

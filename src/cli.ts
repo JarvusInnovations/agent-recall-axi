@@ -9,6 +9,7 @@ import { BIN, type Io } from "./commands/common.js";
 import { usageLine } from "./flags.js";
 import { eventsCommand, tailCommand } from "./commands/events.js";
 import { homeCommand } from "./commands/home.js";
+import { runFind } from "./commands/find.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { showCommand } from "./commands/show.js";
 import { updateCommand } from "./commands/update.js";
@@ -75,6 +76,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   commands.sessions = (a) => sessionsCommand(a, ctx);
   commands.events = (a) => eventsCommand(a, ctx);
   commands.tail = (a) => tailCommand(a, ctx);
+  commands.find = (a) => runFind(a, ctx);
   commands.show = (a) => showCommand(a, ctx, "show");
   // The alias: the same handler, so the same arguments print the same bytes (only --help differs).
   commands.zoom = (a) => showCommand(a, ctx, "zoom");
