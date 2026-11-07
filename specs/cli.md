@@ -203,7 +203,7 @@ Default schema: `tools[N]{id,t,tool,target,result}` — `result` is the status (
 
 ```
 agent-session-axi find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>]
-                       [--kind <a,b>] [--from <when|id>] [--to <when|id>] [--since <span>]
+                       [--kind <a,b|all>] [--from <when|id>] [--to <when|id>] [--since <span>]
                        [--window <k|last>] [--context <n>] [--before <n>] [--after <n>]
                        [--limit <n>] [--head <n>] [--full] [--fields <a,b>]
                        [--project <p> | --all] [--deep] [--json-out[=path]]
@@ -219,16 +219,22 @@ why it matched.
   (`find latest 7a2f1c3e`).
 - The handles combine with AND: a hit satisfies every one given. `why` names the handles given,
   in the fixed order `phrase`, `file`, `tool`, `kind`, joined with `+`.
-- Searched kinds are the kinds an `events` listing shows: the `--kind` set when given, else every
-  kind but `thinking` and `result`. A tool's output is searched through its call: a `call`
+- Searched kinds are the kinds an `events` listing shows: the `--kind` set when given (`all` is
+  every kind), else every kind but `thinking` and `result`. A tool's output is searched through its call: a `call`
   matches a phrase in its linked result's text, so the hit is the call row (whose status already
-  rides on it) and `show <call>` prints both. With `--kind result`, results are searched as rows
-  of their own and calls no longer match their results' text.
+  rides on it) and `show <call>` prints both. When `result` is among the searched kinds
+  (`--kind result`, `--kind all`), results are searched as rows of their own and calls no longer
+  match their results' text.
 - `<phrase>`: case-insensitive substring over the `text` of every searched event and, for a
   `call`, over its input (stringified, and each string value as stored) and its result's text;
-  `--regex` treats it as a JavaScript regular expression, also case-insensitive. An invalid
-  pattern, or one that repeats a group containing a quantifier or an alternation (`(a+)+`,
-  `(a|ab)*`: they can backtrack for hours), is `VALIDATION_ERROR`.
+  `--regex` treats it as a JavaScript regular expression compiled with the `iu` flags
+  (case-insensitive, Unicode: `\p{L}` works). An invalid pattern (including one invalid only
+  under `u`) is `VALIDATION_ERROR`. The guard refuses the common exponential shapes, also
+  `VALIDATION_ERROR`: an unbounded repetition (`*`, `+`, `{n,}`) of a group that itself holds an
+  unbounded quantifier or an alternation whose branches can match overlapping text (`(a+)+`,
+  `(a*)*`, `(a|ab)*`, `(\w+\s?)*`), and a run of 12 or more consecutive optional atoms
+  (`a?a?a?…`). Bounded repetition (`(\d+\.){3}`) and alternations of distinct literals
+  (`(foo|bar)+`) pass. A pattern that is merely slow is the caller's responsibility (#8).
 - `--file <pattern>`: matches `files` touched; substring, or glob when the pattern contains `*`,
   `?` or `[` (a glob matches the whole path and its `*` and `?` match `/` too, so `*.env` matches
   `config/staging.env`). Case-sensitive, as paths are.
@@ -241,7 +247,10 @@ why it matched.
   With `<session>`, `--project`/`--all` only widen where the reference resolves.
 - `--deep` also searches persisted-output files for the phrase (slow; off by default; the header
   says `deep: yes` when on). Only a pointer that may be followed is read (`data-model.md#pointer`,
-  containment); any other is searched by its stored preview alone.
+  containment); any other is searched by its stored preview alone. The file is streamed in
+  chunks, never held whole: a substring may span chunks, but a `--regex` is tested line by line,
+  so a regex match that spans lines of a persisted file is not found there (a line longer than
+  1 MB is tested in 1 MB pieces).
 - `--from`/`--to`/`--since` bound the search by position or time
   (`behaviors/time-and-scope.md`); `--head`, `--full` and `--fields` shape rows as in `events`.
 
@@ -254,7 +263,8 @@ is the one with a non-empty `why`. Default `--limit 20` hits.
   `result` between two hits takes no slot). `--before`/`--after` set one side and override that
   side of `--context`; when both sides are 0 the table is `hits`.
 - A row prints once even when it falls in the context of several hits, or is itself a hit inside
-  another hit's context; rows stay in file order.
+  another hit's context; rows stay in file order. A row that is a hit carries its `why` even when
+  it is printed only as context of a shown hit (it lies past `--limit`).
 - When more hits match than `--limit` shows, the footer carries the same query continued from the
   event after the last hit shown (`--from <id>`).
 
