@@ -8,8 +8,10 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { DEFAULT_KINDS, KINDS, type Entry, type Event, type EventId, type Kind, type Pointer, type Session } from "./model.js";
 import { countNewlines, readLines, readLinesBackward } from "./reader.js";
-import { newContext } from "./adapters/adapter.js";
+import { newContext, type ClassifyContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
+import { countOf, ensureTable, extendTable, idOf, points, seedContext, startFor, type OffsetTable } from "./cache/index.js";
+import type { CacheOpts } from "./cache/store.js";
 
 export interface ListOpts {
   /** Default: every kind but `thinking` and `result`. */
@@ -22,6 +24,8 @@ export interface ListOpts {
   limit?: number;
   /** Default: true when no `from` is given (the newest rows, printed oldest first). */
   newestLast?: boolean;
+  /** Where the derived cache lives (default: `$XDG_CACHE_HOME/agent-session-axi`). */
+  cache?: CacheOpts;
 }
 
 export interface Listing {
@@ -107,7 +111,9 @@ export async function listEvents(session: Session, opts: ListOpts = {}): Promise
   const limit = opts.limit ?? 40;
   const newestLast = opts.newestLast ?? opts.from === undefined;
   if (newestLast && opts.from === undefined && opts.to === undefined && limit > 0) {
-    return tailListing(session, limit, opts.kinds);
+    const listing = await tailListing(session, limit, opts.kinds);
+    if (listing.matching === undefined) await exactTailCount(session, listing, opts);
+    return listing;
   }
   return forwardListing(session, { ...opts, limit, newestLast });
 }
@@ -205,9 +211,203 @@ async function tailListing(session: Session, n: number, kinds: ListOpts["kinds"]
   return listing;
 }
 
+/** How many appended bytes a newest-last listing will index to make its count exact. */
+const TAIL_APPEND_INDEX = 8 << 20;
+
+/**
+ * A newest-last listing's `matching` from the offset table's per-kind counts, when a table
+ * already exists (pan or show built it); a tail read never builds one (cli.md#tail-session).
+ */
+async function exactTailCount(session: Session, listing: Listing, opts: ListOpts): Promise<void> {
+  const table = await ensureTable(session, { ...(opts.cache ?? {}), build: false, maxAppend: TAIL_APPEND_INDEX });
+  if (!table) return;
+  const last = listing.rows[listing.rows.length - 1];
+  if (last && last.id.seq > table.seq) return;
+  listing.matching = countOf(table.tail, kindSet(opts.kinds));
+}
+
 /** The last `n` visible events (specs/api.md#reading). */
-export async function tail(session: Session, n: number, opts: Pick<ListOpts, "kinds"> = {}): Promise<Event[]> {
-  return (await listEvents(session, { kinds: opts.kinds ?? DEFAULT_KINDS, limit: n })).rows;
+export async function tail(session: Session, n: number, opts: Pick<ListOpts, "kinds" | "cache"> = {}): Promise<Event[]> {
+  return (await listEvents(session, { ...opts, kinds: opts.kinds ?? DEFAULT_KINDS, limit: n })).rows;
+}
+
+// ---------------------------------------------------------------------------------------------
+// pan: around / next / prev (specs/cli.md#around-id--next-id--prev-id)
+
+export interface PanOpts {
+  /** Default: every kind but `thinking` and `result`. Counts are over these kinds. */
+  kinds?: readonly Kind[] | "all";
+  cache?: CacheOpts;
+}
+
+export interface AnchorNote {
+  /** Why the anchor is not shown: a silent entry, or the hidden kind of its event. */
+  kind: "silent" | Kind;
+  /** The nearest visible event before / after it, among those this read collected. */
+  before?: EventId;
+  after?: EventId;
+}
+
+export interface PanResult {
+  rows: Event[];
+  anchor: EventId;
+  /** No visible event before the first row (before the anchor when there are no rows). */
+  atStart: boolean;
+  /** No visible event after the last row (after the anchor when there are no rows). */
+  atEnd: boolean;
+  /** Visible events of the session, of the kinds asked. */
+  matching: number;
+  /** Lines in the file. */
+  lines: number;
+  /** Malformed lines in the file. */
+  malformed: number;
+  /** The anchor's visible events (the whole entry for a bare id of a multi-event entry). */
+  anchorRows: Event[];
+  /** Set when the anchor is not a visible event. */
+  anchorNote?: AnchorNote;
+}
+
+/** Where an event sits relative to the anchor: a bare entry id covers every block of its entry. */
+function relation(ev: EventId, anchor: EventId): number {
+  if (ev.seq !== anchor.seq) return ev.seq < anchor.seq ? -1 : 1;
+  if (anchor.block === undefined) return 0;
+  const b = ev.block ?? 0;
+  return b === anchor.block ? 0 : b < anchor.block ? -1 : 1;
+}
+
+async function tableFor(session: Session, cache: CacheOpts | undefined, upTo?: number): Promise<OffsetTable> {
+  const opts = { ...(cache ?? {}), build: true, ...(upTo !== undefined ? { upTo } : {}) };
+  return (await ensureTable(session, opts)) ?? (await extendTable(session, undefined, upTo));
+}
+
+function beyondEnd(session: Session, id: EventId, lines: number): AgentSessionError {
+  return new AgentSessionError(
+    `${formatId(id)} is beyond the end of the session (${lines} line${lines === 1 ? "" : "s"})`,
+    "NOT_FOUND",
+    [`Run \`agent-session-axi tail ${session.short}\` for the last rows of this session`],
+    { lines },
+  );
+}
+
+/**
+ * The visible events around an anchor: up to `before` before it, its own visible events when
+ * `includeAnchor`, up to `after` after it (Infinity: no cap). Seeks through the offset table,
+ * building or extending it, and starts at the checkpoint whose cumulative counts already cover
+ * `before`, so one forward read serves both directions (architecture.md#streaming-and-memory).
+ */
+async function pan(session: Session, anchor: EventId, before: number, after: number, includeAnchor: boolean, opts: PanOpts): Promise<PanResult> {
+  checkSession(session, anchor);
+  const visible = kindSet(opts.kinds);
+  const table = await tableFor(session, opts.cache);
+  const pts = points(table);
+  const anchorPoint = startFor(table, anchor.seq);
+  let k = pts.indexOf(anchorPoint);
+  if (before === Infinity) k = 0;
+  else if (before > 0) {
+    const atAnchor = countOf(anchorPoint, visible);
+    while (k > 0 && atAnchor - countOf(pts[k]!, visible) < before) k--;
+  }
+  const start = pts[k]!;
+  const ctx = seedContext(session, start);
+  const totalIndexed = countOf(table.tail, visible);
+
+  let visIdx = countOf(start, visible); // visible events before the line being read
+  let pre: Event[] = [];
+  const anchorRows: Event[] = [];
+  let anchorSel: Event[] | undefined;
+  const post: Event[] = [];
+  let lastPostIdx = -1;
+  let visBeforeAnchor: number | undefined;
+  let moreAfter = false;
+  let beyond = 0;
+  let malformedBeyond = 0;
+  let lines = start.seq - 1;
+  let held = 0;
+  const waiting = (ev: Event) => ev.kind === "call" && ev.toolUseId !== undefined && ctx.pending.get(ev.toolUseId) === ev;
+
+  for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
+    lines = line.seq;
+    const entry = claudeCode.parse(line);
+    const evs = entry ? claudeCode.classify(entry, ctx) : [];
+    if (line.seq > table.seq && entry?.malformed) malformedBeyond++;
+    if (line.seq === anchor.seq) anchorSel = selectBlock(anchor, evs);
+    for (const ev of evs) {
+      if (!visible.has(ev.kind)) continue;
+      if (line.seq > table.seq) beyond++;
+      const rel = relation(ev.id, anchor);
+      if (rel < 0) {
+        if (before > 0) {
+          pre.push(ev);
+          if (before !== Infinity && pre.length > before * 2 + 64) pre = pre.slice(pre.length - before);
+        }
+      } else if (rel === 0) {
+        visBeforeAnchor ??= visIdx;
+        anchorRows.push(ev);
+      } else {
+        visBeforeAnchor ??= visIdx;
+        if (post.length < after) {
+          post.push(ev);
+          lastPostIdx = visIdx;
+        } else moreAfter = true;
+      }
+      visIdx++;
+    }
+    if (line.seq < anchor.seq) continue;
+    visBeforeAnchor ??= visIdx;
+    if (post.length < after) continue;
+    const through = post.length ? lastPostIdx + 1 : visBeforeAnchor + anchorRows.length;
+    const known = moreAfter || through < totalIndexed;
+    if (!known) continue;
+    const rows = [...(before > 0 ? pre.slice(-before) : []), ...(includeAnchor ? anchorRows : []), ...post];
+    if (!rows.some(waiting)) break;
+    if (++held > HOLD_CAP) break;
+  }
+  if (anchorSel === undefined || visBeforeAnchor === undefined) throw beyondEnd(session, anchor, Math.max(lines, table.seq));
+  if (before !== Infinity && pre.length > before) pre = pre.slice(pre.length - before);
+  if (before === 0) pre = [];
+  const total = totalIndexed + beyond;
+  const shownAnchor = includeAnchor ? anchorRows : [];
+  const rows = [...pre, ...shownAnchor, ...post];
+  const firstIdx = pre.length ? visBeforeAnchor - pre.length : shownAnchor.length ? visBeforeAnchor : post.length ? lastPostIdx - post.length + 1 : visBeforeAnchor;
+  // Visible events up to and including the last row (the anchor when there are no rows).
+  const through = post.length
+    ? lastPostIdx + 1
+    : shownAnchor.length || pre.length === 0
+      ? visBeforeAnchor + anchorRows.length
+      : visBeforeAnchor;
+  const out: PanResult = {
+    rows,
+    anchor,
+    atStart: firstIdx === 0,
+    atEnd: !moreAfter && through >= total,
+    matching: total,
+    lines: Math.max(lines, table.seq),
+    malformed: table.tail.malformed + malformedBeyond,
+    anchorRows,
+  };
+  if (anchorRows.length === 0) {
+    const note: AnchorNote = { kind: anchorSel.length ? anchorSel[0]!.kind : "silent" };
+    const b = pre[pre.length - 1];
+    if (b) note.before = b.id;
+    if (post[0]) note.after = post[0].id;
+    out.anchorNote = note;
+  }
+  return out;
+}
+
+/** `before` visible events, the anchor, `after` visible events (specs/api.md#reading). */
+export async function around(session: Session, id: EventId, before: number, after: number, opts: PanOpts = {}): Promise<PanResult> {
+  return pan(session, id, before, after, true, opts);
+}
+
+/** The `n` visible events after the anchor (exclusive); 0 = every one. */
+export async function next(session: Session, id: EventId, n: number, opts: PanOpts = {}): Promise<PanResult> {
+  return pan(session, id, 0, n === 0 ? Infinity : n, false, opts);
+}
+
+/** The `n` visible events before the anchor (exclusive), in file order; 0 = every one. */
+export async function prev(session: Session, id: EventId, n: number, opts: PanOpts = {}): Promise<PanResult> {
+  return pan(session, id, n === 0 ? Infinity : n, 0, false, opts);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -248,27 +448,58 @@ export interface Shown {
 
 const opensTurn = (k: Kind) => k === "human" || k === "human.slash";
 
+/** Where a `show` read starts: the file start, or a checkpoint with its classification state. */
+interface ShowStart {
+  offset: number;
+  seq: number;
+  ctx: ClassifyContext;
+  turn?: EventId;
+  window: number;
+  last?: EventId;
+  /** Events per entry uuid before the start; only a read from the file start knows them. */
+  byUuid?: Map<string, number>;
+}
+
 /**
  * One entry by seq, classified with the context of everything before it so call/result links
- * hold (a forward scan from the file start until the offset cache arrives with `pan`). The scan
- * continues past the entry only as far as needed: to the results of its calls, the summary of
- * its compaction, or the next event after a silent entry.
+ * hold. The read starts at the offset table's checkpoint at or before the entry, whose recorded
+ * state (pending calls, turn, window, last event) makes it classify exactly as a scan from the
+ * file start; a compaction (whose preserved count needs every earlier uuid) and a result with no
+ * linked call fall back to that scan. The read continues past the entry only as far as needed:
+ * to the results of its calls, the summary of its compaction, or the next event after a silent
+ * entry.
  */
-export async function show(session: Session, id: EventId): Promise<Shown> {
+export async function show(session: Session, id: EventId, opts: { cache?: CacheOpts } = {}): Promise<Shown> {
   checkSession(session, id);
-  const ctx = newContext(session);
-  let turn: EventId | undefined;
-  let window = 0;
-  let lastEvent: EventId | undefined;
-  const eventsByUuid = new Map<string, number>();
-  let lines = 0;
+  const table = await tableFor(session, opts.cache, id.seq);
+  const cp = startFor(table, id.seq);
+  if (cp.seq > 1) {
+    const start: ShowStart = { offset: cp.offset, seq: cp.seq, ctx: seedContext(session, cp), window: cp.window };
+    const turn = idOf(cp.turn);
+    if (turn) start.turn = turn;
+    const last = idOf(cp.last);
+    if (last) start.last = last;
+    const seeked = await showFrom(session, id, start);
+    if (seeked) return seeked;
+  }
+  return (await showFrom(session, id, { offset: 0, seq: 1, ctx: newContext(session), window: 0, byUuid: new Map() }))!;
+}
+
+/** `show` from a start point; undefined when a seeked read cannot be exact (see `show`). */
+async function showFrom(session: Session, id: EventId, start: ShowStart): Promise<Shown | undefined> {
+  const ctx = start.ctx;
+  let turn = start.turn;
+  let window = start.window;
+  let lastEvent = start.last;
+  const eventsByUuid = start.byUuid;
+  let lines = start.seq - 1;
   let found: Shown | undefined;
   /** Calls of the shown entry still waiting for a result, by tool-use id. */
   const waiting = new Map<string, ShownEvent>();
   let compactionWaiting: Event | undefined;
   let needAfter = false;
 
-  for await (const line of readLines(session.path)) {
+  for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
     lines = line.seq;
     const parsed = claudeCode.parse(line);
     // null: a trailing line still being written; shown raw, never classified.
@@ -281,10 +512,13 @@ export async function show(session: Session, id: EventId): Promise<Shown> {
           if (ev.kind === "compaction") window++;
           lastEvent = ev.id;
         }
-        if (entry.uuid && evs.length) eventsByUuid.set(entry.uuid, evs.length);
+        if (eventsByUuid && entry.uuid && evs.length) eventsByUuid.set(entry.uuid, evs.length);
         continue;
       }
       // line.seq === id.seq: the entry asked for.
+      if (!eventsByUuid && evs.some((ev) => ev.kind === "compaction" || ((ev.kind === "result" || ev.kind === "human.answer") && ev.toolUseId && !ev.call))) {
+        return undefined;
+      }
       const shownAll: ShownEvent[] = evs.map((ev) => {
         const s: ShownEvent = { event: ev, window };
         const t = opensTurn(ev.kind) ? ev.id : turn;
@@ -292,7 +526,7 @@ export async function show(session: Session, id: EventId): Promise<Shown> {
         if (opensTurn(ev.kind)) turn = ev.id;
         if (ev.kind === "compaction") {
           const uuids = Array.isArray(ev.meta?.preserved) ? (ev.meta!.preserved as string[]) : [];
-          s.preserved = uuids.reduce((n, u) => n + (eventsByUuid.get(u) ?? 0), 0);
+          s.preserved = uuids.reduce((n, u) => n + (eventsByUuid?.get(u) ?? 0), 0);
         }
         return s;
       });
@@ -327,14 +561,7 @@ export async function show(session: Session, id: EventId): Promise<Shown> {
     if (compactionWaiting && ctx.compaction !== compactionWaiting) compactionWaiting = undefined;
     if (waiting.size === 0 && !compactionWaiting && !needAfter) break;
   }
-  if (!found) {
-    throw new AgentSessionError(
-      `${formatId(id)} is beyond the end of the session (${lines} line${lines === 1 ? "" : "s"})`,
-      "NOT_FOUND",
-      [`Run \`agent-session-axi tail ${session.short}\` for the last rows of this session`],
-      { lines },
-    );
-  }
+  if (!found) throw beyondEnd(session, id, lines);
   return found;
 }
 
@@ -347,13 +574,20 @@ function linkWithin(s: ShownEvent, evs: Event[]): void {
 
 function selectEvents(id: EventId, evs: Event[], shown: ShownEvent[]): ShownEvent[] {
   if (id.block === undefined) return shown;
+  const hit = selectBlock(id, evs)[0]!;
+  return [shown[evs.indexOf(hit)]!];
+}
+
+/** The events an id selects in its entry's events: all for a bare id, else that block (NOT_FOUND otherwise). */
+function selectBlock(id: EventId, evs: Event[]): Event[] {
+  if (id.block === undefined) return evs;
   const entryId = formatId({ session: id.session, seq: id.seq });
   if (evs.length === 0) {
     throw new AgentSessionError(`${formatId(id)} does not exist: ${entryId} yields no events`, "NOT_FOUND", [
       `Run \`agent-session-axi show ${entryId}\` for the entry itself`,
     ]);
   }
-  const hit = shown.find((s) => s.event.id.block === id.block);
+  const hit = evs.find((e) => e.id.block === id.block);
   if (hit) return [hit];
   const ids = evs.map((e) => formatId(e.id));
   const what = evs.length === 1 ? `${entryId} is a single event; its id is ${ids[0]}` : `the blocks of ${entryId} are ${ids.join(", ")}`;
@@ -413,8 +647,8 @@ export async function readPointer(
  * The partner of a linked event (specs/api.md#reading): a call's result, or a result's (or
  * answer's) call; undefined when there is none in the file (a pending call, an unlinked result).
  */
-export async function linkedResult(session: Session, event: Event): Promise<Event | undefined> {
-  if (event.kind === "call") return (await show(session, event.id)).events[0]?.linked;
-  if (event.call) return (await show(session, event.call)).events[0]?.event;
+export async function linkedResult(session: Session, event: Event, opts: { cache?: CacheOpts } = {}): Promise<Event | undefined> {
+  if (event.kind === "call") return (await show(session, event.id, opts)).events[0]?.linked;
+  if (event.call) return (await show(session, event.call, opts)).events[0]?.event;
   return undefined;
 }

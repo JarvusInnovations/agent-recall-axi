@@ -24,6 +24,8 @@ export { parseSpan, parseWhen, resolveZone } from "./time.js";
 export { allProjects, resolveScope, rootOf, type ResolvedScope, type Scope } from "./scope.js";
 export { describeSession, listSessions, openSession, sessionListing, type SessionInfo, type SessionListing } from "./session.js";
 export { events, linkedResult, listEvents, pointerAccess, readPointer, show, tail, type PointerAccess, type ListOpts, type Listing, type Shown, type ShownEvent } from "./events.js";
+export { around, next, prev, type AnchorNote, type PanOpts, type PanResult } from "./events.js";
+export { cacheStatus, clearCache, type CacheStatus, type IndexedFile, type TableState } from "./cache/index.js";
 export { claudeCode } from "./adapters/claude-code/index.js";
 export type { Adapter, ClassifyContext } from "./adapters/adapter.js";
 
