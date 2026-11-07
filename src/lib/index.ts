@@ -23,7 +23,7 @@ export { cacheDir, checkRewrite, type CacheOpts, type FileIdentity, type Rewrite
 export { parseSpan, parseWhen, resolveZone } from "./time.js";
 export { allProjects, resolveScope, rootOf, type ResolvedScope, type Scope } from "./scope.js";
 export { describeSession, listSessions, openSession, sessionListing, type SessionInfo, type SessionListing } from "./session.js";
-export { events, listEvents, readPointer, show, tail, type ListOpts, type Listing, type Shown, type ShownEvent } from "./events.js";
+export { events, listEvents, pointerAccess, readPointer, show, tail, type PointerAccess, type ListOpts, type Listing, type Shown, type ShownEvent } from "./events.js";
 export { claudeCode } from "./adapters/claude-code/index.js";
 export type { Adapter, ClassifyContext } from "./adapters/adapter.js";
 

@@ -84,6 +84,8 @@ export const SHOW_FIELDS = [
   "call",
   "error",
   "pointer",
+  "followed",
+  "reason",
   "preview",
   "text",
   "trigger",

@@ -288,7 +288,19 @@ const SIZE_MULT: Record<string, number> = { B: 1, KB: 1_000, MB: 1_000_000, GB: 
  * moved with their config directory keep their outputs); `exists` reports what is readable now.
  */
 export function parsePointer(text: string, sidecar?: string): Pointer | undefined {
-  const m = POINTER_RE.exec(text);
+  // Only a notice the harness wrote: the wrapped form, or the bare sentence opening the text.
+  // The same sentence quoted inside an ordinary result is text (data-model.md#pointer).
+  const lead = text.length - text.trimStart().length;
+  const body = text.slice(lead);
+  let m: RegExpExecArray | null;
+  if (body.startsWith("<persisted-output>")) {
+    const end = body.indexOf("</persisted-output>");
+    m = POINTER_RE.exec(body);
+    if (m && end !== -1 && m.index > end) m = null;
+  } else {
+    m = POINTER_RE.exec(body);
+    if (m && m.index !== 0) m = null;
+  }
   if (!m || !m[3]) return undefined;
   const stored = m[3];
   const bytes = Math.round(Number(m[1]) * (SIZE_MULT[m[2]!] ?? 1));
@@ -298,9 +310,10 @@ export function parsePointer(text: string, sidecar?: string): Pointer | undefine
   preview = preview.replace(/\s*<\/persisted-output>\s*$/, "").replace(/\n?\.\.\.\s*$/, "");
   let path = stored;
   let exists = existsSync(stored);
-  if (!exists && sidecar) {
+  if (sidecar) {
+    // The session's own copy wins: it is the only place a pointer may be followed from.
     const relocated = join(sidecar, "tool-results", basename(stored));
-    if (existsSync(relocated)) {
+    if (relocated !== stored && existsSync(relocated)) {
       path = relocated;
       exists = true;
     }

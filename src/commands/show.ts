@@ -7,8 +7,8 @@ import { encode } from "@toon-format/toon";
 import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { formatId, resolveId } from "../lib/ids.js";
-import { readPointer, show, type Shown, type ShownEvent } from "../lib/events.js";
-import type { Event, EventId } from "../lib/model.js";
+import { pointerAccess, readPointer, show, type Shown, type ShownEvent } from "../lib/events.js";
+import type { Event, EventId, Session } from "../lib/model.js";
 import { formatClock, formatDay } from "../lib/time.js";
 import { findCommand, SHOW_FIELDS } from "../reference.js";
 import { getBool, getString, parseFlags, usageLine, type Parsed } from "../flags.js";
@@ -21,6 +21,7 @@ import { BIN, carry, collapseHome, rewriteNotice, scopeCarry, scopeOf, shellArg,
 type Doc = Record<string, unknown>;
 
 interface Ctx {
+  session: Session;
   full: boolean;
   tz: string;
   /** Hints for the next call: what was cut, where a pointer leads. */
@@ -66,16 +67,26 @@ async function resultBody(ev: Event, ctx: Ctx, idForHint: EventId, label: string
     into[textKey] = capped(ev.text, ctx, idForHint, label);
     return;
   }
-  if (ctx.full) {
-    const read = p.exists ? await readPointer(p) : { text: p.preview, exists: false };
-    into.pointer = pointerLine(p.path, p.bytes, read.exists);
-    if (read.exists) into[textKey] = read.text;
-    else into.preview = p.preview;
-    return;
+  const access = await pointerAccess(p, ctx.session);
+  const missing = !access.followable && access.reason === "the file is missing";
+  into.pointer = pointerLine(p.path, p.bytes, !missing && p.exists);
+  if (!access.followable && !missing) {
+    // Named in the log but outside this session's tool-results: shown, never read.
+    into.followed = false;
+    into.reason = access.reason;
   }
-  into.pointer = pointerLine(p.path, p.bytes, p.exists);
+  if (ctx.full && access.followable) {
+    const read = await readPointer(p, ctx.session);
+    if (read.followed) {
+      into[textKey] = read.text;
+      return;
+    }
+    into.pointer = pointerLine(p.path, p.bytes, false);
+  }
   into.preview = capped(p.preview, ctx, idForHint, "preview");
-  if (p.exists) ctx.help.push(`Run \`${BIN} show ${formatId(idForHint)} --full${ctx.carry}\` for the persisted output (${formatSize(p.bytes)})`);
+  if (access.followable && !ctx.full) {
+    ctx.help.push(`Run \`${BIN} show ${formatId(idForHint)} --full${ctx.carry}\` for the persisted output (${formatSize(p.bytes)})`);
+  }
 }
 
 const COMPACTION_META = ["trigger", "pre_tokens", "post_tokens", "dropped_tokens", "summary", "preserved"] as const;
@@ -227,7 +238,7 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
     }
     throw err;
   }
-  const ctx: Ctx = { full: getBool(p, "full"), tz, help: [], carry: hintCarry(p) };
+  const ctx: Ctx = { session: s, full: getBool(p, "full"), tz, help: [], carry: hintCarry(p) };
 
   let doc: Doc;
   if (raw || shown.silent) {

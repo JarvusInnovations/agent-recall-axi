@@ -4,7 +4,8 @@
  */
 import { AgentSessionError } from "./errors.js";
 import { comparePosition, formatId } from "./ids.js";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { join, sep } from "node:path";
 import { DEFAULT_KINDS, KINDS, type Entry, type Event, type EventId, type Kind, type Pointer, type Session } from "./model.js";
 import { countNewlines, readLines, readLinesBackward } from "./reader.js";
 import { newContext } from "./adapters/adapter.js";
@@ -359,11 +360,51 @@ function selectEvents(id: EventId, evs: Event[], shown: ShownEvent[]): ShownEven
   throw new AgentSessionError(`${formatId(id)} does not exist: ${what}`, "NOT_FOUND", ids.map((i) => `Run \`agent-session-axi show ${i}\``));
 }
 
-/** The full text of a persisted output, or the preview when the file is gone (no error). */
-export async function readPointer(pointer: Pointer): Promise<{ text: string; exists: boolean }> {
+export type PointerAccess = { followable: true; real: string } | { followable: false; reason: string };
+
+/**
+ * Whether a pointer may be followed (data-model.md#pointer, privacy.md): its real path, after
+ * relocation and symlink resolution, must be a regular file inside `<sidecar>/tool-results/`.
+ * A path named in a log is data, never an instruction to read that file.
+ */
+export async function pointerAccess(pointer: Pointer, session: Session): Promise<PointerAccess> {
+  let dir: string;
+  let real: string;
   try {
-    return { text: await readFile(pointer.path, "utf8"), exists: true };
+    dir = await realpath(join(session.sidecar, "tool-results"));
   } catch {
-    return { text: pointer.preview, exists: false };
+    return { followable: false, reason: "the session has no tool-results directory" };
+  }
+  try {
+    real = await realpath(pointer.path);
+  } catch {
+    return { followable: false, reason: "the file is missing" };
+  }
+  if (!real.startsWith(`${dir}${sep}`)) return { followable: false, reason: "outside this session's tool-results directory" };
+  try {
+    if (!(await stat(real)).isFile()) return { followable: false, reason: "not a regular file" };
+  } catch {
+    return { followable: false, reason: "the file is missing" };
+  }
+  return { followable: true, real };
+}
+
+/**
+ * The full text of a persisted output when it may be followed; otherwise the preview, with
+ * `followed: false` and the reason (a missing file is `exists: false`, never an error).
+ */
+export async function readPointer(
+  pointer: Pointer,
+  session: Session,
+): Promise<{ text: string; exists: boolean; followed: boolean; reason?: string }> {
+  const access = await pointerAccess(pointer, session);
+  if (!access.followable) {
+    const missing = access.reason === "the file is missing";
+    return { text: pointer.preview, exists: missing ? false : pointer.exists, followed: false, reason: access.reason };
+  }
+  try {
+    return { text: await readFile(access.real, "utf8"), exists: true, followed: true };
+  } catch {
+    return { text: pointer.preview, exists: false, followed: false, reason: "the file is missing" };
   }
 }
