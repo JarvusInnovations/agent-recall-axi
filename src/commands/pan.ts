@@ -102,7 +102,7 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
   if (note) header.anchor_note = note;
   Object.assign(header, rendered.header);
   header.tz = tz;
-  if (r.rows.length > 0) header.count = `${r.rows.length} of ${r.matching}`;
+  header.count = `${r.rows.length} of ${r.matching}`;
   if (r.atStart) header.at_start = true;
   if (r.atEnd) header.at_end = true;
   if (r.malformed > 0) header.malformed = `${r.malformed} line${r.malformed === 1 ? "" : "s"}`;

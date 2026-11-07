@@ -63,10 +63,9 @@ async function clear(p: ReturnType<typeof parseFlags>, io: Io, opts: { env: Io["
     return renderDocument({ cleared: r.existed ? `${dir} (deleted)` : "nothing to clear" });
   }
   const resolved = await resolveScope(scopeOf("cache", p, io));
-  const paths: string[] = [];
-  for (const proj of resolved.projects) for await (const s of claudeCode.listSessions(proj, { subagents: true })) paths.push(s.path);
-  const r = await clearCache({ ...opts, paths });
+  // By the records' stored paths under the project's log directory, so deleted logs go too.
+  const r = await clearCache({ ...opts, paths: resolved.projects.map((p) => p.dir) });
   const where = resolved.projects[0]?.cwd ?? project;
   if (!r.existed || r.removed === 0) return renderDocument({ cleared: `nothing to clear for ${collapseHome(where)}` });
-  return renderDocument({ cleared: `${r.removed} record${r.removed === 1 ? "" : "s"} for ${collapseHome(where)} (${paths.length} session files in scope)` });
+  return renderDocument({ cleared: `${r.removed} record${r.removed === 1 ? "" : "s"} for ${collapseHome(where)}` });
 }
