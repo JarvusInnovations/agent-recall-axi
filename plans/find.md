@@ -40,11 +40,12 @@ output. Cross-session scope lands in `sessions-and-recall`.
 ## Validation
 
 - [ ] `find <fixture> "redirect"` returns hits in every kind that contains the phrase (human,
-      assistant, call input, result text) with `why: phrase`; case-insensitive.
+      assistant, call input, and the call row of a result whose text contains it, per
+      `specs/cli.md#find`) with `why: phrase`; case-insensitive.
 - [ ] `find <fixture> --file "*.env"` hits the Read/Edit calls and the Bash command that mentions
       `config/staging.env`, with `why: file`; `--file staging` (no glob) matches by substring.
 - [ ] `find <fixture> --tool bash` lists every shell call, `why: tool`; `--tool bash "test"`
-      yields `why: tool+phrase`.
+      yields `why: phrase+tool` (the spec's fixed order).
 - [ ] `--kind human "deploy"` returns only human-class events.
 - [ ] `--context 2` prints two rows on each side with empty `why`, the hit row with `why` set,
       labeled `rows`; `--context 0` prints `hits` only; overlapping contexts are not duplicated.
