@@ -1,14 +1,15 @@
 /**
- * The derived, disposable cache (specs/architecture.md#cache, specs/behaviors/privacy.md). This
- * plan creates the store with only the per-file identity record that rewrite detection needs
- * (specs/behaviors/id-stability.md#append-only-is-assumed); indexes arrive with later plans.
+ * The derived, disposable cache (specs/architecture.md#cache, specs/behaviors/privacy.md): the
+ * per-file identity record that rewrite detection needs
+ * (specs/behaviors/id-stability.md#append-only-is-assumed). The line-offset table lives beside it
+ * (`index.ts`) and is discarded here when a rewrite is detected.
  *
  * The cache lives under `$XDG_CACHE_HOME/agent-session-axi/` (default `~/.cache/…`), owner-only,
  * and is never required: every failure to read or write it is swallowed and the caller behaves as
  * if it were absent. Nothing here writes anywhere else, and session files are only read.
  */
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readLines, readLinesBackward } from "../reader.js";
@@ -44,13 +45,23 @@ export interface FileIdentity {
   seen: string;
 }
 
-const sha = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
+export const sha = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 
-function recordPath(dir: string, path: string): string {
-  return join(dir, "files", `${sha(path).slice(0, 32)}.json`);
+/** The record name for a file: a hash of its absolute path, so no path appears in a filename. */
+export function recordName(path: string): string {
+  return `${sha(path).slice(0, 32)}.json`;
 }
 
-async function readSlice(path: string, offset: number, length: number): Promise<Buffer | undefined> {
+function recordPath(dir: string, path: string): string {
+  return join(dir, "files", recordName(path));
+}
+
+/** Where a file's line-offset table lives (specs/architecture.md#cache). */
+export function tablePath(dir: string, path: string): string {
+  return join(dir, "index", recordName(path));
+}
+
+export async function readSlice(path: string, offset: number, length: number): Promise<Buffer | undefined> {
   const fh = await open(path, "r");
   try {
     const buf = Buffer.alloc(length);
@@ -138,6 +149,8 @@ export async function checkRewrite(path: string, opts: CacheOpts = {}): Promise<
       }
     }
   }
+  // A rewritten file's derived records are discarded (id-stability.md#append-only-is-assumed).
+  if (rewritten) await rm(tablePath(dir, path), { force: true }).catch(() => undefined);
   await save(dir, now);
   return rewritten && before ? { rewritten: true, since: before.seen } : { rewritten: false };
 }
