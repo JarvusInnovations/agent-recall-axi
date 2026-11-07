@@ -1,55 +1,84 @@
-import { AxiError, runAxiCli } from "axi-sdk-js";
+import { encode } from "@toon-format/toon";
+import { AxiError, runAxiCli, type AxiCliCommand } from "axi-sdk-js";
+import { AgentSessionError } from "./lib/errors.js";
 import { COMMAND_GROUPS, DESCRIPTION } from "./reference.js";
 import { VERSION } from "./version.js";
-
-// Skeleton wiring only: commands arrive with their plans (plans/*.md). The shape of
-// this file (runAxiCli options, formatError, exported main) is the contract in
-// specs/architecture.md.
+import { renderCommandHelp, renderTopLevelHelp } from "./output/help.js";
+import { renderHelp } from "./output/render.js";
+import { BIN, type Io } from "./commands/common.js";
+import { eventsCommand, tailCommand } from "./commands/events.js";
+import { homeCommand } from "./commands/home.js";
+import { sessionsCommand } from "./commands/sessions.js";
+import { updateCommand } from "./commands/update.js";
 
 const USAGE_CODES = new Set(["USAGE", "UNKNOWN_FLAG", "VALIDATION_ERROR"]);
 
+let debug = false;
+
+/** errors.md: TOON on stdout, exit 2 for usage, 1 otherwise; stacks only to stderr with --debug. */
 export function formatError(error: unknown): { output: string; exitCode: number } {
-  if (error instanceof AxiError) {
+  if (error instanceof AxiError || error instanceof AgentSessionError) {
     const exitCode = USAGE_CODES.has(error.code) ? 2 : 1;
-    const help = error.suggestions.length
-      ? `\nhelp[${error.suggestions.length}]:\n${error.suggestions.map((s) => `  ${s}`).join("\n")}`
-      : "";
-    return { output: `error: ${error.message}\ncode: ${error.code}${help}\n`, exitCode };
+    const parts = [encode({ error: error.message, code: error.code })];
+    const details = error instanceof AgentSessionError ? error.details : undefined;
+    if (details && Object.keys(details).length) parts.push(encode({ details }));
+    const help = renderHelp(error.suggestions);
+    if (help) parts.push(help);
+    return { output: `${parts.join("\n")}\n`, exitCode };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
   return {
-    output: `error: unexpected failure: ${message}\ncode: INTERNAL_ERROR\nhelp[1]:\n  Re-run with --debug for details on stderr\n`,
+    output: `${encode({ error: `unexpected failure: ${message}`, code: "INTERNAL_ERROR" })}\n${renderHelp([
+      "Re-run with --debug for details on stderr",
+      "File an issue at https://github.com/JarvusInnovations/agent-session-axi/issues",
+    ])}\n`,
     exitCode: 1,
   };
 }
 
-function renderTopLevelHelp(): string {
-  const groups = COMMAND_GROUPS.map(
-    (g) => `${g.group}:\n${g.commands.map((c) => `  ${c.usage}\n      ${c.summary}`).join("\n")}`,
-  ).join("\n\n");
-  return `agent-session-axi — ${DESCRIPTION}\n\nusage: agent-session-axi <command> [args] [flags]\n\n${groups}\n`;
+export interface MainIo {
+  stdout?: { write: (chunk: string) => unknown };
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  now?: Date;
+  /** The entrypoint path used to infer the install channel; default process.argv[1]. */
+  entrypoint?: string;
 }
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+function planned(name: string, plan: string): AxiCliCommand<undefined> {
+  return () => {
+    throw new AxiError(`\`${name}\` is not available yet in ${VERSION} (planned: ${plan})`, "USAGE", [
+      `Run \`${BIN} --help\` for the commands available now`,
+    ]);
+  };
+}
+
+export async function main(argv: string[] = process.argv.slice(2), io: MainIo = {}): Promise<void> {
+  // --debug is a diagnostic switch for stderr, not a command flag; strip it before dispatch.
+  debug = argv.includes("--debug");
+  const args = argv.filter((a) => a !== "--debug");
+  const ctx: Io = { cwd: io.cwd ?? process.cwd(), env: io.env ?? process.env, now: io.now ?? new Date() };
+
+  const commands: Record<string, AxiCliCommand<undefined>> = {};
+  for (const g of COMMAND_GROUPS) {
+    for (const c of g.commands) if (c.status !== "available") commands[c.name] = planned(c.name, c.status.planned);
+  }
+  commands.sessions = (a) => sessionsCommand(a, ctx);
+  commands.events = (a) => eventsCommand(a, ctx);
+  commands.tail = (a) => tailCommand(a, ctx);
+  // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
+  commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
+
   await runAxiCli({
     description: DESCRIPTION,
     version: VERSION,
-    argv,
+    argv: args,
     topLevelHelp: renderTopLevelHelp(),
-    home: async () => ({
-      status: "not implemented yet — see specs/ and plans/ in the repository",
-      help: ["Run `agent-session-axi --help` for the planned command list"],
-    }),
-    commands: {
-      // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
-      update: async () => ({
-        update: `agent-session-axi ${VERSION}`,
-        help: [
-          "Run `npx skills update agent-session-axi` to update the skill bundle",
-          "Run `npm i -g agent-session-axi@latest` if installed from npm",
-        ],
-      }),
-    },
+    home: () => homeCommand(ctx),
+    commands,
+    getCommandHelp: (name) => renderCommandHelp(name),
     formatError,
+    ...(io.stdout ? { stdout: io.stdout } : {}),
   });
 }
