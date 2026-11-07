@@ -3,7 +3,8 @@
  * parse and format entry/event ids, and resolve session references (path, uuid, agentId, an
  * 8+ hex prefix, `latest`) and ids against a scope.
  */
-import { stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentSessionError } from "./errors.js";
@@ -66,13 +67,26 @@ function looksLikePath(ref: string): boolean {
   return ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
 }
 
-async function exists(path: string): Promise<boolean> {
+/** Only an existing regular file counts as a path (a directory named `latest` is not one). */
+async function isFile(path: string): Promise<boolean> {
   try {
-    await stat(path);
-    return true;
+    return (await stat(path)).isFile();
   } catch {
     return false;
   }
+}
+
+/** A session the resolver picked by id must be readable: UNREADABLE with its path, not a crash later. */
+async function readable(s: Session): Promise<Session> {
+  try {
+    await access(s.path, constants.R_OK);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new AgentSessionError(`session ${s.short} vanished: ${s.path}`, "NOT_FOUND", [`Run \`${BIN} sessions\` to list the sessions in scope`]);
+    }
+    throw new AgentSessionError(`cannot read session ${s.short}`, "UNREADABLE", [`read permission on ${s.path} is needed`], { path: s.path });
+  }
+  return s;
 }
 
 /** Every session in scope, subagents included (they are always in scope for resolution). */
@@ -178,8 +192,8 @@ export async function resolveSession(ref: string, scope: Scope = {}): Promise<Se
   if (!text) throw new AgentSessionError("empty <session>", "VALIDATION_ERROR", [SESSION_GRAMMAR]);
   const abs = resolve(scope.cwd ?? process.cwd(), expandHome(text));
   // A path ignores scope; one that looks like a path but does not exist is NOT_FOUND there.
-  if (looksLikePath(text) || (await exists(abs))) return openSession(abs);
-  if (text === "latest") return latest(scope);
+  if (looksLikePath(text) || (await isFile(abs))) return openSession(abs);
+  if (text === "latest") return readable(await latest(scope));
   const lower = text.toLowerCase();
   if (/^[0-9a-f][0-9a-f-]*$/.test(lower)) {
     if (!/^[0-9a-f]{8}/.test(lower)) {
@@ -187,7 +201,7 @@ export async function resolveSession(ref: string, scope: Scope = {}): Promise<Se
         "a session prefix needs at least 8 hex characters (ids are never shortened below 8)",
       ]);
     }
-    return byPrefix(lower, scope);
+    return readable(await byPrefix(lower, scope));
   }
   throw new AgentSessionError(`${text} is not a session reference`, "VALIDATION_ERROR", [SESSION_GRAMMAR]);
 }
@@ -232,7 +246,7 @@ export async function resolveId(text: string, scope: Scope = {}, opts: { session
     return { session, id: out };
   }
   try {
-    return { session: await byPrefix(id!.session, scope), id: id! };
+    return { session: await readable(await byPrefix(id!.session, scope)), id: id! };
   } catch (err) {
     // An id's <s8> cannot be lengthened: name the session instead.
     if (err instanceof AgentSessionError && err.code === "AMBIGUOUS_SESSION") {

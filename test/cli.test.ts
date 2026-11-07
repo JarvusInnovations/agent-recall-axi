@@ -311,6 +311,16 @@ describe.skipIf(asRoot)("unreadable session files", () => {
     }
   });
 
+  it("resolved by prefix or latest, it is UNREADABLE (exit 1) with the path in details, not INTERNAL_ERROR", async () => {
+    for (const args of [["tail", "a1000001"], ["events", "a1000001-0000-4000-8000-000000000000"], ["show", "a1000001:1"]]) {
+      const { stdout, exitCode } = await run(args, { env });
+      expect(exitCode, args.join(" ")).toBe(1);
+      expect(stdout).toMatch(/^code: UNREADABLE$/m);
+      expect(stdout).toMatch(/^details:\n {2}path: /m);
+      expect(stdout).toContain(locked);
+    }
+  });
+
   it("tail and events on it → UNREADABLE (exit 1) with the path", async () => {
     for (const cmd of ["tail", "events"]) {
       const { stdout, exitCode } = await run([cmd, locked], { env });
@@ -318,5 +328,16 @@ describe.skipIf(asRoot)("unreadable session files", () => {
       expect(stdout).toMatch(/^code: UNREADABLE$/m);
       expect(stdout).toContain(locked);
     }
+  });
+});
+
+describe("formatError", () => {
+  it("a permission error from a read maps to UNREADABLE with the path, never INTERNAL_ERROR", async () => {
+    const { formatError } = await import("../src/cli.js");
+    const err = Object.assign(new Error("EACCES: permission denied, open '/x/s.jsonl'"), { code: "EACCES", path: "/x/s.jsonl" });
+    const r = formatError(err);
+    expect(r.exitCode).toBe(1);
+    expect(r.output).toMatch(/^code: UNREADABLE$/m);
+    expect(r.output).toContain("path: /x/s.jsonl");
   });
 });

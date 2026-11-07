@@ -28,6 +28,11 @@ export function formatError(error: unknown): { output: string; exitCode: number 
     if (help) parts.push(help);
     return { output: `${parts.join("\n")}\n`, exitCode };
   }
+  // A file that became unreadable between resolution and the read: the operation's file, not a bug.
+  const errno = error as NodeJS.ErrnoException;
+  if ((errno?.code === "EACCES" || errno?.code === "EPERM") && typeof errno.path === "string") {
+    return formatError(new AgentSessionError(`cannot read ${errno.path}`, "UNREADABLE", [`read permission on ${errno.path} is needed`], { path: errno.path }));
+  }
   const message = error instanceof Error ? error.message : String(error);
   if (debug && error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
   return {
