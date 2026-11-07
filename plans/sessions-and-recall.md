@@ -1,0 +1,86 @@
+---
+status: planned
+depends: [find, views]
+specs:
+  - specs/cli.md
+  - specs/api.md
+  - specs/data-model.md
+  - specs/architecture.md
+  - specs/behaviors/time-and-scope.md
+  - specs/behaviors/privacy.md
+issues: [1]
+---
+
+# Plan: Sessions and recall
+
+## Scope
+
+The zoomed-out rung and cross-session memory: session stats and titles (index-accelerated),
+the full `sessions` schema and `--subagents`, the content-first home view with `last_human`,
+cross-session `find` (`--project`/`--all`), the term index, and `recall`.
+
+## Implements
+
+- `specs/data-model.md#session` — stats, `title` precedence, `live`, `sessions-index.json` as an
+  optional accelerator.
+- `specs/cli.md#home-view-no-arguments` (non-hook mode), `#sessions`, `#find` (cross-session),
+  `#recall`, `#cache`.
+- `specs/api.md` — `listSessions`, `sessionStats`, `findAcross`, `recall`.
+- `specs/architecture.md#cache` — stats + term index, incremental refresh.
+- `specs/behaviors/time-and-scope.md` — `--project` forms, `--all`, `--subagents`.
+- `specs/behaviors/privacy.md` — cache permissions, `cache clear`.
+
+## Approach
+
+1. `src/lib/adapters/claude-code/sessions.ts`: titles (`custom-title.json` → last `ai-title` →
+   first human head), stats via the cache (computed on first touch by a single streaming pass
+   that also builds the offset table), `sessions-index.json` read for `title`/`last` when the
+   file's mtime matches.
+2. Home view: `project:`, `sessions[5]`, `latest`, `last_human` from a tail read of the latest
+   file; < 300 ms on 100 sessions (measured in CI with generated sessions).
+3. `findAcross`: iterate sessions in scope newest first, apply `--since`, stream `find`, label
+   hits with `<s8>`; header `scanned:`.
+4. Term index: lower-cased word tokens from `H`, `C` and `call` text → seq lists, per session,
+   refreshed incrementally; `recall` consults it for candidate sessions then verifies hits by
+   scanning only candidate windows; falls back to streaming scan and reports `index:`.
+5. `cache status|clear` complete.
+
+## Validation
+
+- [ ] `sessions` on a fixture project prints `{id,started,last,turns,title}`; titles follow the
+      precedence (three fixtures: custom title, ai-title only, neither); `--fields calls,
+      compactions,humans,live,bytes,lines` all populate.
+- [ ] A stale `sessions-index.json` (wrong `messageCount`, missing a session) never changes
+      `turns` or omits a session; a listed-but-deleted session is not shown.
+- [ ] `--subagents` adds subagent rows with `kind`/`parent`; without it they are absent but still
+      resolvable by id.
+- [ ] Home view on the fixture project prints `project:`, five sessions, `latest`, `last_human`
+      with id and time, and five `help[]` lines; with no matching project prints `project: none`
+      and five cross-project sessions. Timing test: 100 generated sessions < 300 ms.
+- [ ] `find "phrase" --project <fixture-project>` returns hits from two sessions with distinct
+      `<s8>` prefixes and `scanned: 2 sessions`; `--all` spans both fixture projects; `--since`
+      excludes the old one.
+- [ ] `recall "phrase"` groups by session with `hits` and `first`, newest first; `scanned:` and
+      `index: none` on first run, `index: fresh` on the second with identical results; results
+      also identical with the cache deleted.
+- [ ] `recall` with no matches prints the definitive empty line with the scanned count and a
+      `--since 1y` hint.
+- [ ] Cache directory and files are created `0700`/`0600`; `cache clear --project` removes only
+      that project's entries; `cache status` reports sizes.
+- [ ] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
+      every other command's output is clock-independent.
+
+## Risks / unknowns
+
+- **Scan cost at scale** — hundreds of sessions, gigabytes. The term index is the answer; the
+  first `recall` is honest about its cost (`scanned:` with time). Consider a `cache build` later.
+- **Title quality** — `ai-title` may be absent on bots' sessions; the first-human-head fallback
+  is always available.
+
+## Notes
+
+(at closeout)
+
+## Follow-ups
+
+(at closeout)
