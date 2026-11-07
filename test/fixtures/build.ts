@@ -830,6 +830,34 @@ export function panSession(s8 = "e1000021"): string {
   return s.render();
 }
 
+/**
+ * A question whose result arrives twice: once in turn, once as a late duplicate 300 lines later,
+ * past a checkpoint. Only the tool-use id → tool map says the duplicate is a `human.answer`.
+ */
+export function duplicateAnswerSession(s8 = "e2000022"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("start the widget release");
+  const q = TOOL(s8, 1);
+  s.assistant([s.toolUse(q, "AskUserQuestion", { questions: [] })]);
+  s.toolResult(q, "first answer");
+  for (let i = 4; i <= 300; i++) s.say(`filler ${i}`);
+  s.toolResult(q, "late duplicate answer");
+  s.say("end");
+  return s.render();
+}
+
+/** A call whose result arrives after 1,100 silent lines: held by visible events, not by lines. */
+export function longHoldSession(s8 = "e3000023"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("start");
+  const b = TOOL(s8, 1);
+  s.assistant([s.toolUse(b, "Bash", { command: "sleep 1" })]);
+  s.say("waiting");
+  for (let i = 0; i < 1100; i++) s.silent("permission-mode", { permissionMode: "default", n: i });
+  s.toolResult(b, "done");
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 

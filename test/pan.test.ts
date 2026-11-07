@@ -3,11 +3,11 @@
  * file start reads, counts are over visible events, edges are header fields, and the cache is
  * never required.
  */
-import { appendFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { panSession } from "./fixtures/build.js";
+import { duplicateAnswerSession, longHoldSession, panSession } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
 import { around, events, next, openSession, prev, show } from "../src/lib/index.js";
 import { showFromStart } from "../src/lib/events.js";
@@ -370,5 +370,170 @@ describe("the offset table as a cache", () => {
     const kinds = await run(["tail", file, "--kind", "human"], e);
     expect(header(kinds.stdout, "count")).toBe(`20 of ${(await reference("all")).filter((x) => x.kind === "human").length}`);
     expect(idsOf(warm.stdout, "tail")).toEqual(idsOf(cold.stdout, "tail"));
+  });
+});
+
+describe("review round", () => {
+  const dup = join(tmp, "e2000022-0000-4000-8000-000000000000.jsonl");
+  const hold = join(tmp, "e3000023-0000-4000-8000-000000000000.jsonl");
+  beforeAll(() => {
+    writeFileSync(dup, duplicateAnswerSession());
+    writeFileSync(hold, longHoldSession());
+  });
+  const forward = async (s: Session, kinds?: "all") => {
+    const out: Event[] = [];
+    for await (const ev of events(s, kinds ? { kinds } : {})) out.push(ev);
+    return out;
+  };
+
+  it("a late duplicate answer past a checkpoint classifies as the cold scan does (rows, counts, edges)", async () => {
+    const s = await openSession(dup);
+    const ref = await forward(s);
+    expect(ref.some((e) => e.kind === "human.answer" && e.text === "late duplicate answer")).toBe(true);
+    const cache = { dir: freshCache() };
+    for (const seq of [250, 270, 290, 300, 301]) {
+      const a = { session: s.short, seq };
+      const n = await next(s, a, 5, { cache });
+      const after = ref.filter((e) => e.id.seq > seq);
+      expect(JSON.stringify(n.rows), String(seq)).toBe(JSON.stringify(after.slice(0, 5)));
+      expect(n.atEnd, String(seq)).toBe(after.length <= 5);
+      expect(n.matching).toBe(ref.length);
+    }
+    const e = { env: { XDG_CACHE_HOME: freshCache() } };
+    await run(["next", "e2000022:1", "1", "--session", dup], e);
+    const t = await run(["tail", dup, "3"], e);
+    expect(header(t.stdout, "count")).toBe(`3 of ${ref.length}`);
+    expect(idsOf(t.stdout, "tail")).toEqual(ref.slice(-3).map((x) => formatId(x.id)));
+  });
+
+  it("a table extended across an append mid-turn equals one built cold", async () => {
+    for (const [name, text, cut] of [
+      ["dup", duplicateAnswerSession(), 150],
+      ["pan", panSession(), 700],
+    ] as const) {
+      const dir = mkdtempSync(join(tmp, `ext-${name}-`));
+      const p = join(dir, `${name === "dup" ? "e2000022" : "e1000021"}-0000-4000-8000-000000000000.jsonl`);
+      const all = text.split("\n");
+      writeFileSync(p, `${all.slice(0, cut).join("\n")}\n`);
+      const s = await openSession(p);
+      const warm = { dir: freshCache() };
+      await next(s, { session: s.short, seq: 1 }, 1, { cache: warm });
+      appendFileSync(p, all.slice(cut).join("\n"));
+      await next(s, { session: s.short, seq: 1 }, 1, { cache: warm });
+      const cold = { dir: freshCache() };
+      await next(s, { session: s.short, seq: 1 }, 1, { cache: cold });
+      expect(await loadTable(p, warm), name).toEqual(await loadTable(p, cold));
+      const ref = await forward(s, "all");
+      const lines = all.length - 1;
+      for (let seq = 1; seq <= lines; seq += 7) {
+        const r = await around(s, { session: s.short, seq }, 3, 3, { cache: warm, kinds: "all" });
+        const want = [...ref.filter((x) => x.id.seq < seq).slice(-3), ...ref.filter((x) => x.id.seq === seq), ...ref.filter((x) => x.id.seq > seq).slice(0, 3)];
+        expect(JSON.stringify(r.rows), `${name} ${seq}`).toBe(JSON.stringify(want));
+      }
+    }
+  }, 240_000);
+
+  it("pan rows hold a call exactly as events does (by held events, not lines)", async () => {
+    const s = await openSession(hold);
+    const ref = await forward(s);
+    const call = ref.find((x) => x.kind === "call")!;
+    expect(call.status?.state).toBe("ok");
+    const r = await around(s, { session: s.short, seq: 1 }, 0, 2, { cache: { dir: freshCache() } });
+    expect(JSON.stringify(r.rows)).toBe(JSON.stringify(ref.slice(0, 3)));
+    const e = { env: { XDG_CACHE_HOME: freshCache() } };
+    const a = await run(["around", "e3000023:1", "--after", "1", "--before", "0", "--session", hold], e);
+    const ev = await run(["events", hold, "--from", "e3000023:1", "--limit", "2"], e);
+    expect(rowsOf(a.stdout, "rows")).toEqual(rowsOf(ev.stdout, "events"));
+    expect(a.stdout).toContain("Bash sleep 1 → ok");
+  });
+
+  it("a table built by another version of the tool or table format is discarded", async () => {
+    const s = await openSession(file);
+    const cache = { dir: freshCache() };
+    await next(s, { session: s.short, seq: 1 }, 1, { cache });
+    const rec = join(cache.dir, "index", readdirSync(join(cache.dir, "index"))[0]!);
+    const t = JSON.parse(readFileSync(rec, "utf8"));
+    expect(await loadTable(file, cache)).toBeDefined();
+    writeFileSync(rec, JSON.stringify({ ...t, pkg: "0.0.0-other" }));
+    expect(await loadTable(file, cache)).toBeUndefined();
+    writeFileSync(rec, JSON.stringify({ ...t, v: t.v + 1 }));
+    expect(await loadTable(file, cache)).toBeUndefined();
+  });
+
+  it("a built table holds no message, input or result text", async () => {
+    const cacheHome = freshCache();
+    const e = { env: { XDG_CACHE_HOME: cacheHome } };
+    await run(["around", "e1000021:700", "--session", file], e);
+    await run(["around", "e2000022:299", "--session", dup], e);
+    const dir = join(cacheHome, "agent-session-axi");
+    const text = readdirSync(join(dir, "index")).map((f) => readFileSync(join(dir, "index", f), "utf8")).join("\n");
+    expect(text.length).toBeGreaterThan(1000);
+    for (const needle of ["process the next", "Batch 12 done", "export const batch", "ok batch", "process --batch", "needs two calls", "Summary", "start the widget release", "first answer", "late duplicate", "filler 4"]) {
+      expect(text, needle).not.toContain(needle);
+    }
+  });
+
+  it("cache hygiene: tmp files, stale records, partial tails, permissions, symlinked directories", async () => {
+    // (a) a failed rename leaves no temp file.
+    const s = await openSession(file);
+    const c1 = { dir: freshCache() };
+    const { recordName } = await import("../src/lib/cache/store.js");
+    mkdirSync(join(c1.dir, "index", recordName(file)), { recursive: true });
+    await next(s, { session: s.short, seq: 1 }, 1, { cache: c1 });
+    expect(readdirSync(join(c1.dir, "index")).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+
+    // (c) a partial trailing line after the indexed end is still fresh.
+    const pdir = mkdtempSync(join(tmp, "partial-"));
+    const pp = join(pdir, "e1000021-0000-4000-8000-000000000000.jsonl");
+    writeFileSync(pp, readFileSync(file));
+    const cacheHome = freshCache();
+    const e = { env: { XDG_CACHE_HOME: cacheHome } };
+    await run(["around", "e1000021:5", "--session", pp], e);
+    appendFileSync(pp, '{"type":"user","message":');
+    const st = await run(["cache", "status"], e);
+    expect(st.stdout).toContain(",fresh,");
+
+    // (d) a record writable by others is ignored.
+    const c2 = { dir: freshCache() };
+    await next(s, { session: s.short, seq: 1 }, 1, { cache: c2 });
+    const rec = join(c2.dir, "index", recordName(file));
+    expect(await loadTable(file, c2)).toBeDefined();
+    chmodSync(rec, 0o666);
+    expect(await loadTable(file, c2)).toBeUndefined();
+
+    // (e) a symlinked index/ directory is never written through.
+    const c3 = { dir: freshCache() };
+    const elsewhere = mkdtempSync(join(tmp, "elsewhere-"));
+    mkdirSync(c3.dir, { recursive: true });
+    symlinkSync(elsewhere, join(c3.dir, "index"));
+    const r = await next(s, { session: s.short, seq: 1 }, 1, { cache: c3 });
+    expect(r.rows).toHaveLength(1);
+    expect(readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it("cache clear --project removes records of that project's deleted logs too", async () => {
+    const root = mkdtempSync(join(tmp, "root-"));
+    const proj = join(root, "projects", "-src-widget");
+    mkdirSync(proj, { recursive: true });
+    const a = join(proj, "e1000021-0000-4000-8000-000000000000.jsonl");
+    const b = join(proj, "e2000022-0000-4000-8000-000000000000.jsonl");
+    writeFileSync(a, readFileSync(file));
+    writeFileSync(b, readFileSync(dup));
+    const e = { env: { XDG_CACHE_HOME: freshCache(), CLAUDE_CONFIG_DIR: root } };
+    await run(["next", "e1000021:1", "1", "--session", a], e);
+    await run(["next", "e2000022:1", "1", "--session", b], e);
+    expect((await run(["cache", "status"], e)).stdout).toMatch(/^count: 2 indexed$/m);
+    rmSync(b);
+    const r = await run(["cache", "clear", "--project", "/src/widget"], e);
+    expect(r.exitCode, r.stdout).toBe(0);
+    expect((await run(["cache", "status"], e)).stdout).toMatch(/^count: 0 indexed$/m);
+  });
+
+  it("pan headers carry count even with no rows", async () => {
+    const r = await run(["around", "a3000003:5", "--context", "0"]);
+    expect(r.exitCode).toBe(0);
+    expect(header(r.stdout, "count")).toBe("0 of 7");
+    const n = await run(["next", "a3000003:10"]);
+    expect(header(n.stdout, "count")).toBe("0 of 7");
   });
 });

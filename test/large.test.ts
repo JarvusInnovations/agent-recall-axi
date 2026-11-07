@@ -119,23 +119,29 @@ describe("backward reader on a very long line", () => {
 describe("the offset table on a 200 MB session (plan pan)", () => {
   const cacheHome = join(tmp, "pan-cache");
   const env = { ...process.env, TZ: "UTC", XDG_CACHE_HOME: cacheHome };
-  const cli = (args: string[], extra: string[] = []) => {
+  const cli = (args: string[], extra: string[] = [], runEnv: NodeJS.ProcessEnv = env) => {
     const t0 = process.hrtime.bigint();
-    const r = spawnSync(node, [...extra, BIN_JS, ...args], { encoding: "utf8", env });
+    const r = spawnSync(node, [...extra, BIN_JS, ...args], { encoding: "utf8", env: runEnv });
     return { ...r, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
   };
   /** Best of five: a slow run on a shared machine is scheduling, not the tool. */
-  const best = (args: string[]) => {
-    const runs = [cli(args), cli(args), cli(args), cli(args), cli(args)];
+  const best = (args: string[], runEnv: NodeJS.ProcessEnv = env) => {
+    const runs = [0, 1, 2, 3, 4].map(() => cli(args, [], runEnv));
     for (const r of runs) expect(r.status, r.stdout).toBe(0);
     return { ms: Math.min(...runs.map((r) => r.ms)), stdout: runs[0]!.stdout };
   };
   let lines = 0;
   /**
-   * 300 ms (×2 on CI), unless this host's floor for the same command graph (`show` of line 1,
-   * which seeks nothing) is itself so slow that 300 ms leaves no room: then within 100 ms of it.
+   * 300 ms (×2 on CI), unless this host's floor for the same command graph is itself so slow that
+   * 300 ms leaves no room: then within 100 ms of it. The floor is `show` of line 1 with a cache
+   * location that cannot exist (under a regular file), so it never reads or writes a table.
    */
-  const budget = () => Math.max(300 * SLACK, best(["show", "f0000099:1", "--session", big]).ms + 100);
+  const noCache = join(tmp, "not-a-dir");
+  const budget = () => {
+    writeFileSync(noCache, "");
+    const floor = best(["show", "f0000099:1", "--session", big], { ...env, XDG_CACHE_HOME: join(noCache, "cache") });
+    return Math.max(300 * SLACK, floor.ms + 100);
+  };
 
   it("the first around builds the table in under 4 s (×2 on CI) and 150 MB; the second takes under 300 ms", async () => {
     lines = await countNewlines(big);
