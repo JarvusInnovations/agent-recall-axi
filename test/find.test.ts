@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { backtrackRisk, find, findListing, globRegex } from "../src/lib/find.js";
+import { backtrackRisk, find, findListing, globRegex, streamMatches } from "../src/lib/find.js";
 import { openSession } from "../src/lib/session.js";
 import { FIND_DEEP_WORD } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
@@ -262,7 +262,7 @@ describe("find: library", () => {
   });
 
   it("backtrackRisk refuses repeated groups that hold a quantifier or alternation", () => {
-    for (const bad of ["(a+)+", "(a*)*", "(a|ab)*", "((ab)+c)+", "(?:x+y)+", "(a?){3}", "(?<w>\\w+\\s)+"]) expect(backtrackRisk(bad), bad).toBe(true);
+    for (const bad of ["(a+)+", "(a*)*", "(a|ab)*", "((ab)+c)+", "(?:x+y)+", "(?<w>\\w+\\s)+"]) expect(backtrackRisk(bad), bad).toBe(true);
     for (const ok of ["redir\\w+", "a+b+", "(ab)+", "(foo|bar)", "[(+]+", "\\(a+\\)+", "(a+)?", "x{2,}", "(?=a+)b"]) expect(backtrackRisk(ok), ok).toBe(false);
   });
 
@@ -312,5 +312,130 @@ describe("find --deep: pointer containment", () => {
     // the preview of an unfollowable pointer is still searched
     const preview = await run(["find", file, "preview text", "--context", "0"], { env });
     expect(hitIds(preview.stdout)).toEqual([`${S8}:1`, `${S8}:3`, `${S8}:5`]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// review fixes (PR #6)
+
+describe("find review: --deep streams persisted files", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "asa-find-stream-"));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it("a substring spanning a chunk boundary is found; a regex is tested line by line", async () => {
+    const path = join(tmp, "out.txt");
+    const chunk = 64;
+    // "NEEDLE" straddles the first 64-byte boundary
+    writeFileSync(path, `${"x".repeat(chunk - 3)}NEEDLE${"y".repeat(200)}\nsecond line Ünïcode\n${"z".repeat(300)}`);
+    expect(await streamMatches(path, { needle: "needle" }, chunk)).toBe(true);
+    expect(await streamMatches(path, { needle: "absent" }, chunk)).toBe(false);
+    expect(await streamMatches(path, { re: /second line ünïcode$/iu }, chunk)).toBe(true);
+    // a regex never matches across a newline in a persisted file
+    expect(await streamMatches(path, { re: /y\nsecond/iu }, chunk)).toBe(false);
+    // the last line has no newline and is still tested
+    expect(await streamMatches(path, { re: /^z+$/iu }, chunk)).toBe(true);
+  });
+});
+
+describe("find review: regex guard", () => {
+  it("refuses the exponential shapes and accepts bounded or distinct-literal ones", () => {
+    const refused = ["(a+)+", "(a*)*", "(a|ab)*", "(\\w+\\s?)*", "((ab)+c)+", "(?:x+y)+", "(a|a)+", `${"a?".repeat(28)}${"a".repeat(28)}`, "\\w?".repeat(12)];
+    const accepted = ["(foo|bar)+", "(\\d+\\.){3}\\d+", "redir\\w+", "a+b+", "(ab)+", "(foo|bar)", "[(+]+", "\\(a+\\)+", "(a+)?", "x{2,}", "(?=a+)b", "(a?){3}", "a?".repeat(11)];
+    for (const p of refused) expect(backtrackRisk(p), p).toBe(true);
+    for (const p of accepted) expect(backtrackRisk(p), p).toBe(false);
+  });
+
+  it("--regex compiles with iu: \\p{L} works; a pattern invalid only under u is VALIDATION_ERROR naming the flag", async () => {
+    const r = await run(["find", S, "--regex", "redir\\p{L}+", "--context", "0"]);
+    expect(hitIds(r.stdout)).toEqual(seq(1, 2, 4, 6));
+    const accepted = await run(["find", S, "--regex", "(foo|redirect)+", "--context", "0"]);
+    expect(accepted.exitCode).toBe(0);
+    const u = await run(["find", S, "--regex", "\\-"]);
+    expect(u.exitCode).toBe(2);
+    expect(u.stdout).toMatch(/^code: VALIDATION_ERROR$/m);
+    expect(u.stdout).toContain("u flag");
+  });
+});
+
+describe("find review: validation and resolution", () => {
+  it("an invalid glob class is VALIDATION_ERROR, exit 2", async () => {
+    const r = await run(["find", S, "--file", "[z-a]"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stdout).toMatch(/^code: VALIDATION_ERROR$/m);
+  });
+
+  it("a lone session-shaped argument says it was read as the session and hints it as a phrase", async () => {
+    const noHandle = await run(["find", "config/staging.env", "--all"]);
+    expect(noHandle.exitCode).toBe(2);
+    expect(noHandle.stdout).toContain("read as the <session>");
+    expect(noHandle.stdout).toContain("Run `agent-session-axi find latest config/staging.env --all`");
+    const missing = await run(["find", "abcdef12", "--tool", "bash", "--project", "/src/widget"]);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stdout).toContain("read as the <session>");
+    expect(missing.stdout).toContain("Run `agent-session-axi find latest abcdef12 --tool bash --project /src/widget`");
+    expect(missing.stdout).toContain("sessions --subagents --project /src/widget");
+  });
+
+  it("the shared resolver's NOT_FOUND hint carries --project (every command benefits)", async () => {
+    const r = await run(["events", "abcdef12", "--project", "/src/widget"]);
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toContain("sessions --subagents --project /src/widget");
+  });
+});
+
+describe("find review: --kind all", () => {
+  it("accepts all: every kind, results as rows, calls stop folding results", async () => {
+    const r = await run(["find", S, "redirect", "--kind", "all", "--context", "0"]);
+    expect(r.exitCode).toBe(0);
+    const rows = table(r.stdout).rows;
+    expect(rows.map((x) => [x.id, x.kind])).toEqual([
+      [`${S}:1`, "human"],
+      [`${S}:2`, "assistant"],
+      [`${S}:3`, "thinking"],
+      [`${S}:5`, "result"],
+      [`${S}:6`, "call"],
+    ]);
+    expect(r.stdout).toMatch(/^query: "phrase \\"redirect\\" \+ kind all"$/m);
+    const usage = (await run(["find", "--help"])).stdout;
+    for (const f of ["--kind <a,b|all>", "--head <n>", "--full", "--fields <a,b>", "--window <k|last>"]) expect(usage.split("\n")[1]).toContain(f);
+  });
+});
+
+describe("find review: hits past --limit inside a shown context", () => {
+  it("keep their why, count as shown, and the continuation neither skips nor repeats", async () => {
+    const r = await run(["find", S, "redirect", "--limit", "1", "--context", "1"]);
+    expect(table(r.stdout).rows.map((x) => [x.id, x.why])).toEqual([
+      [`${S}:1`, "phrase"],
+      [`${S}:2`, "phrase"],
+    ]);
+    expect(r.stdout).toMatch(/^count: 2 of 4 hits/m);
+    const cont = helpCommands(r.stdout).find((c) => c[0] === "find" && c.includes("--from"))!;
+    expect(cont).toContain(`${S}:3`);
+    const next = await run(cont);
+    expect(hitIds(next.stdout)).toEqual(seq(4, 6));
+  });
+});
+
+describe("find review: an id --to bound with an unanswered call", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "asa-find-bound-"));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+  const S8 = "d3000020";
+  const ID = `${S8}-0000-4000-8000-000000000000`;
+  let n = 0;
+  const line = (type: string, body: Record<string, unknown>) =>
+    JSON.stringify({ type, ...body, uuid: `${S8}-0000-4000-8000-${String(++n).padStart(12, "0")}`, timestamp: "2026-11-07T13:40:00.000Z", cwd: "/src/widget", sessionId: ID });
+  const lines = [
+    line("user", { message: { role: "user", content: "run the build" }, origin: { kind: "human" } }),
+    line("assistant", { message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_fxbound1", name: "Bash", input: { command: "bun run build" } }] } }),
+  ];
+  for (let i = 0; i < 3000; i++) lines.push(line("assistant", { message: { role: "assistant", content: [{ type: "text", text: `filler ${i}` }] } }));
+  const file = join(tmp, `${ID}.jsonl`);
+  writeFileSync(file, `${lines.join("\n")}\n`);
+
+  it("stops reading soon after the bound; the call stays pending", async () => {
+    const session = await openSession(file);
+    const listing = await findListing(session, { tool: "bash", to: { session: S8, seq: 3 }, context: 0 });
+    expect(listing.hits.map((h) => h.event.status?.state)).toEqual(["pending"]);
+    expect(listing.lines).toBeLessThan(1100);
   });
 });
