@@ -567,6 +567,10 @@ function longText(): Fixture {
   s.toolResult(TOOL(id, 2), "export function onClick() {}");
   s.say(deterministicText(VOCAB, 4500));
   s.say("Short reply.");
+  // H text over the detail cap: `show` never cuts it.
+  s.human(deterministicText(VOCAB, 4600));
+  // A hook wrapper inside a text block rides on the prompt's event as meta.hook_text.
+  s.user([{ type: "text", text: `<user-prompt-submit-hook>${deterministicText(VOCAB, 4400)}</user-prompt-submit-hook>\nnow the short prompt` }], { origin: { kind: "human" }, promptSource: "typed" });
   return { name: "long-text", session: s };
 }
 

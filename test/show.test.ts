@@ -174,6 +174,21 @@ describe("show", () => {
     expect(call.stdout).toContain("Run `agent-session-axi show b5000016:3 --full` for the complete result (5.0k chars)");
   });
 
+  it("H text is never cut by show; meta strings are capped with the marker and a --full hint", async () => {
+    const h = await run(["show", "b5000016:9"]);
+    expect(field(h.stdout, "authority")).toBe("H");
+    expect((JSON.parse(field(h.stdout, "text")!) as string).length).toBe(4600);
+    expect(h.stdout).not.toContain("truncated");
+    expect(h.stdout).not.toContain("help[");
+    const m = await run(["show", "b5000016:10"]);
+    expect(field(m.stdout, "text")).toBe("now the short prompt");
+    const hookText = /^ {2}hook_text: (.*)$/m.exec(m.stdout)![1]!;
+    expect((JSON.parse(hookText) as string).endsWith(" … (truncated, 4400 chars total)")).toBe(true);
+    expect(m.stdout).toContain("Run `agent-session-axi show b5000016:10 --full` for the complete meta.hook_text (4.4k chars)");
+    const full = await run(["show", "b5000016:10", "--full"]);
+    expect((JSON.parse(/^ {2}hook_text: (.*)$/m.exec(full.stdout)![1]!) as string).length).toBe(4400);
+  });
+
   it("zoom output is byte-identical to show for the same arguments", async () => {
     for (const args of [["a3000003:2"], ["b4000015:3"], ["a4000004:3", "--full"], ["b4000015:2"], ["a3000003:2", "--raw"], ["a3000003:9999"], ["7a2f1c:1"], ["418"]]) {
       const a = await run(["show", ...args]);
@@ -217,7 +232,7 @@ describe("rows: truncation and --fields", () => {
     const text = first.slice(first.indexOf(",human,") + 7);
     expect(text.endsWith("…")).toBe(true);
     expect(text.length).toBe(201);
-    expect(stdout).toContain("for the whole text of the 4 rows cut to 200 chars");
+    expect(stdout).toContain("for the whole text of the 5 rows cut to 200 chars");
     expect(stdout).toContain("Run `agent-session-axi show b5000016:1` to see one cut row whole");
   });
 

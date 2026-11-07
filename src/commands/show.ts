@@ -46,14 +46,30 @@ function capped(text: string, ctx: Ctx, id: EventId, label: string): string {
   return d.text;
 }
 
-/** Meta values as printable data: ids formatted, everything else as stored. */
-function metaOf(meta: Record<string, unknown>, skip: readonly string[]): Doc | undefined {
+/** Meta values as printable data: ids formatted, strings capped like any detail field. */
+function metaOf(meta: Record<string, unknown>, skip: readonly string[], ctx: Ctx, id: EventId): Doc | undefined {
+  const value = (v: unknown, label: string): unknown => {
+    if (isEventId(v)) return formatId(v);
+    if (typeof v === "string") return capped(v, ctx, id, label);
+    if (Array.isArray(v)) return v.map((x) => value(x, label));
+    if (typeof v === "object" && v !== null) {
+      const o: Doc = {};
+      for (const [k, x] of Object.entries(v)) o[k] = value(x, label);
+      return o;
+    }
+    return v;
+  };
   const out: Doc = {};
   for (const [k, v] of Object.entries(meta)) {
     if (skip.includes(k)) continue;
-    out[k] = isEventId(v) ? formatId(v) : v;
+    out[k] = value(v, `meta.${k}`);
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/** `H` text is never cut (authority.md#verbatim-guarantee); everything else takes the detail cap. */
+function textOf(ev: Event, text: string, ctx: Ctx, id: EventId, label: string): string {
+  return ev.authority === "H" ? text : capped(text, ctx, id, label);
 }
 
 function pointerLine(path: string, bytes: number, exists: boolean): string {
@@ -64,7 +80,7 @@ function pointerLine(path: string, bytes: number, exists: boolean): string {
 async function resultBody(ev: Event, ctx: Ctx, idForHint: EventId, label: string, into: Doc, textKey: string): Promise<void> {
   const p = ev.pointer;
   if (!p) {
-    into[textKey] = capped(ev.text, ctx, idForHint, label);
+    into[textKey] = textOf(ev, ev.text, ctx, idForHint, label);
     return;
   }
   const access = await pointerAccess(p, ctx.session);
@@ -133,16 +149,16 @@ async function eventDoc(s: ShownEvent, ctx: Ctx, withTime: boolean): Promise<Doc
     }
     case "summary": {
       if (isEventId(meta.compaction)) doc.compaction = formatId(meta.compaction);
-      doc.text = capped(ev.text, ctx, ev.id, "text");
+      doc.text = textOf(ev, ev.text, ctx, ev.id, "text");
       break;
     }
     default:
-      doc.text = capped(ev.text, ctx, ev.id, "text");
+      doc.text = textOf(ev, ev.text, ctx, ev.id, "text");
   }
   if (ev.agent) doc.agent = ev.agent;
   if (ev.files?.length) doc.files = ev.files;
   const skip = ev.kind === "compaction" ? COMPACTION_META : ev.kind === "summary" ? ["compaction"] : [];
-  const m = metaOf(meta, skip);
+  const m = metaOf(meta, skip, ctx, ev.id);
   if (m) doc.meta = m;
   return doc;
 }
