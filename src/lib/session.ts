@@ -105,8 +105,12 @@ export interface ListOpts {
 
 export interface SessionListing {
   sessions: SessionInfo[];
-  /** Sessions in scope before the time window and limit. */
+  /** Sessions in scope before the time window and limit (unreadable ones included). */
   total: number;
+  /** Session files in scope that could not be read (permissions, vanished mid-listing); skipped. */
+  unreadable: number;
+  /** The first unreadable file, for the hint. */
+  firstUnreadable?: string;
   /** Sessions inside the time window, before the limit. */
   matching: number;
   scope: Awaited<ReturnType<typeof resolveScope>>;
@@ -116,9 +120,17 @@ export interface SessionListing {
 export async function sessionListing(scope: Scope = {}, opts: ListOpts = {}): Promise<SessionListing> {
   const resolved = await resolveScope(scope);
   const all: SessionInfo[] = [];
+  let unreadable = 0;
+  let firstUnreadable: string | undefined;
   for (const project of resolved.projects) {
     for await (const s of claudeCode.listSessions(project, { subagents: scope.subagents === true })) {
-      all.push(await describeSession(s));
+      // One unreadable or vanished file never fails the listing: it is skipped and counted.
+      try {
+        all.push(await describeSession(s));
+      } catch {
+        unreadable++;
+        firstUnreadable ??= s.path;
+      }
     }
   }
   const inWindow = all.filter((s) => {
@@ -129,7 +141,9 @@ export async function sessionListing(scope: Scope = {}, opts: ListOpts = {}): Pr
   });
   inWindow.sort((a, b) => (a.last === b.last ? a.id.localeCompare(b.id) : a.last < b.last ? 1 : -1));
   const limited = opts.limit && opts.limit > 0 ? inWindow.slice(0, opts.limit) : inWindow;
-  return { sessions: limited, total: all.length, matching: inWindow.length, scope: resolved };
+  const listing: SessionListing = { sessions: limited, total: all.length + unreadable, matching: inWindow.length, unreadable, scope: resolved };
+  if (firstUnreadable) listing.firstUnreadable = firstUnreadable;
+  return listing;
 }
 
 /** specs/api.md#scope-and-sessions: sessions in scope, most recently active first. */

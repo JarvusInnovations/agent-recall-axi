@@ -90,3 +90,13 @@ export function carry(p: Parsed): string {
   const tz = getString(p, "tz");
   return tz ? ` --tz ${tz}` : "";
 }
+
+/** Header field and hint for session files a listing skipped because they could not be read. */
+export function unreadableNote(listing: { unreadable: number; firstUnreadable?: string }): { count?: number; help?: string } {
+  if (listing.unreadable === 0 || !listing.firstUnreadable) return {};
+  const more = listing.unreadable > 1 ? ` (and ${listing.unreadable - 1} more were skipped)` : "";
+  return {
+    count: listing.unreadable,
+    help: `Run \`ls -l ${shellPath(listing.firstUnreadable)}\` to check why that session file is unreadable${more}`,
+  };
+}

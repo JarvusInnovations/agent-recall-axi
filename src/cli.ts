@@ -6,6 +6,7 @@ import { VERSION } from "./version.js";
 import { renderCommandHelp, renderTopLevelHelp } from "./output/help.js";
 import { renderHelp } from "./output/render.js";
 import { BIN, type Io } from "./commands/common.js";
+import { usageLine } from "./flags.js";
 import { eventsCommand, tailCommand } from "./commands/events.js";
 import { homeCommand } from "./commands/home.js";
 import { sessionsCommand } from "./commands/sessions.js";
@@ -49,6 +50,7 @@ export interface MainIo {
 function planned(name: string, plan: string): AxiCliCommand<undefined> {
   return () => {
     throw new AxiError(`\`${name}\` is not available yet in ${VERSION} (planned: ${plan})`, "USAGE", [
+      usageLine(name),
       `Run \`${BIN} --help\` for the commands available now`,
     ]);
   };

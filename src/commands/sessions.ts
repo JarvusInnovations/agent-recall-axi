@@ -7,7 +7,7 @@ import { findCommand, SESSIONS_FIELDS } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { renderDocument } from "../output/render.js";
-import { BIN, carry, collapseHome, parseRange, shellPath, zoneOf, type Io } from "./common.js";
+import { BIN, carry, collapseHome, parseRange, shellPath, unreadableNote, zoneOf, type Io } from "./common.js";
 
 /** Titles land with sessions-and-recall; until then the column says so instead of guessing. */
 export const TITLE_PENDING = "(pending)";
@@ -86,10 +86,13 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   if (listing.scope.all) header.projects = `${listing.scope.projects.length} under ${collapseHome(listing.scope.root)}`;
   else header.project = `${where} (${listing.total} session${listing.total === 1 ? "" : "s"})`;
   header.tz = tz;
+  const skipped = unreadableNote(listing);
+  if (skipped.count) header.unreadable = skipped.count;
   const help: string[] = [];
   if (listing.sessions.length === 0) {
     header.sessions = `0 sessions in ${where}${range.from || range.to ? " in that time window" : ""}`;
     if (!listing.scope.all) help.push(`Run \`${BIN} sessions --all${carry(p)}\` to list every project's sessions`);
+    if (skipped.help) help.push(skipped.help);
     return renderDocument(header, help);
   }
   header.count = `${listing.sessions.length} of ${listing.matching}`;
@@ -100,5 +103,6 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   if (listing.sessions.length < listing.matching) {
     help.push(`Run \`${BIN} sessions${scopeFlag} --limit 0${carry(p)}\` for all ${listing.matching} sessions`);
   }
+  if (skipped.help) help.push(skipped.help);
   return renderDocument(header, help);
 }

@@ -3,7 +3,7 @@ import { AgentSessionError } from "../lib/errors.js";
 import { sessionListing } from "../lib/session.js";
 import { formatAgo, formatMonthDayMinute, resolveZone } from "../lib/time.js";
 import { renderDocument } from "../output/render.js";
-import { BIN, collapseHome, shellPath, type Io } from "./common.js";
+import { BIN, collapseHome, shellPath, unreadableNote, type Io } from "./common.js";
 import { TITLE_PENDING } from "./sessions.js";
 
 const HOME_LIMIT = 5;
@@ -20,9 +20,12 @@ export async function homeCommand(io: Io): Promise<string> {
     body.project = `none for ${collapseHome(io.cwd)}`;
     listing = await sessionListing({ cwd: io.cwd, env: io.env, project: "all" }, { limit: HOME_LIMIT });
   }
+  const skipped = unreadableNote(listing);
+  if (skipped.count) body.unreadable = skipped.count;
   const help: string[] = [];
   if (listing.sessions.length === 0) {
     body.sessions = `0 sessions under ${collapseHome(listing.scope.root)}`;
+    if (skipped.help) help.push(skipped.help);
     help.push(`Run \`${BIN} --help\` for the full command list`);
     return renderDocument(body, help);
   }
@@ -36,6 +39,7 @@ export async function homeCommand(io: Io): Promise<string> {
   help.push(`Run \`${BIN} tail ${shellPath(latest.path)}\` for the last 20 rows of the latest session`);
   if (listing.scope.all) help.push(`Run \`${BIN} sessions --project <path>\` for one project's sessions`);
   else help.push(`Run \`${BIN} sessions --fields path\` for every session in this project`);
+  if (skipped.help) help.push(skipped.help);
   help.push(`Run \`${BIN} --help\` for the full command list, or \`${BIN} <command> --help\` for usage on any command`);
   return renderDocument(body, help);
 }

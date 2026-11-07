@@ -7,7 +7,7 @@ import { AxiError } from "axi-sdk-js";
 export const BIN = "agent-session-axi";
 
 export type { FlagSpec, FlagValue } from "./reference.js";
-import { GLOBAL_FLAGS, type FlagSpec } from "./reference.js";
+import { findCommand, GLOBAL_FLAGS, type FlagSpec } from "./reference.js";
 
 /** Renamed or commonly guessed flags → their replacement (targeted hint instead of the generic list). */
 const RENAMED: Record<string, string> = {
@@ -64,6 +64,7 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
     }
     if (spec.planned) {
       throw new AxiError(`--${name} is not available yet in this version (planned: ${spec.planned})`, "USAGE", [
+        usageLine(command),
         validFlagsLine(command, specs.filter((s) => !s.planned)),
       ]);
     }
@@ -85,12 +86,9 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
   return { flags, positionals, help };
 }
 
-const usageLines = new Map<string, string>();
-export function registerUsage(command: string, usage: string): void {
-  usageLines.set(command, usage);
-}
-function usageLine(command: string): string {
-  return `usage: ${usageLines.get(command) ?? `${BIN} ${command}`}`;
+/** errors.md#codes: a USAGE error's help is the command's usage line from the reference. */
+export function usageLine(command: string): string {
+  return `usage: ${BIN} ${findCommand(command)?.usage ?? command}`;
 }
 
 export function validFlagsLine(command: string, specs: FlagSpec[]): string {

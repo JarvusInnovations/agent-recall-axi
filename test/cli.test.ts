@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -205,9 +205,15 @@ describe("help, planned commands, update", () => {
     const { stdout, exitCode } = await run(["find", "x"]);
     expect(exitCode).toBe(2);
     expect(stdout).toContain("planned: find");
+    // errors.md#codes: a USAGE error's help is the command's usage line.
+    expect(stdout).toContain("usage: agent-session-axi find [<session>] [<phrase>]");
     const flag = await run(["events", fx("thinking"), "--window", "last"]);
     expect(flag.exitCode).toBe(2);
     expect(flag.stdout).toContain("planned: views");
+    expect(flag.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");
+    const missing = await run(["events", fx("thinking"), "--limit"]);
+    expect(missing.exitCode).toBe(2);
+    expect(missing.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");
   });
 
   it("update and update --check print the version and both update commands", async () => {
@@ -219,5 +225,41 @@ describe("help, planned commands, update", () => {
     expect(skill.exitCode).toBe(0);
     expect(skill.stdout).toMatch(/\(skill install\)/);
     expect(skill.stdout.indexOf("npx skills update")).toBeLessThan(skill.stdout.indexOf("npm i -g"));
+  });
+});
+
+// Permission bits do not stop root, so these run only as an ordinary user (as on CI).
+const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+describe.skipIf(asRoot)("unreadable session files", () => {
+  const root = join(tmp, "unreadable-root");
+  const dir = join(root, "projects", "-src-widget");
+  const locked = join(dir, "a1000001-0000-4000-8000-000000000000.jsonl");
+  beforeAll(() => {
+    mkdirSync(dir, { recursive: true });
+    copyFileSync(fx("string-content"), locked);
+    copyFileSync(fx("hooks"), join(dir, "aa00000a-0000-4000-8000-000000000000.jsonl"));
+    chmodSync(locked, 0o000);
+  });
+  afterAll(() => chmodSync(locked, 0o644));
+  const env = { CLAUDE_CONFIG_DIR: root };
+
+  it("sessions and the home view skip it, count it, and name it", async () => {
+    for (const args of [["sessions"], ["sessions", "--all"], []]) {
+      const { stdout, exitCode } = await run(args, { env });
+      expect(exitCode, args.join(" ")).toBe(0);
+      expect(stdout).toMatch(/^unreadable: 1$/m);
+      expect(stdout).toContain("aa00000a");
+      expect(stdout).toContain(`Run \`ls -l ${locked}\``);
+    }
+  });
+
+  it("tail and events on it → UNREADABLE (exit 1) with the path", async () => {
+    for (const cmd of ["tail", "events"]) {
+      const { stdout, exitCode } = await run([cmd, locked], { env });
+      expect(exitCode).toBe(1);
+      expect(stdout).toMatch(/^code: UNREADABLE$/m);
+      expect(stdout).toContain(locked);
+    }
   });
 });
