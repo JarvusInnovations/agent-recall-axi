@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -55,6 +55,45 @@ describe("find on a 200 MB session", () => {
     expect(tools.status).toBe(0);
     expect(tools.stdout).toMatch(/^hits: "0 events match/m);
     expect(Number(/MAXRSS_KB (\d+)/.exec(tools.stderr)![1]) / 1024).toBeLessThan(150);
+  }, 180_000);
+});
+
+describe("find --deep on a 120 MB persisted output", () => {
+  it("streams the file: peak RSS stays under 150 MB for a substring and for a regex", async () => {
+    const id = "f0000098-0000-4000-8000-000000000000";
+    const session = join(tmp, `${id}.jsonl`);
+    const results = join(tmp, id, "tool-results");
+    mkdirSync(results, { recursive: true });
+    const out = join(results, "bfxlarge.txt");
+    const fh = openSync(out, "w");
+    const line = `${"widget gadget sprocket flange ".repeat(33)}\n`;
+    const block = line.repeat(1024);
+    for (let written = 0; written < 120 * 1024 * 1024; written += Buffer.byteLength(block)) writeSync(fh, block);
+    writeSync(fh, "final line: deep-needle-7 checksum ok\n");
+    closeSync(fh);
+    const t = "2026-11-07T13:40:00.000Z";
+    writeFileSync(
+      session,
+      [
+        { type: "user", message: { role: "user", content: "dump it" }, origin: { kind: "human" }, uuid: "f0000098-0000-4000-8000-000000000001", timestamp: t },
+        { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_fxdeeplarge", name: "Bash", input: { command: "cat big.log" } }] }, uuid: "f0000098-0000-4000-8000-000000000002", timestamp: t },
+        {
+          type: "user",
+          message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_fxdeeplarge", is_error: false, content: `<persisted-output>\nOutput too large (125.8MB). Full output saved to: ${out}\n\nPreview (first 2KB):\n${line}...\n</persisted-output>` }] },
+          uuid: "f0000098-0000-4000-8000-000000000003",
+          timestamp: t,
+        },
+      ].map((o) => JSON.stringify(o)).join("\n") + "\n",
+    );
+    for (const args of [["deep-needle-7"], ["--regex", "deep-needle-\\d"]]) {
+      const r = spawnSync(node, ["--import", rss, BIN_JS, "find", session, ...args, "--deep", "--context", "0"], {
+        encoding: "utf8",
+        env: { ...process.env, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME },
+      });
+      expect(r.status, args.join(" ")).toBe(0);
+      expect(r.stdout).toMatch(/^hits\[1\]/m);
+      expect(Number(/MAXRSS_KB (\d+)/.exec(r.stderr)![1]) / 1024, args.join(" ")).toBeLessThan(150);
+    }
   }, 180_000);
 });
 
