@@ -301,7 +301,7 @@ async function pan(session: Session, anchor: EventId, before: number, after: num
   const table = await tableFor(session, opts.cache);
   const pts = points(table);
   const anchorPoint = startFor(table, anchor.seq);
-  let k = pts.indexOf(anchorPoint);
+  let k = pts.findIndex((pt) => pt.seq === anchorPoint.seq);
   if (before === Infinity) k = 0;
   else if (before > 0) {
     const atAnchor = countOf(anchorPoint, visible);
