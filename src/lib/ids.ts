@@ -129,6 +129,26 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
   );
 }
 
+/**
+ * The `<s8>`s that more than one session in scope shares. A hint may name such a session only by
+ * its full id (cli.md#conventions): its `<s8>` would resolve to AMBIGUOUS_SESSION.
+ */
+export async function sharedShorts(scope: Scope | ResolvedScope): Promise<Set<string>> {
+  const resolved = Array.isArray((scope as ResolvedScope).projects) ? (scope as ResolvedScope) : await resolveScope(scope as Scope);
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const s of await sessionsIn(resolved)) {
+    if (seen.has(s.short)) shared.add(s.short);
+    seen.add(s.short);
+  }
+  return shared;
+}
+
+/** How a hint names a session it resolved by reference: `<s8>` when unique in scope, else its full id. */
+export function hintName(session: Session, shared: ReadonlySet<string>): string {
+  return shared.has(session.short) && /^[0-9a-f]{8}/i.test(session.id) ? session.id : session.short;
+}
+
 /** `latest`: the main session in scope with the newest file mtime (ties: the greater id). */
 async function latest(scope: Scope): Promise<Session> {
   const resolved = await resolveScope(scope);
@@ -211,5 +231,19 @@ export async function resolveId(text: string, scope: Scope = {}, opts: { session
     if (bare!.block !== undefined) out.block = bare!.block;
     return { session, id: out };
   }
-  return { session: await byPrefix(id!.session, scope), id: id! };
+  try {
+    return { session: await byPrefix(id!.session, scope), id: id! };
+  } catch (err) {
+    // An id's <s8> cannot be lengthened: name the session instead.
+    if (err instanceof AgentSessionError && err.code === "AMBIGUOUS_SESSION") {
+      const candidates = (err.details?.candidates ?? []) as Array<{ id: string; project?: string }>;
+      throw new AgentSessionError(
+        `${formatId(id!)}: its session ${id!.session} matches ${candidates.length} sessions`,
+        "AMBIGUOUS_SESSION",
+        candidates.slice(0, 5).map((c) => `Pass \`--session ${c.id}\` for the session${c.project ? ` in ${c.project}` : ""}`),
+        err.details,
+      );
+    }
+    throw err;
+  }
 }

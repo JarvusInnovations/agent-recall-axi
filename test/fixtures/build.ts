@@ -575,8 +575,10 @@ function longText(): Fixture {
  * prefix tells them apart) and two sharing all 8 (only a longer prefix does).
  */
 function prefixCollisions(): Fixture[] {
+  // The pair sharing 8 characters is the newest, so listings and `latest` land on it.
   const one = (s8: string, idOverride?: string) => {
-    const s = new SessionBuilder("sprocket", s8, "2026-11-06T09:00:00.000Z", idOverride ? { id: idOverride } : {});
+    const start = s8 === "c3b5d7e9" ? "2026-11-06T10:00:00.000Z" : "2026-11-06T09:00:00.000Z";
+    const s = new SessionBuilder("sprocket", s8, start, idOverride ? { id: idOverride } : {});
     s.human(`sprocket task for ${idOverride ?? s8}`);
     s.say("Done.");
     return s;

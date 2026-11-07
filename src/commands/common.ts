@@ -2,7 +2,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
-import { parseId, resolveSession } from "../lib/ids.js";
+import { hintName, parseId, resolveSession, sharedShorts } from "../lib/ids.js";
 import { checkRewrite } from "../lib/cache/store.js";
 import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
 import type { Scope } from "../lib/scope.js";
@@ -107,10 +107,22 @@ export async function sessionFromArg(command: string, ref: string, p: Parsed, io
  * How a hint names the session: the path when the caller gave a path (it may lie outside any
  * scope), else the `<s8>` plus the scope flags it was resolved in.
  */
-export function sessionHintRef(ref: string, session: Session, p: Parsed, io: Io): string {
+export interface SessionHint {
+  /** The session as hints name it, scope flags included: `<s8> --all`, `<uuid>`, or a path. */
+  ref: string;
+  /** What a `show <id>` hint appends so the id resolves the same way. */
+  showCarry: string;
+}
+
+export async function sessionHint(command: string, ref: string, session: Session, p: Parsed, io: Io): Promise<SessionHint> {
   const looksLikePath = ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
-  const isPath = looksLikePath || resolve(io.cwd, ref) === session.path;
-  return isPath ? shellPath(session.path) : `${session.short}${scopeCarry(p)}`;
+  if (looksLikePath || resolve(io.cwd, ref) === session.path) {
+    const path = shellPath(session.path);
+    return { ref: path, showCarry: ` --session ${path}` };
+  }
+  const name = hintName(session, await sharedShorts(scopeOf(command, p, io)));
+  const scope = scopeCarry(p);
+  return { ref: `${name}${scope}`, showCarry: name === session.short ? scope : ` --session ${name}${scope}` };
 }
 
 /** The rewrite notice (id-stability.md#append-only-is-assumed), once per detected rewrite. */

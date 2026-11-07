@@ -8,7 +8,7 @@ import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { formatSize } from "../output/sizes.js";
-import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, sessionFromArg, sessionHintRef, shellArg, shellPath, zoneOf, type Io } from "./common.js";
+import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, sessionFromArg, sessionHint, shellArg, zoneOf, type Io, type SessionHint } from "./common.js";
 
 function flagsOf(name: string) {
   return findCommand(name)?.flags ?? [];
@@ -26,8 +26,8 @@ interface RenderArgs {
   explicitLimit: number | undefined;
   listing: Listing;
   session: Session;
-  /** How hints name the session (path or `<s8>` + scope flags). */
-  ref: string;
+  /** How hints name the session (path, `<s8>` or full id, + scope flags). */
+  hint: SessionHint;
   notice: string | undefined;
   fields: readonly RowField[];
   tz: string;
@@ -57,7 +57,7 @@ function render(a: RenderArgs): string {
   if (listing.malformed > 0) header.malformed = `${listing.malformed} line${listing.malformed === 1 ? "" : "s"}`;
   if (a.full && a.limit === 0) header.size = `${formatSize(rendered.chars)} chars`;
 
-  const s = a.ref;
+  const s = a.hint.ref;
   const tz = carry(a.parsed);
   const p = a.parsed;
   const kind = getString(p, "kind") !== undefined ? ` --kind ${shellArg(getString(p, "kind")!)}` : "";
@@ -89,12 +89,9 @@ function render(a: RenderArgs): string {
   return renderDocument(header, help);
 }
 
-/**
- * What a `show` hint needs so its id resolves: the scope flags the session was resolved in, or
- * `--session <path>` for a session opened by path (it may lie outside every scope).
- */
+/** What a `show` hint needs so its id resolves the way this listing's session did. */
 function scopeOnly(a: RenderArgs): string {
-  return a.ref === shellPath(a.session.path) ? ` --session ${a.ref}` : a.ref.slice(a.session.short.length);
+  return a.hint.showCarry;
 }
 
 export function parseRowFields(text: string | undefined): RowField[] {
@@ -136,7 +133,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (range.to) opts.to = range.to;
   const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
-  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, ref: sessionHintRef(ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 export async function tailCommand(args: string[], io: Io): Promise<string> {
@@ -166,7 +163,7 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   if (kinds) opts.kinds = kinds;
   const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
-  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, ref: sessionHintRef(ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, hint: await sessionHint("tail", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 function helpOf(name: string): string {
