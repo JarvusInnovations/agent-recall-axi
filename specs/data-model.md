@@ -44,7 +44,10 @@ widened by `--project <path>` or `--all` (`cli.md`). A path (1) ignores scope.
 
 ### Session short id (`<s8>`)
 
-The first 8 hex characters of the session uuid (or of the `agentId` for a subagent session).
+The first 8 hex characters of the session uuid (or of the `agentId` for a subagent session). A
+session file whose name is not a uuid or `agent-<agentId>` (a copied or renamed log opened by
+path) gets the first 8 hex characters of the SHA-1 of its basename, so every printed id still
+round-trips through the resolver.
 Printed on every row that leaves a session's context (`recall`, cross-session `find`) and as the
 first component of every entry id. Fixed width; never shortened further, never lengthened by the
 tool (`behaviors/id-stability.md`).
@@ -60,7 +63,10 @@ tool (`behaviors/id-stability.md`).
   the file is append-only; silent entries leave visible gaps in the sequence, which is expected.
 - `n` is the 1-based index of the block among *all* content blocks stored on the entry, including
   blocks the view hides (thinking). An event's id is the entry id when the entry yields exactly one
-  event, and the block form otherwise. Ids are printed in the form they resolve to; a bare entry id
+  event, and the block form otherwise. When a string-content entry (no stored blocks) yields more
+  than one event (a hook wrapper followed by the prompt the human typed), its parts are numbered
+  `.1`, `.2`, … in text order; inside a stored text block the hook output instead rides on the
+  block's event as `meta.hook`/`meta.hook_text`, since a block has exactly one id. Ids are printed in the form they resolve to; a bare entry id
   of a multi-event entry resolves to the whole entry (`show` prints all its events).
 - A subagent session's events are `<agentId8>:<seq>`. The namespace is shared with main sessions;
   the resolver searches both and reports ambiguity rather than preferring one.
@@ -120,7 +126,10 @@ the index is still listed; a session in the index whose file is gone is not.
 `api-request-blob`, `api-request-shape`, `file-history-snapshot`, `file-history-delta`,
 `queue-operation`, `session-owner`, `tools-used`, `pr-link`, `frame-link`, `history-suppression`,
 `artifact-*`, and any `type` the adapter does not recognize. An unrecognized type is counted, never
-an error. Most silent entries have no `timestamp` and no `uuid`.
+an error. Most silent entries have no `timestamp` and no `uuid`. The same applies one level down
+for `attachment` entries: only the `attachment.type` values named in the kinds table
+(`queued_command`, `hook_success`, `hook_additional_context`) yield events; every other subtype
+(reminders, tool deltas, token notices) is a silent entry.
 
 ## Event
 
@@ -179,6 +188,11 @@ Rules:
   `human.slash`; `meta.scheduled = true`.
 - Sidechain entries (`isSidechain == true`) inside a main session file are events of that session
   (they are rare in current logs; subagents normally have their own file).
+- **Parent prompts are not human.** In a `kind: subagent` session, and on sidechain entries in a
+  main file, `user` text without `origin.kind == "human"` is the parent agent's prompt: it is
+  `notice` with `meta.source: parent`, never `human.*`. The human-bias rule above does not apply,
+  because the adapter can prove no human typed it: a pure subagent run has 0 human messages
+  (`cli.md#human-session`).
 
 ### Derived target (`call.target`)
 

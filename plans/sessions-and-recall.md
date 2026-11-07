@@ -44,6 +44,9 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
    refreshed incrementally; `recall` consults it for candidate sessions then verifies hits by
    scanning only candidate windows; falls back to streaming scan and reports `index:`.
 5. `cache status|clear` complete.
+6. Session `last` becomes the exact max entry timestamp from the stats pass, replacing the
+   tail-256 KB read `reader-and-event-model` shipped; `title` replaces the `(pending)` placeholder
+   (deferred from [`reader-and-event-model`](reader-and-event-model.md)).
 
 ## Validation
 
@@ -70,6 +73,8 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
       `--since 1y` hint.
 - [ ] Cache directory and files are created `0700`/`0600`; `cache clear --project` removes only
       that project's entries; `cache status` reports sizes.
+- [ ] A fixture whose newest timestamp lies more than 256 KB before the end of the file lists
+      that timestamp as `last` (from `reader-and-event-model`).
 - [ ] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
       every other command's output is clock-independent.
 

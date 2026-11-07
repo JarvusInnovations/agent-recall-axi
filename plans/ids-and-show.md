@@ -46,7 +46,9 @@ Out of scope: pan verbs (`pan`), search (`find`), the offset cache (`pan`).
    as the same handler with alias `--help`.
 5. Rewrite detection in `src/lib/cache/store.ts` (the store itself is created here with only the
    identity record; indexes come later): first-line hash, length; `notice:` once on change.
-6. Retrofit `events`/`tail` rows to use `truncate.head` and to print the truncation footer.
+6. Retrofit `events`/`tail` rows to use `truncate.head` and to print the truncation footer, and
+   switch their `<session>` argument from path-only (`commands/common.ts#sessionFromArg`) to
+   `resolveSession` (deferred from [`reader-and-event-model`](reader-and-event-model.md)).
 
 ## Validation
 
@@ -74,6 +76,8 @@ Out of scope: pan verbs (`pan`), search (`find`), the offset cache (`pan`).
       with ` … (truncated, N chars total)` and the `--full` hint appears; under the cap, no hint.
 - [ ] `--fields authority` adds `H|C|D` per `authority.md`.
 - [ ] `zoom` output is byte-identical to `show` for the same arguments.
+- [ ] `tail latest`, `tail <8-hex prefix>` and `events <uuid>` resolve through `resolveSession`
+      (from `reader-and-event-model`).
 
 ## Risks / unknowns
 
