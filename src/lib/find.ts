@@ -6,7 +6,9 @@
  */
 import { AgentSessionError } from "./errors.js";
 import { comparePosition, formatId } from "./ids.js";
-import { kindSet, readPointer } from "./events.js";
+import { open } from "node:fs/promises";
+import { StringDecoder } from "node:string_decoder";
+import { kindSet, pointerAccess } from "./events.js";
 import type { Event, EventId, Kind, Session } from "./model.js";
 import { readLines } from "./reader.js";
 import { newContext } from "./adapters/adapter.js";
@@ -64,6 +66,9 @@ export interface CompiledQuery {
   query: FindQuery;
   why: Why[];
   phrase?: (text: string) => boolean;
+  /** The lowercased phrase (substring mode) or the compiled regex (`--regex`), for streaming. */
+  needle?: string;
+  re?: RegExp;
   file?: (path: string) => boolean;
   tool?: string;
   visible: ReadonlySet<Kind>;
@@ -73,47 +78,93 @@ export interface CompiledQuery {
   after: number;
 }
 
+/** Consecutive optional atoms (`a?a?a?…`) at or past this count are refused. */
+export const OPTIONAL_RUN_LIMIT = 12;
+
 /**
- * Whether a pattern repeats a group that holds a quantifier or an alternation (`(a+)+`,
- * `(a|ab)*`, `(\w+\s){2,}`): the shapes that make a backtracking engine run exponentially.
- * Conservative: some safe patterns (`(foo|bar)+`) are refused too, with a hint to rewrite.
+ * Whether a pattern has one of the common exponential-backtracking shapes (cli.md#find): an
+ * unbounded repetition (`*`, `+`, `{n,}`) of a group that itself holds an unbounded quantifier
+ * or an alternation whose branches can match overlapping text (`(a+)+`, `(a|ab)*`,
+ * `(\w+\s?)*`), or a run of 12+ consecutive optional atoms (`a?a?a?…`). Bounded repetition
+ * (`(\d+\.){3}`) and alternations of distinct literals (`(foo|bar)+`) pass. This is not a proof
+ * of linear time: a pattern that is merely slow passes (#8).
  */
 export function backtrackRisk(source: string): boolean {
   interface Frame {
-    risky: boolean;
+    /** Holds an unbounded quantifier anywhere inside. */
+    unbounded: boolean;
+    /** Each finished branch's literal text, or null when it is not a plain literal. */
+    branches: Array<string | null>;
+    /** The current branch's literal text so far; null once it holds anything else. */
+    cur: string | null;
   }
-  const stack: Frame[] = [{ risky: false }];
-  /** The atom a following quantifier applies to: whether it is a group that holds a quantifier or `|`. */
-  let atom: { risky: boolean } | null = null;
+  const stack: Frame[] = [{ unbounded: false, branches: [], cur: "" }];
+  const top = () => stack[stack.length - 1]!;
+  let optionalRun = 0;
   let i = 0;
-  const quantifier = (at: number): { len: number; repeats: boolean } | null => {
-    const c = source[at];
-    if (c === "*" || c === "+") return { len: 1, repeats: true };
-    if (c === "?") return { len: 1, repeats: false };
-    if (c === "{") {
-      const m = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(at));
-      if (!m) return null;
-      const lo = Number(m[1]);
-      const hi = m[2] === undefined ? lo : m[3] === "" ? Infinity : Number(m[3]);
-      return { len: m[0].length, repeats: hi >= 2 };
-    }
-    return null;
+
+  const overlapping = (branches: Array<string | null>): boolean => {
+    if (branches.length < 2) return false;
+    if (branches.some((b) => b === null)) return true;
+    const lower = (branches as string[]).map((b) => b.toLowerCase());
+    for (let a = 0; a < lower.length; a++) for (let b = 0; b < lower.length; b++) if (a !== b && lower[a]!.startsWith(lower[b]!)) return true;
+    return false;
   };
+  /** A quantifier at `at`, if any: its length, whether it is unbounded, whether it makes the atom optional. */
+  const quantifier = (at: number): { len: number; unbounded: boolean; optional: boolean } | null => {
+    const c = source[at];
+    let q: { len: number; unbounded: boolean; optional: boolean } | null = null;
+    if (c === "*") q = { len: 1, unbounded: true, optional: false };
+    else if (c === "+") q = { len: 1, unbounded: true, optional: false };
+    else if (c === "?") q = { len: 1, unbounded: false, optional: true };
+    else if (c === "{") {
+      const m = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(at));
+      if (m) {
+        const lo = Number(m[1]);
+        const hi = m[2] === undefined ? lo : m[3] === "" ? Infinity : Number(m[3]);
+        q = { len: m[0].length, unbounded: hi === Infinity, optional: lo === 0 && hi === 1 };
+      }
+    }
+    if (q && source[at + q.len] === "?") q.len++; // lazy
+    return q;
+  };
+  /** After an atom: apply a following quantifier. Returns true when the shape is refused. */
+  const afterAtom = (atom: { risky: boolean; literal?: string }): boolean => {
+    const frame = top();
+    const q = quantifier(i);
+    if (!q) {
+      optionalRun = 0;
+      if (frame.cur !== null) frame.cur = atom.literal !== undefined ? frame.cur + atom.literal : null;
+      return false;
+    }
+    i += q.len;
+    frame.cur = null;
+    if (q.unbounded) {
+      if (atom.risky) return true;
+      frame.unbounded = true;
+    }
+    if (q.optional) {
+      if (++optionalRun >= OPTIONAL_RUN_LIMIT) return true;
+    } else optionalRun = 0;
+    return false;
+  };
+
   while (i < source.length) {
     const c = source[i]!;
-    const top = stack[stack.length - 1]!;
-    const q = quantifier(i);
-    if (q && atom) {
-      if (q.repeats && atom.risky) return true;
-      top.risky = true;
-      i += q.len;
-      if (source[i] === "?") i++; // lazy
-      atom = null;
-      continue;
-    }
     if (c === "\\") {
-      atom = { risky: false };
+      const next = source[i + 1] ?? "";
       i += 2;
+      // \d, \w, \p{…}, \u…, back-references: not a plain literal
+      if (/[A-Za-z0-9]/.test(next)) {
+        if ((next === "p" || next === "P" || next === "u") && source[i] === "{") {
+          const close = source.indexOf("}", i);
+          i = close === -1 ? source.length : close + 1;
+        } else if (next === "k" && source[i] === "<") {
+          const close = source.indexOf(">", i);
+          i = close === -1 ? source.length : close + 1;
+        }
+        if (afterAtom({ risky: false })) return true;
+      } else if (afterAtom({ risky: false, literal: next })) return true;
       continue;
     }
     if (c === "[") {
@@ -122,39 +173,47 @@ export function backtrackRisk(source: string): boolean {
       if (source[i] === "]") i++;
       while (i < source.length && source[i] !== "]") i += source[i] === "\\" ? 2 : 1;
       i++;
-      atom = { risky: false };
+      if (afterAtom({ risky: false })) return true;
       continue;
     }
     if (c === "(") {
-      stack.push({ risky: false });
       i++;
       if (source[i] === "?") {
         if (source[i + 1] === "<" && source[i + 2] !== "=" && source[i + 2] !== "!") {
           const close = source.indexOf(">", i);
           i = close === -1 ? source.length : close + 1;
-        } else {
-          i += source[i + 1] === "<" ? 3 : 2;
-        }
+        } else i += source[i + 1] === "<" ? 3 : 2;
       }
-      atom = null;
+      stack.push({ unbounded: false, branches: [], cur: "" });
+      optionalRun = 0;
       continue;
     }
     if (c === ")") {
-      const frame = stack.length > 1 ? stack.pop()! : { risky: false };
-      const parent = stack[stack.length - 1]!;
-      parent.risky ||= frame.risky;
-      atom = { risky: frame.risky };
       i++;
+      if (stack.length === 1) {
+        if (afterAtom({ risky: false })) return true;
+        continue;
+      }
+      const frame = stack.pop()!;
+      frame.branches.push(frame.cur);
+      const parent = top();
+      parent.unbounded ||= frame.unbounded;
+      const risky = frame.unbounded || overlapping(frame.branches);
+      const literal = frame.branches.length === 1 && frame.branches[0] !== null ? frame.branches[0] : undefined;
+      if (afterAtom(literal !== undefined ? { risky, literal } : { risky })) return true;
       continue;
     }
     if (c === "|") {
-      top.risky = true;
-      atom = null;
+      const frame = top();
+      frame.branches.push(frame.cur);
+      frame.cur = "";
+      optionalRun = 0;
       i++;
       continue;
     }
-    atom = { risky: false };
     i++;
+    const meta = c === "." || c === "^" || c === "$";
+    if (afterAtom(meta ? { risky: false } : { risky: false, literal: c })) return true;
   }
   return false;
 }
@@ -181,7 +240,13 @@ export function globRegex(pattern: string): RegExp {
       i = close;
     } else out += c.replace(/[.+^${}()|\\\]]/g, (m) => `\\${m}`);
   }
-  return new RegExp(`^${out}$`, "s");
+  try {
+    return new RegExp(`^${out}$`, "s");
+  } catch {
+    throw new AgentSessionError(`invalid glob ${pattern}: a [...] class is malformed (a range like z-a runs backwards)`, "VALIDATION_ERROR", [
+      "a glob takes *, ? and [...] classes such as [a-z] or [!x]; without them the pattern is a substring",
+    ]);
+  }
 }
 
 function contextOf(c: FindQuery["context"]): { before: number; after: number } {
@@ -210,21 +275,38 @@ export function compileQuery(q: FindQuery): CompiledQuery {
     if (q.regex) {
       let re: RegExp;
       try {
-        re = new RegExp(phrase, "i");
+        re = new RegExp(phrase, "iu");
       } catch (err) {
         const reason = (err as Error).message.split(": ").pop() ?? "invalid";
-        throw new AgentSessionError(`invalid regular expression ${phrase}: ${reason}`, "VALIDATION_ERROR", [
-          "the phrase is a JavaScript regular expression with --regex (e.g. redir\\w+); drop --regex to search it literally",
-        ]);
+        let validWithoutU = false;
+        try {
+          new RegExp(phrase, "i");
+          validWithoutU = true;
+        } catch {
+          // invalid either way
+        }
+        throw new AgentSessionError(
+          validWithoutU
+            ? `invalid regular expression ${phrase} under the u flag (--regex compiles with iu): ${reason}`
+            : `invalid regular expression ${phrase}: ${reason}`,
+          "VALIDATION_ERROR",
+          [
+            validWithoutU
+              ? "the u (Unicode) flag forbids escaping characters that need no escape (\\- outside a class, \\a); drop the backslash"
+              : "the phrase is a JavaScript regular expression with --regex (e.g. redir\\w+); drop --regex to search it literally",
+          ],
+        );
       }
       if (backtrackRisk(phrase)) {
-        throw new AgentSessionError(`regular expression ${phrase} repeats a group that holds a quantifier or an alternation`, "VALIDATION_ERROR", [
-          "patterns like (a+)+ or (a|ab)* can backtrack for hours; rewrite without repeating such a group (e.g. (a|ab)* → [ab]*)",
+        throw new AgentSessionError(`regular expression ${phrase} has an exponential-backtracking shape`, "VALIDATION_ERROR", [
+          "refused: an unbounded repetition of a group holding an unbounded quantifier or overlapping alternatives ((a+)+, (a|ab)*), or 12+ optional atoms in a row; rewrite it (e.g. (a|ab)* → [ab]*)",
         ]);
       }
+      out.re = re;
       out.phrase = (text) => re.test(text);
     } else {
       const needle = phrase.toLowerCase();
+      out.needle = needle;
       out.phrase = (text) => text.toLowerCase().includes(needle);
     }
   }
@@ -260,6 +342,46 @@ function stringValues(value: unknown, out: string[], depth = 0): string[] {
 
 const carriesTool = (ev: Event) => ev.kind === "call" || ev.kind === "result";
 
+/** Read size for streamed persisted outputs (and the longest piece a regex sees). */
+export const STREAM_CHUNK = 1 << 20;
+
+/**
+ * Whether a file holds the phrase, streamed in chunks so it is never held whole (cli.md#find,
+ * `--deep`). A substring (already lowercased) may span chunks: the tail of each chunk carries
+ * over. A regex is tested line by line, a line longer than one chunk in chunk-sized pieces; a
+ * match spanning lines is out of scope.
+ */
+export async function streamMatches(path: string, m: { needle: string } | { re: RegExp }, chunkSize = STREAM_CHUNK): Promise<boolean> {
+  const fh = await open(path, "r");
+  try {
+    const decoder = new StringDecoder("utf8");
+    const buf = Buffer.allocUnsafe(chunkSize);
+    let carry = "";
+    for (let position = 0; ; ) {
+      const { bytesRead } = await fh.read(buf, 0, chunkSize, position);
+      const text = bytesRead > 0 ? decoder.write(buf.subarray(0, bytesRead)) : decoder.end();
+      position += bytesRead;
+      const last = bytesRead === 0;
+      if ("needle" in m) {
+        const hay = carry + text.toLowerCase();
+        if (hay.includes(m.needle)) return true;
+        carry = m.needle.length > 1 ? hay.slice(-(m.needle.length - 1)) : "";
+      } else {
+        const lines = (carry + text).split("\n");
+        carry = last ? "" : lines.pop()!;
+        for (const line of lines) if (m.re.test(line)) return true;
+        while (carry.length > chunkSize) {
+          if (m.re.test(carry.slice(0, chunkSize))) return true;
+          carry = carry.slice(chunkSize);
+        }
+      }
+      if (last) return false;
+    }
+  } finally {
+    await fh.close();
+  }
+}
+
 async function phraseMatches(cq: CompiledQuery, ev: Event, result: Event | undefined, session: Session): Promise<boolean> {
   const test = cq.phrase!;
   if (test(ev.text)) return true;
@@ -271,8 +393,8 @@ async function phraseMatches(cq: CompiledQuery, ev: Event, result: Event | undef
   if (!output) return false;
   if (output !== ev && test(output.text)) return true;
   if (cq.query.deep && output.pointer) {
-    const read = await readPointer(output.pointer, session);
-    if (read.followed && test(read.text)) return true;
+    const access = await pointerAccess(output.pointer, session);
+    if (access.followable && (await streamMatches(access.real, cq.re ? { re: cq.re } : { needle: cq.needle! }))) return true;
   }
   return false;
 }
@@ -330,6 +452,7 @@ async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindSt
     if (item.event.toolUseId) byToolUse.delete(item.event.toolUseId);
     return item;
   };
+  let pastLines = 0;
   for await (const line of readLines(session.path)) {
     stats.lines = line.seq;
     const entry = claudeCode.parse(line);
@@ -346,7 +469,10 @@ async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindSt
       queue.push(item);
       if (ev.kind === "call" && ev.toolUseId && cq.foldResults) byToolUse.set(ev.toolUseId, item);
     }
-    while (queue.length > 0 && (!waiting(queue[0]!) || queue.length > HOLD_CAP)) yield release();
+    // Past an id bound nothing new is queued, so the held-event cap can never trip: read on only
+    // HOLD_CAP lines to link calls still waiting, then release them as they are (pending).
+    const giveUp = pastBound && ++pastLines > HOLD_CAP;
+    while (queue.length > 0 && (giveUp || !waiting(queue[0]!) || queue.length > HOLD_CAP)) yield release();
     if (pastBound && queue.length === 0) return;
   }
   while (queue.length > 0) yield release();
@@ -399,6 +525,11 @@ export async function* find(session: Session, q: FindQuery, stats?: FindStats): 
 export interface FindListing {
   /** The first `limit` hits (all of them with limit 0). */
   hits: Hit[];
+  /**
+   * Hits past the limit that fall inside a shown hit's context: printed once, as rows, and they
+   * keep their `why` (cli.md#find). A continuation starts after the last of them.
+   */
+  inContext: Hit[];
   /** Hits in the whole range scanned. */
   matching: number;
   lines: number;
@@ -410,9 +541,16 @@ export async function findListing(session: Session, q: FindQuery): Promise<FindL
   const limit = q.limit ?? 20;
   const stats: FindStats = { lines: 0, malformed: 0, hits: 0 };
   const hits: Hit[] = [];
+  const inContext: Hit[] = [];
+  let shownRows: Set<string> | undefined;
   const { limit: _drop, ...rest } = q;
   for await (const hit of find(session, rest, stats)) {
-    if (limit === 0 || hits.length < limit) hits.push(hit);
+    if (limit === 0 || hits.length < limit) {
+      hits.push(hit);
+      continue;
+    }
+    shownRows ??= new Set(hits.flatMap((h) => h.context.map((e) => formatId(e.id))));
+    if (shownRows.has(formatId(hit.event.id))) inContext.push(hit);
   }
-  return { hits, matching: stats.hits, lines: stats.lines, malformed: stats.malformed };
+  return { hits, inContext, matching: stats.hits, lines: stats.lines, malformed: stats.malformed };
 }
