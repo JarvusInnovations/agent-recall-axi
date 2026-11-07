@@ -50,6 +50,10 @@ describe("fixtures", () => {
       "two-day",
       "question",
       "gadget",
+      "multi-block",
+      "long-text",
+      "seven-a",
+      "eight-b",
     ]) {
       expect(names).toContain(shape);
     }

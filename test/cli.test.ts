@@ -210,8 +210,8 @@ describe("sessions and home", () => {
   it("lists the current project's sessions with the minimal schema", async () => {
     const { stdout, exitCode } = await run(["sessions", "--limit", "3"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/^project: \/src\/widget \(19 sessions\)$/m);
-    expect(stdout).toMatch(/^count: 3 of 19$/m);
+    expect(stdout).toMatch(/^project: \/src\/widget \(21 sessions\)$/m);
+    expect(stdout).toMatch(/^count: 3 of 21$/m);
     expect(stdout).toContain("sessions[3]{id,started,last,title}:");
     expect(stdout).toContain('b1000011,"11-07 23:50","11-08 00:05 (0s ago)",(pending)');
   });
@@ -236,7 +236,7 @@ describe("sessions and home", () => {
   it("the home view lists the project's sessions, or every project's when the cwd has none", async () => {
     const here = await run([]);
     expect(here.stdout).toMatch(/^description: /m);
-    expect(here.stdout).toMatch(/^project: \/src\/widget \(19 sessions\)$/m);
+    expect(here.stdout).toMatch(/^project: \/src\/widget \(21 sessions\)$/m);
     expect(here.stdout).toContain("sessions[5]{id,last,title}:");
     expect(here.stdout).toMatch(/^latest: b1000011$/m);
     const none = await run([], { cwd: "/elsewhere" });
@@ -249,7 +249,7 @@ describe("help, planned commands, update", () => {
   it("--help lists commands, marks planned ones, and shows no SDK built-in block", async () => {
     const { stdout } = await run(["--help"]);
     expect(stdout).toContain("events <session>");
-    expect(stdout).toContain("(planned: ids-and-show)");
+    expect(stdout).toContain("(planned: pan)");
     expect(stdout).not.toContain("built-in");
     const cmd = await run(["events", "--help"]);
     expect(cmd.stdout).toMatch(/^command: events$/m);
