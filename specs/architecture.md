@@ -131,13 +131,26 @@ stream with a bounded window:
 Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-session-axi/`
 (default `~/.cache/agent-session-axi/`), owner-only. Per file, keyed by its absolute path, it stores:
 an identity record for rewrite detection (byte length, the first line's hash once that line is
-complete, and the last complete line's byte offset, length and hash; the last-indexed seq joins it
-with the line-offset table), line-offset
+complete, and the last complete line's byte offset, length and hash), a line-offset
 table (every 256th line), session stats (`turns`, `calls`, `compactions`, `humans`, `last`,
 `title`), compaction boundary seqs, and, once `recall` has run, a term index (lower-cased word
 tokens → seqs) for `H`, `C` and `call` text. Entries refresh incrementally: an appended file re-indexes
 only lines after `last-indexed seq`. The cache is never required for correctness; every command
 works with it absent and reports `index: none`.
+
+The **line-offset table** is its own record and carries its own identity: the last-indexed seq,
+the byte offset just past that line, the first line's hash and the last indexed line's offset,
+length and hash. A table whose identity no longer matches the file (shorter, head or last indexed
+line changed) is discarded, whatever the identity record says, so a stale table is never used.
+Only complete lines are indexed; a trailing line still being written is left for the next
+extension. Each checkpoint (lines 1, 257, 513, …) records the line's byte offset and the
+classification state at that line, so a read started there classifies exactly as a scan from the
+file start would: the calls still waiting for a result (id, tool, files), the compaction waiting
+for its summary, the turn and window in effect, the last event before it, and the cumulative count
+of events per kind. The table's tail record holds the same state after the last indexed line, which
+is where an append resumes. The per-kind counts give listings an exact `<matching>`, and the
+cumulative counts let a seek pick its start checkpoint without scanning. Records are written via a
+temp file and rename; a reader tolerates a missing, partial or unparseable record as absent.
 
 ## Time
 
