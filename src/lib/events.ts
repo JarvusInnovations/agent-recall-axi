@@ -67,18 +67,35 @@ function inRange(ev: Event, from: ListOpts["from"], to: ListOpts["to"]): boolean
   return true;
 }
 
-/** Every visible event in file order, filtered. Calls are linked to results read later in the stream. */
+/** How many events the stream holds back behind a call still waiting for its result. */
+const HOLD_CAP = 1000;
+
+/**
+ * Every visible event in file order, filtered. A call is yielded once its result has been read
+ * (or the scan ends), so its `status`/`result` are already linked when a streaming consumer sees
+ * it; the events after a waiting call wait with it, keeping file order. With an id bound `to`,
+ * the scan continues past the bound only as far as needed to read the results of calls still
+ * waiting, never yielding events beyond it. A call's status reflects the results read within that
+ * scan span: one whose result never arrives (or arrives after more than 1000 held events) is
+ * yielded `pending`.
+ */
 export async function* events(session: Session, opts: Omit<ListOpts, "limit" | "newestLast"> = {}): AsyncGenerator<Event> {
   checkSession(session, opts.from);
   checkSession(session, opts.to);
   const visible = kindSet(opts.kinds);
   const ctx = newContext(session);
-  const endSeq = isEventId(opts.to) ? opts.to.seq + 1 : undefined;
-  for await (const entry of claudeCode.entries(session, endSeq !== undefined ? { to: endSeq } : undefined)) {
+  const toSeq = isEventId(opts.to) ? opts.to.seq : undefined;
+  const queue: Event[] = [];
+  const waiting = (ev: Event) => ev.kind === "call" && ev.toolUseId !== undefined && ctx.pending.get(ev.toolUseId) === ev;
+  for await (const entry of claudeCode.entries(session)) {
+    const pastBound = toSeq !== undefined && entry.seq > toSeq;
     for (const ev of claudeCode.classify(entry, ctx)) {
-      if (visible.has(ev.kind) && inRange(ev, opts.from, opts.to)) yield ev;
+      if (!pastBound && visible.has(ev.kind) && inRange(ev, opts.from, opts.to)) queue.push(ev);
     }
+    while (queue.length > 0 && (!waiting(queue[0]!) || queue.length > HOLD_CAP)) yield queue.shift()!;
+    if (pastBound && queue.length === 0) return;
   }
+  yield* queue;
 }
 
 /** A bounded listing: oldest first from `from`, or the newest `limit` rows. */

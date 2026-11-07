@@ -261,3 +261,31 @@ describe("classify: authority edges", () => {
     expect(evs[0]).toMatchObject({ kind: "human", text: "ship the widget", meta: { hook: "UserPromptSubmit", hook_text: "ok" } });
   });
 });
+
+describe("events(): the streaming generator", () => {
+  it("yields a call with its result linked, even when the result lies past an id bound", async () => {
+    const { events } = await import("../src/lib/events.js");
+    const session = await openSession(fx("parallel-tools"));
+    const seen: Array<[string, string]> = [];
+    // `to` excludes everything from :5 on; the results of :2 and :4 are at :8 and :7.
+    for await (const ev of events(session, { kinds: ["call"], to: { session: "a3000003", seq: 5 } })) {
+      seen.push([formatId(ev.id), ev.status?.state ?? "?"]); // the status at the moment it was yielded
+    }
+    expect(seen).toEqual([
+      ["a3000003:2", "error"],
+      ["a3000003:3", "ok"],
+      ["a3000003:4", "ok"],
+    ]);
+    const listed = await listEvents(session, { kinds: ["call"], to: { session: "a3000003", seq: 5 }, limit: 0 });
+    expect(listed.rows.map((e) => e.status?.state)).toEqual(["error", "ok", "ok"]);
+  });
+
+  it("a call whose result never arrives is yielded pending at the end", async () => {
+    const { events } = await import("../src/lib/events.js");
+    const session = await openSession(fx("parallel-tools"));
+    const all: Event[] = [];
+    for await (const ev of events(session)) all.push(ev);
+    expect(all.map((e) => formatId(e.id))).toEqual((await listEvents(session, { limit: 0 })).rows.map((e) => formatId(e.id)));
+    expect(all.at(-1)!.status).toEqual({ state: "pending" });
+  });
+});
