@@ -80,8 +80,10 @@ export async function* readLinesBackward(path: string, blockSize = BLOCK_SIZE): 
     const { size } = await fh.stat();
     if (size === 0) return;
     let end = size;
-    // Bytes of the line whose start has not been found yet (everything after the newest newline seen).
-    let carry: Buffer = Buffer.alloc(0);
+    // The line whose start has not been found yet (everything after the newest newline seen), as
+    // pieces newest first; joined once when its start turns up, so a very long line costs one copy.
+    let carry: Buffer[] = [];
+    const join = (head: Buffer): Buffer => (carry.length === 0 ? head : Buffer.concat([head, ...carry.reverse()]));
     // The first fragment emitted is what follows the file's final newline: empty, or a partial line.
     let first = true;
     const emit = (offset: number, bytes: Buffer): BackwardLine | undefined => {
@@ -99,15 +101,16 @@ export async function* readLinesBackward(path: string, blockSize = BLOCK_SIZE): 
       while (stop > 0) {
         const nl = buf.lastIndexOf(NL, stop - 1);
         if (nl === -1) break;
-        const line = emit(start + nl + 1, Buffer.concat([buf.subarray(nl + 1, stop), carry]));
-        carry = Buffer.alloc(0);
+        const line = emit(start + nl + 1, join(buf.subarray(nl + 1, stop)));
+        carry = [];
         if (line) yield line;
         stop = nl;
       }
-      carry = Buffer.concat([buf.subarray(0, stop), carry]);
+      // `buf` is fresh per block, so the piece can be kept without copying.
+      if (stop > 0) carry.push(buf.subarray(0, stop));
       end = start;
     }
-    const line = emit(0, carry);
+    const line = emit(0, join(Buffer.alloc(0)));
     if (line) yield line;
   } finally {
     await fh.close();

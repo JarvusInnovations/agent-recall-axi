@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildLarge } from "./fixtures/build.js";
+import { readLinesBackward } from "../src/lib/reader.js";
 import { BIN_JS } from "./helpers/run.js";
 
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
@@ -34,4 +35,19 @@ describe("streaming on a 200 MB session", () => {
     expect(kb / 1024).toBeLessThan(150);
     expect(ms).toBeLessThan(2000 * SLACK);
   }, 120_000);
+});
+
+describe("backward reader on a very long line", () => {
+  it("joins an 8 MB line read in 2 KB blocks once, not per block", async () => {
+    const path = join(tmp, "long-line.jsonl");
+    const longLine = "x".repeat(8 << 20);
+    writeFileSync(path, `a\n${longLine}\nb\n`);
+    const t0 = process.hrtime.bigint();
+    const lines: string[] = [];
+    for await (const l of readLinesBackward(path, 2048)) lines.push(l.text.length > 16 ? `len ${l.text.length}` : l.text);
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    expect(lines).toEqual(["b", `len ${longLine.length}`, "a"]);
+    // Re-concatenating the carry per block made this ~8 s; one join is a few hundred ms.
+    expect(ms).toBeLessThan(2000 * SLACK);
+  });
 });
