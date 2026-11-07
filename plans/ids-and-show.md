@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [reader-and-event-model]
 specs:
   - specs/data-model.md
@@ -89,53 +89,69 @@ Out of scope: pan verbs (`pan`), search (`find`), the offset cache (`pan`).
 
 ## Notes
 
-Spec readings this plan settled, written into `cli.md`, `data-model.md` and `api.md` in the two
-leading `docs(specs):` commits:
+Spec readings this plan settled. The first set went into the two leading `docs(specs):`
+commits; the review round's rulings went into the third (`review rulings for show, pointers,
+hints and the identity record`):
 
 - **`--project`/`--all` on every command that resolves a `<session>` or `<id>`.**
-  `time-and-scope.md` already pointed `NO_SESSIONS` at them, but `cli.md` usage lines never
-  listed them.
-- **`show --session <ref>`** is what makes "a bare `418` only with `--session`" testable at the
-  CLI. With both a full id and `--session`, the id's `<s8>` must be that session's.
-- **`latest` is the newest main session.** A subagent file is often touched last, but it is
-  reached by its agentId, never as `latest`.
-- **`show --fields` is a projection** (keep only these fields). Every field already prints by
-  default, so a detail view has nothing to add.
+  `time-and-scope.md` already pointed `NO_SESSIONS` at them, but `cli.md` never listed them.
+- **`show --session <ref>`** makes "a bare `418` only with `--session`" testable at the CLI.
+  With both a full id and `--session`, the id's `<s8>` must be that session's.
+- **`latest` is the newest main session.** A subagent is reached by its agentId, never as
+  `latest`.
+- **`show --fields` is a projection** (keep only these fields; the id always prints).
 - **The `show` shape:** `event:` for one event; `entry:` + `t` + `blocks[N]` for a bare
   multi-event id; `uuid`/`parent_uuid` close every entry; absent fields are omitted. A silent
   entry prints `kind: silent`, `type` and `raw:` with nearest-event hints. A malformed line adds
-  `malformed: true`; a trailing line still being written adds `partial: true`.
+  `malformed: true`; a line still being written adds `partial: true`.
+- **`show` never cuts `H` text** (review ruling). The 4,000-char cap covers `C`/`D` text,
+  input JSON, result text and `meta` strings. Byte-identity is about content: a TOON quoted
+  string decodes to the stored bytes.
+- **`--raw` is the parsed line as nested TOON** (a malformed line as a string), with each
+  string capped at 4,000 chars unless `--full`. With a block id it prints the whole line.
+- **Pointer containment** (review finding, privacy). An unwrapped notice counts only when it
+  opens the text. A pointer is followed only when its real path is a regular file inside
+  `<sidecar>/tool-results/`; any other pointer prints `followed: false` and the reason. The
+  session's own copy wins over the stored path. `readPointer` takes the session, because
+  containment needs its sidecar.
+- **Hints use the full id when an `<s8>` is shared in scope** (review finding). An ambiguous
+  id suggests `--session <uuid>` per candidate, because an id's `<s8>` cannot be lengthened.
+- **The identity record**: length, first-line hash (only once that line is complete), and the
+  last complete line's offset/length/hash. The last-indexed seq arrives with `pan`. The notice
+  is computed before the read and rides on errors in `details.notice`.
+- **`linkedResult(session, event)`** takes any linked event and returns its partner.
 
 Decisions recorded only here:
 
-- `turn` is the nearest preceding `human`/`human.slash`; a compaction belongs to the window it
-  closes (window = compactions strictly before it); the summary after it opens the next window.
-  `views` owns turn segmentation and may refine this, but it must agree with `show`.
+- `turn` is the nearest preceding `human`/`human.slash`. A compaction belongs to the window it
+  closes; the summary after it opens the next window. `views` owns turn segmentation and must
+  agree with `show`.
 - `preserved: <n> events` counts the events of the entries whose uuids the boundary lists, as
-  seen before the boundary in the file.
-- `show` caps `H` text at 4,000 chars like every kind, per the caps table, with the marker and
-  `--full`. `authority.md`'s verbatim guarantee is read as "never rewritten", and a marked cut is
-  not a rewrite. `human` and `resume-pack` keep their own budgets.
-- `--raw` prints the parsed line as nested TOON, not literal JSON, so stdout stays TOON. Each
-  string value over 4,000 chars is cut with the house marker unless `--full`.
-- `--raw` with a block id prints the whole line (`entry:`); the block is not validated.
-- A single-event entry's id is the entry form. `<id>.1` of it is `NOT_FOUND` naming the right id,
-  never silently accepted.
-- A call target is "a path" when it is in the event's `files` (path-valued input). Such a target
-  is never cut. In a shell command, path-like tokens are kept whole and the rest is cut.
-- The rewrite identity is length + first-line hash + the last read line's offset/length/hash.
-  It stores an offset, not the seq that `architecture.md#cache` names: seq bookkeeping arrives
-  with the offset table in `pan`. A notice prints once on `events`, `tail` and `show`; then the
-  new identity is recorded.
-- `AMBIGUOUS_SESSION` candidates carry `title: (pending)` until titles land.
-- Listing hints name a session by `<s8>` plus the scope flag it resolved in. When the caller
-  gave a path, they name it by path and point `show` hints at `--session <path>`. `sessions`
-  and the home view now hint `tail <s8>`.
-- Tests get a throwaway `XDG_CACHE_HOME` from the vitest global setup and the run helper. An
-  early local run without it wrote fixture identities into the real cache, which was deleted.
+  seen before the boundary.
+- A single-event entry's id is the entry form. `<id>.1` of it is `NOT_FOUND` naming the right id.
+- Truncation never lands inside a URL, an id or (in call targets) a path token, but a
+  protected span may move a cut at most one cap past `n`. A longer span is cut hard, so a head
+  stays within twice its cap. A path target is kept whole within the same bound.
+- Only an existing regular file counts as a path ref. Hex-named files get a lowercase `<s8>`.
+  An id given to `--from`/`--to` is lowercased before the id grammar is tried. A session that
+  resolves by id but cannot be read is `UNREADABLE` with `details.path`, and a stray
+  EACCES/EPERM maps the same way.
+- AgentIds checked locally (read-only, filenames only, nothing copied): 1,273 subagent
+  transcripts across this machine's logs, all `agent-<17 hex>`. The hex-prefix grammar covers
+  them, so no non-hex agentId form was added.
+- Tests get a throwaway `XDG_CACHE_HOME` from the vitest global setup, which the run helper
+  reuses. An early local run without it wrote fixture identities into the real cache, which
+  was deleted. Earlier runs also left per-file `asa-cache-*` dirs in the system temp dir; no
+  new ones are created now. The old ones were not removed here (the deletion was refused in
+  this environment), so the owner has to remove them by hand.
 - `show` scans from the file start (no offset cache yet), so its cost grows with the entry's
-  position. It was not measured here. The plan put that measurement in `pan`, which now owns it
-  as a Validation item.
+  position. It was not measured here; `pan` owns that measurement as a Validation item.
+- **Review round 1** (15 findings + 4 rulings): every fix landed test-first. Each new test was
+  run against the old code and failed, except the `--fields target` cut count. That one had no
+  observable failure through real events, because the text column and the target column share
+  one cap; the unit test uses a synthetic event that carries a target on a non-call kind.
+  Evidence on the final tree: `bun run check` and `bun run build` clean; `bun run test` 18
+  files, 145 tests passed (unit + perf).
 
 ## Follow-ups
 
