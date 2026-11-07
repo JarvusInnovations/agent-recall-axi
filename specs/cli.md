@@ -312,7 +312,8 @@ The pan verbs. Same rows as `events`; the difference is where they start.
 - A bare entry id of an entry that yields several events anchors on the whole entry: `around`
   shows every visible block of it as the anchor, `next`/`prev` start after/before all of them.
 - Header: `session:`, `anchor: <id>`, `day:`/`days:`, `tz:`, and `count: <shown> of <matching>`
-  where `<matching>` is every visible event of the session (of the kinds shown).
+  where `<matching>` is every visible event of the session (of the kinds shown); it is printed
+  even when no rows are (`count: 0 of 4120`).
 - Starting from a silent entry or a hidden-kind event is fine: travel begins at the nearest
   visible event in the direction of travel, and the header says so in `anchor_note:` (for example
   `silent entry, not shown; travel starts at the nearest visible event (7a2f1c3e:416)`, or
@@ -339,10 +340,12 @@ The last `n` visible rows (default 20): "what was I doing". Equivalent to `event
 the default limit, kept as a verb because it is the most common call. Footer: `prev <first-id>`,
 `resume-pack <session>`.
 
-`tail` and the default `events` read the file backwards and never build the offset table. When
-the table already exists (a pan command or `show` built it), its per-kind counts make the header
-exact, `count: 20 of 4120`; without it the header says `count: 20 (newest; earlier rows exist)`
-unless the read reached the file start.
+`tail` and the default `events` never create the offset table. When one already exists (a pan
+command or `show` built it), they extend it over an append of up to 8 MB and read their rows
+forwards from the checkpoint before the window, the same engine as `prev` from the end, so the
+rows and the exact count `count: 20 of 4120` always agree. Without a table (or when more than
+8 MB was appended since it was built) they read the file backwards and the header says
+`count: 20 (newest; earlier rows exist)` unless the read reached the file start.
 
 ## `show <id>` (alias: `zoom`)
 

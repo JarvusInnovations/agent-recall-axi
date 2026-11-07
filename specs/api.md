@@ -77,8 +77,9 @@ linkedResult(session: Session, event: Event): Promise<Event | undefined>   // a 
 The pan results also carry `matching` (every visible event of the session, of the kinds asked)
 and, when the anchor is not a visible event, `anchorNote` (`"silent"` or the hidden kind) with the
 nearest visible ids in each direction. `opts` takes `kinds`; `around`/`next`/`prev` build or
-extend the line-offset table (`architecture.md#cache`); `tail` never builds one, and uses (and
-extends over a small append) one that exists.
+extend the line-offset table (`architecture.md#cache`); `tail` never creates one, and uses one
+that exists, extending it over an append of up to 8 MB (a larger append falls back to the
+backward read).
 
 `Shown` carries the `Entry` (with `raw`), the line count, the events the id selects (one for an
 event id, all of them for a bare id of a multi-event entry, none for a silent entry) each with
