@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { resolveScope } from "../src/lib/scope.js";
-import { sessionListing } from "../src/lib/session.js";
+import { describeSession, openSession, sessionListing } from "../src/lib/session.js";
 import { AgentSessionError } from "../src/lib/errors.js";
 import { FIXTURE_ROOT } from "./fixtures/build.js";
+import { fx } from "./helpers/run.js";
 
 const env = { CLAUDE_CONFIG_DIR: FIXTURE_ROOT };
 
@@ -53,5 +54,13 @@ describe("scope", () => {
     const windowed = await sessionListing({ env, project: "all" }, { from: new Date("2026-11-07T00:00:00Z"), to: new Date("2026-11-07T23:00:00Z"), limit: 0 });
     expect(windowed.sessions.some((s) => s.short === "c1000013")).toBe(false);
     expect(windowed.sessions.some((s) => s.short === "b1000011")).toBe(false);
+  });
+
+  it("started and last come from each entry's own timestamp, not one nested in its payload", async () => {
+    // The first entry's attachment and the last entry's tool input carry their own `timestamp`
+    // fields, written ahead of the entry's.
+    const info = await describeSession(await openSession(fx("authority-edges")));
+    expect(info.started).toBe("2026-11-07T13:40:02.000Z");
+    expect(info.last).toBe("2026-11-07T13:40:24.000Z");
   });
 });

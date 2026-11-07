@@ -20,12 +20,24 @@ export interface SessionInfo extends Session {
 const HEAD_SCAN_BYTES = 1 << 20;
 const TAIL_SCAN_BYTES = 256 << 10;
 
-const TS_RE = /"timestamp":"([^"]+)"/;
+/** A cheap prefilter: most silent lines carry no timestamp at all. */
+const TS_RE = /"timestamp":"/;
 
+/**
+ * The entry's own (top-level) `timestamp`. A `"timestamp":"…"` substring can also sit inside the
+ * payload (a tool input, an attachment) ahead of the entry's, so the line is parsed.
+ */
 function lineTimestamp(text: string): string | undefined {
-  const m = TS_RE.exec(text);
-  if (!m) return undefined;
-  const t = Date.parse(m[1]!);
+  if (!TS_RE.test(text)) return undefined;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const ts = typeof obj === "object" && obj !== null ? (obj as { timestamp?: unknown }).timestamp : undefined;
+  if (typeof ts !== "string") return undefined;
+  const t = Date.parse(ts);
   return Number.isNaN(t) ? undefined : new Date(t).toISOString();
 }
 

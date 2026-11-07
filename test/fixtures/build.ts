@@ -485,6 +485,47 @@ function question(): Fixture {
   return { name: "question", session: s };
 }
 
+export const NESTED_TS_EARLY = "2026-11-01T09:00:00.000Z";
+export const NESTED_TS_LATE = "2026-12-25T00:00:00.000Z";
+
+/**
+ * The edges of the authority rules: text that looks like a wrapper but is the human's, a hook
+ * wrapper followed by a prompt, sidechain prompts in a main file, a multi-question answer, a
+ * persisted path with a space, and `timestamp` fields nested inside an entry's payload.
+ */
+function authorityEdges(): Fixture {
+  const id = "b3000014";
+  const s = new SessionBuilder("widget", id, START);
+  // A queued prompt whose attachment carries its own (earlier) timestamp ahead of the entry's.
+  s.attachment({ type: "queued_command", prompt: "start with the flange", commandMode: "prompt", origin: { kind: "human" }, timestamp: NESTED_TS_EARLY });
+  s.human("what does the <command-name> tag mean?");
+  s.say("It names the slash command that was run.");
+  // Older logs: no origin; the hook wrapper and then the prompt in one string.
+  s.user("<user-prompt-submit-hook>widget lint: clean</user-prompt-submit-hook>\nnow bump the gadget version");
+  s.user([{ type: "text", text: "[Image #1] why is this widget row misaligned?" }, { type: "text", text: "[Image #2]" }], { origin: { kind: "human" }, promptSource: "typed" });
+  s.human("This session is being continued from a previous conversation, so here is my recap: the flange split is done.");
+  // A sidechain prompt inside a main session file: the parent agent's text.
+  s.user("Survey the sprockets under src/sprocket.", { isSidechain: true });
+  s.assistant([
+    s.toolUse(TOOL(id, 1), "AskUserQuestion", {
+      questions: [
+        { question: "Which channel?", options: [{ label: "beta" }, { label: "stable" }] },
+        { question: "Which regions?", options: [{ label: "eu" }, { label: "us" }], multiSelect: true },
+      ],
+    }),
+  ]);
+  s.toolResult(TOOL(id, 1), 'User has answered your questions: "Which channel?"="beta", "Which regions?"="eu, us".', {
+    toolUseResult: { questions: [{ question: "Which channel?" }, { question: "Which regions?" }], answers: { "Which channel?": "beta", "Which regions?": ["eu", "us"] } },
+  });
+  const stored = `/fixture-root/projects/${PROJECTS.widget.encoded}/${s.id}/tool-results/bfx 0003.txt`;
+  const full = deterministicText(VOCAB, 3100);
+  s.assistant([s.toolUse(TOOL(id, 2), "Bash", { command: "cat 'logs/gadget run.log'", description: "Show log" })]);
+  s.toolResult(TOOL(id, 2), `<persisted-output>\nOutput too large (3.1KB). Full output saved to: ${stored}\n\nPreview (first 2KB):\n${full.slice(0, 2000)}\n...\n</persisted-output>`);
+  // A tool input with its own timestamp field, written ahead of the entry's.
+  s.assistant([s.toolUse(TOOL(id, 3), "ScheduleWakeup", { timestamp: NESTED_TS_LATE, note: "check the gadget build" })]);
+  return { name: "authority-edges", session: s, files: { [`${s.id}/tool-results/bfx 0003.txt`]: full } };
+}
+
 function gadgetProject(): Fixture {
   const s = new SessionBuilder("gadget", "c1000013", "2026-11-06T10:00:00.000Z");
   s.human("add a gadget counter");
@@ -512,6 +553,7 @@ export function fixtures(): Fixture[] {
     outOfOrder(),
     twoDay(),
     question(),
+    authorityEdges(),
     gadgetProject(),
   ];
 }
