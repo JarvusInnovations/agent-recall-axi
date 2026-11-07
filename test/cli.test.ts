@@ -210,8 +210,8 @@ describe("sessions and home", () => {
   it("lists the current project's sessions with the minimal schema", async () => {
     const { stdout, exitCode } = await run(["sessions", "--limit", "3"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/^project: \/src\/widget \(21 sessions\)$/m);
-    expect(stdout).toMatch(/^count: 3 of 21$/m);
+    expect(stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
+    expect(stdout).toMatch(/^count: 3 of 22$/m);
     expect(stdout).toContain("sessions[3]{id,started,last,title}:");
     expect(stdout).toContain('b1000011,"11-07 23:50","11-08 00:05 (0s ago)",(pending)');
   });
@@ -236,7 +236,7 @@ describe("sessions and home", () => {
   it("the home view lists the project's sessions, or every project's when the cwd has none", async () => {
     const here = await run([]);
     expect(here.stdout).toMatch(/^description: /m);
-    expect(here.stdout).toMatch(/^project: \/src\/widget \(21 sessions\)$/m);
+    expect(here.stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
     expect(here.stdout).toContain("sessions[5]{id,last,title}:");
     expect(here.stdout).toMatch(/^latest: b1000011$/m);
     const none = await run([], { cwd: "/elsewhere" });
@@ -259,11 +259,11 @@ describe("help, planned commands, update", () => {
   });
 
   it("a planned command says so instead of failing obscurely", async () => {
-    const { stdout, exitCode } = await run(["find", "x"]);
+    const { stdout, exitCode } = await run(["recall", "x"]);
     expect(exitCode).toBe(2);
-    expect(stdout).toContain("planned: find");
+    expect(stdout).toContain("planned: sessions-and-recall");
     // errors.md#codes: a USAGE error's help is the command's usage line.
-    expect(stdout).toContain("usage: agent-session-axi find [<session>] [<phrase>]");
+    expect(stdout).toContain("usage: agent-session-axi recall <phrase>");
     const flag = await run(["events", fx("thinking"), "--window", "last"]);
     expect(flag.exitCode).toBe(2);
     expect(flag.stdout).toContain("planned: views");

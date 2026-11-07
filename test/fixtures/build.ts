@@ -602,6 +602,47 @@ function gadgetProject(): Fixture {
   return { name: "gadget", session: s };
 }
 
+// ---------------------------------------------------------------------------------------------
+// find (plans/find.md): every handle find takes, in one session
+
+export const FIND_DEEP_WORD = "zanzibar-quartz";
+
+/**
+ * A session for `find`: a phrase in human, assistant, call-input and result text (with a hidden
+ * thinking row between hits), calls that touch `config/staging.env` by path and by shell
+ * command, several shell calls, a persisted output whose phrase is only in the file, and two
+ * halves an hour and a half apart so `--since 1h` selects the second.
+ */
+function findSession(): Fixture {
+  const id = "e1000018";
+  const s = new SessionBuilder("widget", id, "2026-11-07T12:00:00.000Z");
+  s.human("the deploy keeps hitting the old redirect after login");
+  s.say("Checking the redirect handler first.");
+  s.assistant([{ type: "thinking", thinking: "The REDIRECT is probably cached somewhere.", signature: "sig-fixture" }]);
+  s.assistant([s.toolUse(TOOL(id, 1), "Read", { file_path: "config/staging.env" })]);
+  s.toolResult(TOOL(id, 1), "1\tAPP_HOST=staging.example.test\n2\tOAUTH_REDIRECT=https://old.example.test/callback\n", {
+    toolUseResult: { type: "text", file: { filePath: "config/staging.env", content: "APP_HOST=staging.example.test\n" } },
+  });
+  s.assistant([s.toolUse(TOOL(id, 2), "Grep", { pattern: "redirect_uri", path: "src" })]);
+  s.toolResult(TOOL(id, 2), "src/widget/callback.ts:12: const uri = cfg.uri;");
+  s.assistant([s.toolUse(TOOL(id, 3), "Bash", { command: "grep -n HOST config/staging.env", description: "Find the host" })]);
+  s.toolResult(TOOL(id, 3), "1:APP_HOST=staging.example.test", { toolUseResult: { stdout: "1:APP_HOST=staging.example.test", stderr: "", interrupted: false } });
+  s.assistant([s.toolUse(TOOL(id, 4), "Edit", { file_path: "config/staging.env", old_string: "old.example.test", new_string: "new.example.test" })]);
+  s.toolResult(TOOL(id, 4), "The file config/staging.env has been updated.", { toolUseResult: { filePath: "config/staging.env" } });
+  s.assistant([s.toolUse(TOOL(id, 5), "Bash", { command: "bun test src/widget.test.ts", description: "Run tests" })]);
+  s.toolResult(TOOL(id, 5), "3 pass\n0 fail", { toolUseResult: { stdout: "3 pass", stderr: "", interrupted: false } });
+  s.at("2026-11-07T13:30:00.000Z");
+  s.human("now deploy it to staging");
+  s.say("Deploying now; the deploy script prints a lot.");
+  const preview = deterministicText(VOCAB, 2000);
+  const full = `${preview}${deterministicText(VOCAB, 3000)}\nfinal line: ${FIND_DEEP_WORD} checksum ok\n`;
+  const stored = `/fixture-root/projects/${PROJECTS.widget.encoded}/${s.id}/tool-results/bfx0004.txt`;
+  s.assistant([s.toolUse(TOOL(id, 6), "Bash", { command: "./scripts/deploy.sh staging", description: "Deploy" })]);
+  s.toolResult(TOOL(id, 6), `<persisted-output>\nOutput too large (5.1KB). Full output saved to: ${stored}\n\nPreview (first 2KB):\n${preview}\n...\n</persisted-output>`);
+  s.say("Deployed to staging.");
+  return { name: "find", session: s, files: { [`${s.id}/tool-results/bfx0004.txt`]: full } };
+}
+
 export function fixtures(): Fixture[] {
   return [
     stringContent(),
@@ -627,6 +668,7 @@ export function fixtures(): Fixture[] {
     longText(),
     ...prefixCollisions(),
     gadgetProject(),
+    findSession(),
   ];
 }
 

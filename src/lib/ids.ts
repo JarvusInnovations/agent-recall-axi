@@ -104,8 +104,18 @@ function whereOf(resolved: ResolvedScope): string {
   return p ? p.cwd : resolved.root;
 }
 
-function widenHints(resolved: ResolvedScope): string[] {
-  const hints = [`Run \`${BIN} sessions --subagents${resolved.all ? " --all" : ""}\` to list the sessions in scope`];
+/** The scope flags the caller gave, as a hint must carry them so it lists the same sessions. */
+function scopeFlags(resolved: ResolvedScope, scope: Scope): string {
+  if (resolved.all) return " --all";
+  if (typeof scope.project === "string") {
+    const p = scope.project;
+    return ` --project ${/^[\w@%+=:,./~-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`}`;
+  }
+  return "";
+}
+
+function widenHints(resolved: ResolvedScope, scope: Scope): string[] {
+  const hints = [`Run \`${BIN} sessions --subagents${scopeFlags(resolved, scope)}\` to list the sessions in scope`];
   if (!resolved.all) hints.push("Pass `--all` to resolve against every project, or `--project <path>` for another one");
   return hints;
 }
@@ -125,7 +135,7 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
   const matches = exact.length ? exact : all.filter((s) => matchesPrefix(s, prefix));
   if (matches.length === 1) return matches[0]!;
   if (matches.length === 0) {
-    throw new AgentSessionError(`no session matches ${prefix} in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved));
+    throw new AgentSessionError(`no session matches ${prefix} in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved, scope));
   }
   const candidates = matches.map((s) => {
     const c: Record<string, string> = { id: s.id, kind: s.kind };
@@ -178,7 +188,7 @@ async function latest(scope: Scope): Promise<Session> {
       if (!best || mtime > best.mtime || (mtime === best.mtime && s.id > best.s.id)) best = { s, mtime };
     }
   }
-  if (!best) throw new AgentSessionError(`no sessions in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved));
+  if (!best) throw new AgentSessionError(`no sessions in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved, scope));
   return best.s;
 }
 

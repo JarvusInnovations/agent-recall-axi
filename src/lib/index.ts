@@ -39,3 +39,6 @@ export async function openRoot(opts: { root?: string } = {}): Promise<{ root: st
 export async function* listProjects(scope: Scope = {}): AsyncGenerator<Project> {
   for (const p of await allProjects(rootOf(scope))) yield p;
 }
+
+// find (specs/api.md#searching)
+export { backtrackRisk, compileQuery, find, findListing, globRegex, WHY_ORDER, type FindListing, type FindQuery, type FindStats, type Hit, type Why } from "./find.js";

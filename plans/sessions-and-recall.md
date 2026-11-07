@@ -49,6 +49,10 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
    (deferred from [`reader-and-event-model`](reader-and-event-model.md)).
 7. `AMBIGUOUS_SESSION` candidates (`src/lib/ids.ts`) carry the session title from the same
    precedence instead of `(pending)` (deferred from [`ids-and-show`](ids-and-show.md)).
+8. `find`'s footer gains the `find "<phrase>" --all` hint (cli.md#find example) once
+   cross-session scope runs, and `find` without `<session>` stops failing with the
+   not-yet-available USAGE error (deferred from [`find`](find.md), which omitted the hint
+   rather than print one that fails).
 
 ## Validation
 
@@ -77,6 +81,8 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
       that project's entries; `cache status` reports sizes.
 - [ ] A fixture whose newest timestamp lies more than 256 KB before the end of the file lists
       that timestamp as `last` (from `reader-and-event-model`).
+- [ ] `find <s8> "phrase"` prints a `find "phrase" --all` hint that runs, and `find "phrase"`
+      with no session searches the current project (from `find`).
 - [ ] An ambiguous prefix's `AMBIGUOUS_SESSION` `details.candidates` show each session's real
       title (from `ids-and-show`).
 - [ ] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
