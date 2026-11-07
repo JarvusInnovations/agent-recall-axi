@@ -77,7 +77,14 @@ function render(a: RenderArgs): string {
   header[a.label] = rendered.rows;
   const first = listing.rows[0]!.id;
   const last = listing.rows[shown - 1]!.id;
-  if (!listing.atStart) help.push(`Run \`${BIN} events ${s} --to ${formatId(first)}${view}\` for earlier rows`);
+  if (!listing.atStart) {
+    // tail's footer is the pan verb (cli.md#tail-session); events keeps its range form, which carries the bound.
+    help.push(
+      a.label === "tail"
+        ? `Run \`${BIN} prev ${formatId(first)}${a.hint.showCarry}${view}\` for earlier rows`
+        : `Run \`${BIN} events ${s} --to ${formatId(first)}${view}\` for earlier rows`,
+    );
+  }
   if (!listing.atEnd) help.push(`Run \`${BIN} events ${s} --from ${after(last)}${toBound}${view}\` for later rows`);
   if (rendered.cut > 0) {
     const rows = `${rendered.cut} row${rendered.cut === 1 ? "" : "s"}`;
@@ -127,7 +134,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   scopeOf("events", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("events", ref, p, io);
-  const opts: ListOpts = { limit };
+  const opts: ListOpts = { limit, cache: { env: io.env } };
   if (kinds) opts.kinds = kinds;
   if (range.from) opts.from = range.from;
   if (range.to) opts.to = range.to;
@@ -159,7 +166,7 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   scopeOf("tail", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("tail", ref, p, io);
-  const opts: ListOpts = { limit };
+  const opts: ListOpts = { limit, cache: { env: io.env } };
   if (kinds) opts.kinds = kinds;
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => listEvents(session, opts));

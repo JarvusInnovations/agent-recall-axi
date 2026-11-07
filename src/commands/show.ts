@@ -247,7 +247,7 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
   let shown: Shown;
   try {
     // `--raw` prints the stored line, so any seq works and a block index only names the line.
-    shown = await show(s, raw ? { session: id.session, seq: id.seq } : id);
+    shown = await show(s, raw ? { session: id.session, seq: id.seq } : id, { cache: { env: io.env } });
   } catch (err) {
     // Beyond the end: the `tail` hint must resolve the way this id did.
     if (err instanceof AgentSessionError && err.code === "NOT_FOUND" && typeof err.details?.lines === "number") {
