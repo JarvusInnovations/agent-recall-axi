@@ -130,7 +130,9 @@ stream with a bounded window:
 
 Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-session-axi/`
 (default `~/.cache/agent-session-axi/`), owner-only. Per file, keyed by its absolute path, it stores:
-byte length, first-line hash, last-indexed line hash and seq (for rewrite detection), line-offset
+an identity record for rewrite detection (byte length, the first line's hash once that line is
+complete, and the last complete line's byte offset, length and hash; the last-indexed seq joins it
+with the line-offset table), line-offset
 table (every 256th line), session stats (`turns`, `calls`, `compactions`, `humans`, `last`,
 `title`), compaction boundary seqs, and, once `recall` has run, a term index (lower-cased word
 tokens → seqs) for `H`, `C` and `call` text. Entries refresh incrementally: an appended file re-indexes

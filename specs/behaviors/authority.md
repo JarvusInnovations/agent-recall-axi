@@ -37,8 +37,12 @@ the past, not the past.
 For `H` events: the text printed by `human`, `resume-pack` and `show` is byte-identical to the
 stored text after the adapter strips harness wrappers it can prove are not the human's
 (`<system-reminder>` envelopes around queued messages, `<command-*>` tags around slash commands).
-Listing rows cut a head and mark the cut; they never rewrite. No command paraphrases, merges,
-deduplicates or reorders `H` events.
+Listing rows cut a head and mark the cut; they never rewrite. `show` never cuts `H` text (its
+4,000-char cap applies to `C`/`D` text only, `behaviors/truncation.md#caps`). No command
+paraphrases, merges, deduplicates or reorders `H` events.
+
+"Byte-identical" is about content, not the output encoding: a text printed as a TOON quoted
+string (`"line one\nline two"`) decodes to exactly the stored bytes. Encoding is not rewriting.
 
 ### Misclassification bias
 

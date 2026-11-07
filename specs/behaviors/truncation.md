@@ -18,7 +18,8 @@ Every command.
 | --- | --- | --- |
 | row `text` head | 200 chars | `--head <n>` |
 | row `call` target | 120 chars | `--head <n>` (same flag; target gets min(n, 120)) |
-| `show` text, input JSON, result text | 4,000 chars each | `--full` |
+| `show` text of `C`/`D` events, input JSON, result text, `meta` strings | 4,000 chars each | `--full` |
+| `show` text of `H` events | never cut | — |
 | `human` total output | 12,000 chars, newest kept | `--budget <chars>`, `--full` |
 | `resume-pack` total | 16,000 chars | `--budget <chars>` |
 | rows per listing | `--limit` default per command (`cli.md`) | `--limit <n>`; `--limit 0` = no cap |

@@ -70,7 +70,8 @@ windows(session: Session): Promise<Window[]>
 compactions(session: Session): Promise<Event[]>               // kind "compaction", with meta + summary id
 humanMessages(session: Session, opts?: ListOpts & { budget?: number }): Promise<{ messages: Event[]; omitted: number; continueTo?: EventId; summary?: Event }>
 toolCalls(session: Session, opts?: ListOpts & { name?: string; file?: string; errors?: boolean }): AsyncIterable<Event>
-readPointer(pointer: Pointer): Promise<{ text: string; exists: boolean }>
+readPointer(pointer: Pointer, session: Session): Promise<{ text: string; exists: boolean; followed: boolean; reason?: string }>
+linkedResult(session: Session, event: Event): Promise<Event | undefined>   // a call's result, a result's call
 ```
 
 `Shown` carries the `Entry` (with `raw`), the line count, the events the id selects (one for an

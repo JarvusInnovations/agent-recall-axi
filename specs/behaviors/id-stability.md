@@ -40,9 +40,12 @@ The tool does not remap, repair, or renumber ids after a rewrite, and no command
 work across one. What it does owe is a notice: if a writer ever rewrites a log in place, earlier
 ids point at different lines and the tool must not hide it:
 
-- The cache (`architecture.md#cache`) records, per file, the byte length and a hash of the first
-  line and of the last indexed line. On the next read, a shorter file or a changed hash marks the
-  file `rewritten` and the cache for it is discarded.
+- The cache (`architecture.md#cache`) records, per file, the byte length, a hash of the first
+  line (once it is complete) and the offset, length and hash of the last complete line read. On
+  the next read, a shorter file or a changed hash marks the file `rewritten` and the cache for it
+  is discarded. An empty file or a first line still being written records no head hash, so the
+  append that completes it is never a rewrite. (The last-indexed seq joins the record with the
+  line-offset table.)
 - A listing over a file marked `rewritten` since the last read carries `notice: session file was
   rewritten since <time>; ids printed earlier may have moved` once, then the mark clears.
 - Validation for the Claude Code adapter includes a fixture that appends to a file between two

@@ -23,6 +23,9 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   carries `count: <shown> of <matching>` and the footer the way to see more.
 - Examples below use the synthetic session `7a2f1c3e` and generic paths. Output examples are
   illustrative of shape, not literal fixtures.
+- A hint names a session by its `<s8>` only when no other session in scope shares those 8
+  characters; otherwise by its full id (`tail <uuid>`, `show <id> --session <uuid>`), so every
+  hint resolves as printed.
 - `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
   (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
   `--head`, `--full` and the bounding `--to`, so the next page shows the same view of the range.
@@ -302,10 +305,7 @@ input:
   file_path: config/staging.env
 result: 7a2f1c3e:413
 result_status: ok 1.1k
-result_text: |
-  1  APP_HOST=staging.example.test
-  2  OAUTH_REDIRECT=https://old.example.test/callback
-  ...
+result_text: "1\tAPP_HOST=staging.example.test\n2\tOAUTH_REDIRECT=https://old.example.test/callback\n…"
 uuid: 3c04f2b0-…
 help[1]:
   Run `agent-session-axi show 7a2f1c3e:413 --full` for the complete result (1.1k chars)
@@ -315,10 +315,15 @@ help[1]:
   status and text; a `result` shows its text and `call`; a `compaction` shows `trigger`,
   `pre_tokens`, `post_tokens`, `dropped_tokens`, `summary: <id>`, `preserved: <n> events`.
 - A pointer prints `pointer: <path> (42.8k, exists|missing)` and the preview; `--full` prints the
-  file.
+  file, but only a regular file inside the session's `tool-results/` (`data-model.md#pointer`).
+  A pointer outside it prints `followed: false` with the reason, and the preview, never the file.
+- `H` text prints whole; `C`/`D` text, input JSON, result text and `meta` strings are capped at
+  4,000 chars with the house marker and a `--full` hint (`behaviors/truncation.md#caps`).
 - A bare entry id for a multi-event entry prints every block as `blocks[N]` with its `.n` id.
-- `--raw` prints the original JSON line (pretty-printed) under `raw:` instead of the model view;
-  it works for silent and malformed entries too.
+- `--raw` prints the stored line under `raw:` instead of the model view: the parsed line as nested
+  TOON (a malformed line as a string), every string value capped at 4,000 chars with the house
+  marker unless `--full`. It works for any seq, silent and malformed entries included; a block
+  index only names the line.
 - An event prints `event: <id>`; an entry that yields several events prints `entry: <id>` and its
   `t`, then `blocks[N]`. `uuid`/`parent_uuid` close every entry. Fields an event does not have are
   omitted, never printed empty.
@@ -326,7 +331,6 @@ help[1]:
   that session's.
 - A silent entry prints `kind: silent`, its `type` and `raw:`, with hints to `show` the nearest
   event before and after; a malformed line adds `malformed: true` and prints the line as text.
-- `--raw` caps each string value at 4,000 chars with the house marker unless `--full` is given.
 - `--fields <a,b>` keeps only the named fields (the `event:`/`entry:` id always prints).
 - `zoom` accepts exactly the same arguments and prints exactly the same output; `--help` for it
   says it is an alias.

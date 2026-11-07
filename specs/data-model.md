@@ -221,7 +221,13 @@ a glob character (`cli.md#find`).
 
 Recognized notices: text wrapped in `<persisted-output>…</persisted-output>` containing
 `Output too large (<size>). Full output saved to: <path>`; the same sentence without the wrapper in
-older logs. Files live under the session sidecar, `tool-results/<id>.txt`.
+older logs, only when it opens the text (the sentence quoted mid-result is not a notice). Files
+live under the session sidecar, `tool-results/<id>.txt`; a stored path that no longer exists is
+looked up there by basename.
+
+**Containment.** A pointer is followed (`show --full`, `find --deep`) only when its real path, after
+relocation and symlink resolution, is a regular file inside `<sidecar>/tool-results/`. Any other
+path is still printed with its preview, marked `followed: false` with the reason, and never read.
 
 ## Turn
 
