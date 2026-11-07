@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildLarge } from "./fixtures/build.js";
 import { readLinesBackward } from "../src/lib/reader.js";
-import { BIN_JS } from "./helpers/run.js";
+import { BIN_JS, CACHE_HOME } from "./helpers/run.js";
 
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
 // Wall-clock bounds get headroom on shared CI runners; the RSS bound does not.
@@ -27,7 +27,7 @@ describe("streaming on a 200 MB session", () => {
     expect(statSync(big).size).toBeGreaterThanOrEqual(200 * 1024 * 1024);
     spawnSync(node, [BIN_JS, "tail", big], { encoding: "utf8" }); // warm the page cache
     const t0 = process.hrtime.bigint();
-    const r = spawnSync(node, ["--import", rss, BIN_JS, "tail", big], { encoding: "utf8", env: { ...process.env, TZ: "UTC" } });
+    const r = spawnSync(node, ["--import", rss, BIN_JS, "tail", big], { encoding: "utf8", env: { ...process.env, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME } });
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("tail[20]{id,t,kind,text}:");
