@@ -10,7 +10,8 @@
 export const ROW_MARK = "…";
 
 const URL_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>"'`]+/g;
-const ID_RE = /\b[0-9a-f]{8}:[1-9][0-9]*(?:\.[1-9][0-9]*)?\b/g;
+/** Not `\b`: an id glued to a word (`xxxxdeadbeef:12`) is still an id; only more hex before it is not. */
+const ID_RE = /(?<![0-9a-f])[0-9a-f]{8}:[1-9][0-9]*(?:\.[1-9][0-9]*)?(?![0-9])/g;
 /** A whitespace-delimited token with a `/` in it, quotes excluded. */
 const PATH_RE = /[^\s'"`;|&()<>]*\/[^\s'"`;|&()<>]*/g;
 
@@ -35,23 +36,31 @@ function spans(text: string, opts: CutOpts): Array<[number, number]> {
   return out.sort((a, b) => a[0] - b[0]);
 }
 
-/** Where a cut aimed at `n` may land: never inside a protected span or a surrogate pair. */
+/**
+ * Where a cut aimed at `n` may land: never inside a protected span or a surrogate pair. The cut
+ * moves to a span's end only when that end is at most one cap (`n`) further on; a span longer
+ * than that (a 100 KB URL or token) is cut hard at `n`, so a head stays within twice its cap.
+ */
 export function cutPoint(text: string, n: number, opts: CutOpts = {}): number {
   if (n >= text.length) return text.length;
+  const hard = (at: number) => {
+    const code = text.charCodeAt(at);
+    return code >= 0xdc00 && code <= 0xdfff ? at - 1 : at;
+  };
+  const limit = n + n;
   let end = n;
-  const code = text.charCodeAt(end);
-  if (code >= 0xdc00 && code <= 0xdfff) end--;
   const protectedSpans = spans(text, opts);
   for (let moved = true; moved; ) {
     moved = false;
     for (const [s, e] of protectedSpans) {
       if (s < end && end < e) {
+        if (e > limit) return hard(n);
         end = e;
         moved = true;
       }
     }
   }
-  return end;
+  return end === n ? hard(n) : end;
 }
 
 /** A row head: at most `n` chars (more only to finish a URL, id or path), `…` when cut. `n <= 0` = uncapped. */

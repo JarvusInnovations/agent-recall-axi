@@ -25,9 +25,9 @@ describe("truncate.head", () => {
 
   it("keeps path tokens whole when asked (call targets)", () => {
     const target = `echo hi && cat src/widget/components/listing/table/very/long/file-name.ts && echo done`;
-    const r = head(target, 30, { paths: true });
+    const r = head(target, 50, { paths: true });
     expect(r.text).toBe("echo hi && cat src/widget/components/listing/table/very/long/file-name.ts…");
-    expect(head(target, 30).text).toBe(`${target.slice(0, 30)}…`);
+    expect(head(target, 50).text).toBe(`${target.slice(0, 50)}…`);
   });
 
   it("does not split a surrogate pair", () => {
@@ -54,5 +54,35 @@ describe("truncate.detail", () => {
     expect(detailMark(8432)).toBe(" … (truncated, 8432 chars total)");
     expect(detail("y".repeat(4000))).toEqual({ text: "y".repeat(4000), cut: false });
     expect(detail(text, 0)).toEqual({ text, cut: false });
+  });
+});
+
+describe("truncation bounds", () => {
+  it("a protected span may move the cut at most one cap past n; beyond that the cut is hard", () => {
+    const token = `cat ${"QUJD/ZGVm".repeat(12_000)}`; // ~100 KB base64-ish token with slashes
+    const r = head(token, 120, { paths: true });
+    expect(r.cut).toBe(true);
+    expect(r.text.length).toBeLessThanOrEqual(2 * 120 + 1);
+    expect(token.startsWith(r.text.replace(/…$/, ""))).toBe(true);
+    const url = `see https://example.test/${"a".repeat(100_000)} end`;
+    const u = head(url, 200);
+    expect(u.text.length).toBeLessThanOrEqual(401);
+    expect(url.startsWith(u.text.replace(/…$/, ""))).toBe(true);
+    const d = detail(`x https://example.test/${"b".repeat(100_000)}`);
+    expect(d.text.length).toBeLessThanOrEqual(8000 + detailMark(100_000).length + 30);
+  });
+
+  it("an id glued to non-hex text is still protected", () => {
+    const text = `${"a".repeat(195)}xxxxdeadbeef:12345 rest`;
+    expect(head(text, 200).text).toBe(`${"a".repeat(195)}xxxxdeadbeef:12345…`);
+  });
+
+  it("a call target that is a huge path is cut hard, not kept whole", async () => {
+    const { targetCut } = await import("../src/output/render.js");
+    const path = `src/${"d/".repeat(50_000)}f.ts`;
+    const ev = { id: { session: "7a2f1c3e", seq: 1 }, kind: "call", authority: "C", text: "", size: 0, tool: "Read", target: path, files: [path] } as const;
+    const r = targetCut(ev as never, 120);
+    expect(r.cut).toBe(true);
+    expect(r.text.length).toBeLessThanOrEqual(2 * 120 + 1);
   });
 });

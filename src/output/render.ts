@@ -43,7 +43,8 @@ export function headCut(text: string, n: number): { text: string; cut: boolean }
  */
 export function targetCut(ev: Event, cap: number): { text: string; cut: boolean } {
   const target = oneLine(ev.target ?? "");
-  if (ev.files?.includes(ev.target ?? "")) return { text: target, cut: false };
+  // A path target is kept whole, within the same bound as any protected span (twice the cap).
+  if (ev.files?.includes(ev.target ?? "") && (cap <= 0 || target.length <= 2 * cap)) return { text: target, cut: false };
   return head(target, cap, { paths: true });
 }
 
