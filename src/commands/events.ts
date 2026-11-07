@@ -4,11 +4,11 @@ import { formatId } from "../lib/ids.js";
 import type { EventId } from "../lib/model.js";
 import { listEvents, type ListOpts, type Listing } from "../lib/events.js";
 import { findCommand } from "../reference.js";
-import { getBool, getNumber, parseFlags, type Parsed } from "../flags.js";
+import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { formatSize } from "../output/sizes.js";
-import { BIN, carry, parseKinds, parseRange, sessionFromArg, shellPath, zoneOf, type Io } from "./common.js";
+import { BIN, carry, parseKinds, parseRange, sessionFromArg, shellArg, shellPath, zoneOf, type Io } from "./common.js";
 
 function flagsOf(name: string) {
   return findCommand(name)?.flags ?? [];
@@ -22,6 +22,8 @@ function after(id: EventId): string {
 interface RenderArgs {
   label: "events" | "tail";
   parsed: Parsed;
+  /** The row cap the caller asked for (`--limit`, or tail's `<n>`); undefined for the default. */
+  explicitLimit: number | undefined;
   listing: Listing;
   sessionShort: string;
   path: string;
@@ -47,6 +49,14 @@ function render(a: RenderArgs): string {
 
   const s = shellPath(a.path);
   const tz = carry(a.parsed);
+  const p = a.parsed;
+  const kind = getString(p, "kind") !== undefined ? ` --kind ${shellArg(getString(p, "kind")!)}` : "";
+  const head = getString(p, "head") !== undefined ? ` --head ${getString(p, "head")}` : "";
+  const fullFlag = a.full ? " --full" : "";
+  const limitFlag = a.explicitLimit !== undefined ? ` --limit ${a.explicitLimit}` : "";
+  // Paging keeps the caller's view: kinds, row cap, head, --full, zone, and the far bound.
+  const view = `${kind}${limitFlag}${head}${fullFlag}${tz}`;
+  const toBound = getString(p, "to") !== undefined ? ` --to ${shellArg(getString(p, "to")!)}` : "";
   const help: string[] = [];
   if (shown === 0) {
     header[a.label] = `0 events in ${a.sessionShort} (${listing.lines} line${listing.lines === 1 ? "" : "s"})`;
@@ -56,9 +66,12 @@ function render(a: RenderArgs): string {
   header[a.label] = rendered.rows;
   const first = listing.rows[0]!.id;
   const last = listing.rows[shown - 1]!.id;
-  if (!listing.atStart) help.push(`Run \`${BIN} events ${s} --to ${formatId(first)}${tz}\` for earlier rows`);
-  if (!listing.atEnd) help.push(`Run \`${BIN} events ${s} --from ${after(last)}${tz}\` for later rows`);
-  if (rendered.cut > 0) help.push(`${rendered.cut} row${rendered.cut === 1 ? " was" : "s were"} cut to ${a.head} chars; add --full for whole rows`);
+  if (!listing.atStart) help.push(`Run \`${BIN} events ${s} --to ${formatId(first)}${view}\` for earlier rows`);
+  if (!listing.atEnd) help.push(`Run \`${BIN} events ${s} --from ${after(last)}${toBound}${view}\` for later rows`);
+  if (rendered.cut > 0) {
+    const rows = `${rendered.cut} row${rendered.cut === 1 ? "" : "s"}`;
+    help.push(`Run \`${BIN} events ${s} --from ${formatId(first)} --to ${after(last)}${kind} --full${tz}\` for the whole text of the ${rows} cut to ${a.head} chars`);
+  }
   return renderDocument(header, help);
 }
 
@@ -87,7 +100,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (range.from) opts.from = range.from;
   if (range.to) opts.to = range.to;
   const listing = await listEvents(session, opts);
-  return render({ label: "events", parsed: p, listing, sessionShort: session.short, path: session.path, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, sessionShort: session.short, path: session.path, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 export async function tailCommand(args: string[], io: Io): Promise<string> {
@@ -113,7 +126,7 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   const opts: ListOpts = { limit };
   if (kinds) opts.kinds = kinds;
   const listing = await listEvents(session, opts);
-  return render({ label: "tail", parsed: p, listing, sessionShort: session.short, path: session.path, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "tail", parsed: p, explicitLimit: n, listing, sessionShort: session.short, path: session.path, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 function helpOf(name: string): string {

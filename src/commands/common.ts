@@ -68,10 +68,14 @@ export function collapseHome(path: string): string {
   return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
+/** A value as it should appear inside a suggested command: quoted when needed. */
+export function shellArg(value: string): string {
+  return /^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /** A path as it should appear inside a suggested command: home-collapsed, quoted when needed. */
 export function shellPath(path: string): string {
-  const shown = collapseHome(path);
-  return /^[\w@%+=:,./~-]+$/.test(shown) ? shown : `'${shown.replace(/'/g, `'\\''`)}'`;
+  return shellArg(collapseHome(path));
 }
 
 /**

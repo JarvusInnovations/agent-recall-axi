@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildLarge } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
+import { shellPath } from "../src/commands/common.js";
 
 const tmp = mkdtempSync(join(tmpdir(), "asa-cli-"));
 const long = join(tmp, "f0000099-0000-4000-8000-000000000000.jsonl");
@@ -91,6 +92,28 @@ describe("events", () => {
     expect(rowLines(again.stdout, "events")[0]).toBe(rows[2]);
   });
 
+  it("paging hints carry the caller's view and the far bound", async () => {
+    const path = shellPath(fx("parallel-tools"));
+    const back = await run(["events", fx("parallel-tools"), "--kind", "call,human", "--limit", "2", "--head", "50", "--tz", "Asia/Tokyo"]);
+    expect(back.stdout).toContain(`Run \`agent-session-axi events ${path} --to a3000003:4 --kind call,human --limit 2 --head 50 --tz Asia/Tokyo\` for earlier rows`);
+    const fwd = await run(["events", fx("parallel-tools"), "--from", "a3000003:2", "--to", "a3000003:9", "--limit", "1"]);
+    expect(fwd.stdout).toContain(`Run \`agent-session-axi events ${path} --from a3000003:3 --to a3000003:9 --limit 1\` for later rows`);
+    const tail = await run(["tail", fx("parallel-tools"), "2", "--kind", "call"]);
+    expect(tail.stdout).toContain(`Run \`agent-session-axi events ${path} --to a3000003:4 --kind call --limit 2\` for earlier rows`);
+  });
+
+  it("the cut note is a complete command that shows those rows whole", async () => {
+    const path = fx("string-content");
+    const cut = await run(["events", path, "--head", "10"]);
+    const note = cut.stdout.split("\n").find((l) => l.includes("cut to 10 chars"))!;
+    expect(note).toMatch(/^ {2}Run `agent-session-axi events \S+ --from a1000001:2 --to a1000001:6 --full` for the whole text of the 4 rows cut to 10 chars$/);
+    const cmd = /`agent-session-axi (.*)`/.exec(note)![1]!.split(" ");
+    const whole = await run(cmd);
+    expect(whole.exitCode).toBe(0);
+    expect(rowLines(whole.stdout, "events")).toHaveLength(4);
+    expect(whole.stdout).toContain("keep the old redirect for staging");
+  });
+
   it("an empty session says so, with the malformed count in the header, exit 0", async () => {
     const { stdout, exitCode } = await run(["events", fx("silent")]);
     expect(exitCode).toBe(0);
@@ -166,6 +189,15 @@ describe("tail", () => {
     const t = rowLines((await run(["tail", long, "30", "--kind", "all"])).stdout, "tail");
     const e = rowLines((await run(["events", long, "--kind", "all", "--limit", "0"])).stdout, "events");
     expect(t).toEqual(e.slice(-30));
+  });
+
+  it("an exact count when only silent lines precede the n-th row", async () => {
+    // string-content opens with a silent permission-mode line, then exactly 4 visible rows.
+    const { stdout } = await run(["tail", fx("string-content"), "4"]);
+    expect(stdout).toMatch(/^count: 4 of 4$/m);
+    expect(stdout).not.toContain("for earlier rows");
+    const three = await run(["tail", fx("string-content"), "3"]);
+    expect(three.stdout).toMatch(/^count: 3 \(newest; earlier rows exist\)$/m);
   });
 
   it("a session shorter than n shows everything with an exact count", async () => {

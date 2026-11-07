@@ -142,14 +142,21 @@ async function tailListing(session: Session, n: number, kinds: ListOpts["kinds"]
   let spanLines = 0;
   let reachedStart = true;
   for await (const bl of readLinesBackward(session.path)) {
+    const entry = claudeCode.parse({ seq: 1, offset: bl.offset, text: bl.text, partial: bl.partial });
+    let visibleHere = 0;
+    if (entry) for (const ev of claudeCode.classify(entry, probe)) if (visible.has(ev.kind)) visibleHere++;
+    if (found >= n) {
+      // Enough rows already: whether earlier rows exist depends on the next visible event, not
+      // on the silent lines (bookkeeping, hidden kinds) that usually sit before them.
+      if (visibleHere > 0) {
+        reachedStart = false;
+        break;
+      }
+      continue;
+    }
     spanLines++;
     spanStart = bl.offset;
-    const entry = claudeCode.parse({ seq: 1, offset: bl.offset, text: bl.text, partial: bl.partial });
-    if (entry) for (const ev of claudeCode.classify(entry, probe)) if (visible.has(ev.kind)) found++;
-    if (found >= n && bl.offset > 0) {
-      reachedStart = false;
-      break;
-    }
+    found += visibleHere;
   }
   const before = spanStart > 0 ? await countNewlines(session.path, spanStart) : 0;
   const ctx = newContext(session);
