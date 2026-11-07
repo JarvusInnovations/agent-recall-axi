@@ -4,7 +4,8 @@
  */
 import { AgentSessionError } from "./errors.js";
 import { comparePosition, formatId } from "./ids.js";
-import { DEFAULT_KINDS, KINDS, type Event, type EventId, type Kind, type Session } from "./model.js";
+import { readFile } from "node:fs/promises";
+import { DEFAULT_KINDS, KINDS, type Entry, type Event, type EventId, type Kind, type Pointer, type Session } from "./model.js";
 import { countNewlines, readLines, readLinesBackward } from "./reader.js";
 import { newContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
@@ -206,4 +207,163 @@ async function tailListing(session: Session, n: number, kinds: ListOpts["kinds"]
 /** The last `n` visible events (specs/api.md#reading). */
 export async function tail(session: Session, n: number, opts: Pick<ListOpts, "kinds"> = {}): Promise<Event[]> {
   return (await listEvents(session, { kinds: opts.kinds ?? DEFAULT_KINDS, limit: n })).rows;
+}
+
+// ---------------------------------------------------------------------------------------------
+// show: one entry or event, whole (specs/cli.md#show-id-alias-zoom)
+
+/** An event as `show` presents it, with what only a scan of its surroundings can know. */
+export interface ShownEvent {
+  event: Event;
+  /** The `human` / `human.slash` event that opened its turn; absent before the first prompt. */
+  turn?: EventId;
+  /** 0-based compaction window (a compaction belongs to the window it closes). */
+  window: number;
+  /** `call`: the linked result event, when it is in the file. */
+  linked?: Event;
+  /** `compaction`: events of the entries the boundary preserved. */
+  preserved?: number;
+}
+
+export interface Shown {
+  session: Session;
+  /** The id as asked. */
+  id: EventId;
+  entry: Entry;
+  /** The line as stored (always available; the only content of a malformed line). */
+  line: string;
+  /** Every event the entry yields, in block order. */
+  all: Event[];
+  /** The events the id selects: one, every one for a bare id of a multi-event entry, none when silent. */
+  events: ShownEvent[];
+  /** The entry yields no events. */
+  silent: boolean;
+  /** The file's last line, not yet complete (a live file mid-append). */
+  partial?: boolean;
+  /** For a silent entry: the nearest events before and after (any kind). */
+  before?: EventId;
+  after?: EventId;
+}
+
+const opensTurn = (k: Kind) => k === "human" || k === "human.slash";
+
+/**
+ * One entry by seq, classified with the context of everything before it so call/result links
+ * hold (a forward scan from the file start until the offset cache arrives with `pan`). The scan
+ * continues past the entry only as far as needed: to the results of its calls, the summary of
+ * its compaction, or the next event after a silent entry.
+ */
+export async function show(session: Session, id: EventId): Promise<Shown> {
+  checkSession(session, id);
+  const ctx = newContext(session);
+  let turn: EventId | undefined;
+  let window = 0;
+  let lastEvent: EventId | undefined;
+  const eventsByUuid = new Map<string, number>();
+  let lines = 0;
+  let found: Shown | undefined;
+  /** Calls of the shown entry still waiting for a result, by tool-use id. */
+  const waiting = new Map<string, ShownEvent>();
+  let compactionWaiting: Event | undefined;
+  let needAfter = false;
+
+  for await (const line of readLines(session.path)) {
+    lines = line.seq;
+    const parsed = claudeCode.parse(line);
+    // null: a trailing line still being written; shown raw, never classified.
+    const entry: Entry = parsed ?? { seq: line.seq, offset: line.offset };
+    const evs = claudeCode.classify(entry, ctx);
+    if (!found) {
+      if (line.seq < id.seq) {
+        for (const ev of evs) {
+          if (opensTurn(ev.kind)) turn = ev.id;
+          if (ev.kind === "compaction") window++;
+          lastEvent = ev.id;
+        }
+        if (entry.uuid && evs.length) eventsByUuid.set(entry.uuid, evs.length);
+        continue;
+      }
+      // line.seq === id.seq: the entry asked for.
+      const shownAll: ShownEvent[] = evs.map((ev) => {
+        const s: ShownEvent = { event: ev, window };
+        const t = opensTurn(ev.kind) ? ev.id : turn;
+        if (t) s.turn = t;
+        if (opensTurn(ev.kind)) turn = ev.id;
+        if (ev.kind === "compaction") {
+          const uuids = Array.isArray(ev.meta?.preserved) ? (ev.meta!.preserved as string[]) : [];
+          s.preserved = uuids.reduce((n, u) => n + (eventsByUuid.get(u) ?? 0), 0);
+        }
+        return s;
+      });
+      const selected = selectEvents(id, evs, shownAll);
+      found = { session, id, entry, line: line.text, all: evs, events: selected, silent: evs.length === 0 };
+      if (!parsed) found.partial = true;
+      if (found.silent) {
+        if (lastEvent) found.before = lastEvent;
+        needAfter = true;
+      }
+      for (const s of selected) {
+        const ev = s.event;
+        if (ev.kind === "call" && ev.toolUseId && ctx.pending.get(ev.toolUseId) === ev) waiting.set(ev.toolUseId, s);
+        if (ev.kind === "compaction" && ctx.compaction === ev) compactionWaiting = ev;
+      }
+      // Results inside the same entry (rare) are already linked by classify.
+      for (const s of selected) linkWithin(s, evs);
+      if (waiting.size === 0 && !compactionWaiting && !needAfter) break;
+      continue;
+    }
+    // Past the entry: only what the shown events still need.
+    for (const ev of evs) {
+      if ((ev.kind === "result" || ev.kind === "human.answer") && ev.toolUseId && waiting.has(ev.toolUseId)) {
+        waiting.get(ev.toolUseId)!.linked = ev;
+        waiting.delete(ev.toolUseId);
+      }
+      if (needAfter) {
+        found.after = ev.id;
+        needAfter = false;
+      }
+    }
+    if (compactionWaiting && ctx.compaction !== compactionWaiting) compactionWaiting = undefined;
+    if (waiting.size === 0 && !compactionWaiting && !needAfter) break;
+  }
+  if (!found) {
+    throw new AgentSessionError(
+      `${formatId(id)} is beyond the end of the session (${lines} line${lines === 1 ? "" : "s"})`,
+      "NOT_FOUND",
+      [`Run \`agent-session-axi tail ${session.short}\` for the last rows of this session`],
+      { lines },
+    );
+  }
+  return found;
+}
+
+function linkWithin(s: ShownEvent, evs: Event[]): void {
+  const ev = s.event;
+  if (ev.kind !== "call" || !ev.result) return;
+  const r = evs.find((x) => comparePosition(x.id, ev.result!) === 0);
+  if (r) s.linked = r;
+}
+
+function selectEvents(id: EventId, evs: Event[], shown: ShownEvent[]): ShownEvent[] {
+  if (id.block === undefined) return shown;
+  const entryId = formatId({ session: id.session, seq: id.seq });
+  if (evs.length === 0) {
+    throw new AgentSessionError(`${formatId(id)} does not exist: ${entryId} yields no events`, "NOT_FOUND", [
+      `Run \`agent-session-axi show ${entryId}\` for the entry itself`,
+    ]);
+  }
+  const hit = shown.find((s) => s.event.id.block === id.block);
+  if (hit) return [hit];
+  const ids = evs.map((e) => formatId(e.id));
+  const what = evs.length === 1 ? `${entryId} is a single event; its id is ${ids[0]}` : `the blocks of ${entryId} are ${ids.join(", ")}`;
+  throw new AgentSessionError(`${formatId(id)} does not exist: ${what}`, "NOT_FOUND", ids.map((i) => `Run \`agent-session-axi show ${i}\``));
+}
+
+/** The full text of a persisted output, or the preview when the file is gone (no error). */
+export async function readPointer(pointer: Pointer): Promise<{ text: string; exists: boolean }> {
+  try {
+    return { text: await readFile(pointer.path, "utf8"), exists: true };
+  } catch {
+    return { text: pointer.preview, exists: false };
+  }
 }
