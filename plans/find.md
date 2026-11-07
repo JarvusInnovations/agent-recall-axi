@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [ids-and-show]
 specs:
   - specs/cli.md
@@ -70,7 +70,8 @@ output. Cross-session scope lands in `sessions-and-recall`.
   session when it has a session reference's form; handles AND together and `why` lists them in
   the fixed order phrase, file, tool, kind; searched kinds are the `events` default and a call
   matches a phrase in its linked result's text (the spec's own `phrase+file` example on a Read
-  call needs this), results becoming their own rows only with `--kind result`; `--regex` is
+  call needs this), results becoming their own rows only when `--kind` names `result` or
+  `all`; `--regex` is
   case-insensitive and refuses invalid or exponential-backtracking patterns; `--file` globs
   anchor on the whole path with `*` crossing `/`. Two Validation criteria were amended to match
   in their own commit (result-text hits are call rows; `phrase+tool`, not `tool+phrase`).
@@ -79,13 +80,26 @@ output. Cross-session scope lands in `sessions-and-recall`.
   scope; `find` without a session fails with a USAGE message naming that plan. The `around`
   hint is gated on `around` being available in the reference (it lights up when `pan` merges);
   until then the footer offers `events <s> --from <hit> --limit 10`.
-- **Regex guard** is a static star-height check (`backtrackRisk`): Node has no regex timeout,
-  and V8's excessive-backtracks fallback flag did not take effect in Node 22 either at startup
-  or via `v8.setFlagsFromString`. Polynomial patterns remain unguarded (issue #8).
+- **Regex guard** (`backtrackRisk`, narrowed in review): refuses an unbounded repetition of a
+  group holding an unbounded quantifier or an overlapping alternation, and runs of 12+ optional
+  atoms; bounded repetition and distinct-literal alternations pass. It catches the common
+  exponential shapes only; a merely slow pattern is the caller's (#8). Node has no regex
+  timeout, and V8's excessive-backtracks fallback did not take effect in Node 22. `--regex`
+  compiles with `iu`.
 - **Linking** reuses the `events()` hold: a call waits (with the rows after it) until its result
-  is read, capped at 1,000 held events; a call whose result arrives later is searched without it.
-- **Memory**: the perf project runs `find` twice over the 200 MB generated session (one hit; and
-  `--tool bash` with a phrase that folds every result in); both stay under 150 MB peak RSS.
+  is read, capped at 1,000 held events. Past an id `--to` bound nothing new is queued, so the
+  scan reads at most 1,000 more lines to link waiting calls and then releases them `pending`
+  (review: it used to read to EOF).
+- **`--deep` streams** each followable persisted output in 1 MB chunks (`streamMatches`):
+  substrings carry a needle-length overlap; a regex is tested line by line (spec states that a
+  match spanning lines is not found there).
+- **Hits past `--limit`** that fall inside a shown hit's context keep their `why`, count as
+  shown, and the `--from` continuation starts after them.
+- **Memory**: the perf project runs `find` over the 200 MB generated session (one hit; and
+  `--tool bash` with a phrase that folds every result in) and `--deep` over a 120 MB persisted
+  output (substring and regex); every run stays under 150 MB peak RSS.
+- **Review round** (PR #6): spec amended first (`docs(specs): find review rulings`), then
+  failing-first tests, then fixes; the shared resolver's NOT_FOUND hint now carries `--project`.
 
 ## Follow-ups
 
