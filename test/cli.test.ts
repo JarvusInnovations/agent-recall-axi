@@ -77,6 +77,20 @@ describe("events", () => {
     expect(hinted.exitCode).toBe(0);
   });
 
+  it("a session file not named by a uuid still prints ids that round-trip", async () => {
+    const renamed = join(tmp, "my-log.jsonl");
+    copyFileSync(fx("parallel-tools"), renamed);
+    const first = await run(["events", renamed]);
+    expect(first.exitCode).toBe(0);
+    const s8 = /^session: ([0-9a-f]{8}) /m.exec(first.stdout)![1]!;
+    const rows = rowLines(first.stdout, "events");
+    const third = /^ {2}"([^"]+)"/.exec(rows[2]!)![1]!;
+    expect(third).toMatch(new RegExp(`^${s8}:\\d+`));
+    const again = await run(["events", renamed, "--from", third]);
+    expect(again.exitCode).toBe(0);
+    expect(rowLines(again.stdout, "events")[0]).toBe(rows[2]);
+  });
+
   it("an empty session says so, with the malformed count in the header, exit 0", async () => {
     const { stdout, exitCode } = await run(["events", fx("silent")]);
     expect(exitCode).toBe(0);

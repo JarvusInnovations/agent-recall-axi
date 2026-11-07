@@ -1,4 +1,5 @@
 /** Claude Code project dirs, session files, sidecars and subagents (data-model.md#project, #session). */
+import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -102,6 +103,15 @@ export async function* listProjects(root: string): AsyncGenerator<Project> {
   for (const name of names) yield await projectForDir(join(root, name));
 }
 
+/**
+ * `<s8>`: the first 8 hex characters of the id. A file whose name does not start with 8 hex
+ * characters (a log copied to `my-log.jsonl`) gets the first 8 hex of the sha1 of its basename
+ * instead, so every printed id still matches the id grammar and resolves back to this file.
+ */
+export function shortId(id: string, path: string): string {
+  return /^[0-9a-f]{8}/.test(id) ? id.slice(0, 8) : createHash("sha1").update(basename(path)).digest("hex").slice(0, 8);
+}
+
 export function sessionForPath(path: string, project?: Project): Session {
   const file = basename(path).replace(/\.jsonl$/, "");
   const parentDir = dirname(path);
@@ -110,7 +120,7 @@ export function sessionForPath(path: string, project?: Project): Session {
     const sidecar = dirname(parentDir);
     const s: Session = {
       id,
-      short: id.slice(0, 8),
+      short: shortId(id, path),
       kind: "subagent",
       parent: basename(sidecar),
       path,
@@ -122,7 +132,7 @@ export function sessionForPath(path: string, project?: Project): Session {
   }
   const s: Session = {
     id: file,
-    short: file.slice(0, 8),
+    short: shortId(file, path),
     kind: "main",
     path,
     sidecar: join(parentDir, file),

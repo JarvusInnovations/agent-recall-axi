@@ -67,7 +67,7 @@ export type SessionKind = "main" | "subagent";
 export interface Session {
   /** uuid for a main session, agentId for a subagent session (from the filename). */
   id: string;
-  /** `<s8>`: the first 8 characters of `id`. */
+  /** `<s8>`: the first 8 characters of `id`; a sha1-derived 8 hex for a non-uuid filename. */
   short: string;
   kind: SessionKind;
   /** Parent session uuid (subagent only). */
