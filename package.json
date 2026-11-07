@@ -1,0 +1,50 @@
+{
+  "name": "agent-session-axi",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && chmod +x dist/bin/agent-session-axi.js",
+    "check": "tsc --noEmit",
+    "dev": "bun bin/agent-session-axi.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "build:skill": "bun scripts/build-skill.ts",
+    "check:skill": "bun scripts/build-skill.ts --check",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@toon-format/toon": "^4.4.0",
+    "axi-sdk-js": "^0.1.14"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "version": "0.0.0",
+  "description": "Read, search and pan/zoom through AI agent session logs (Claude Code first) with token-efficient TOON output for the agents that read them",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JarvusInnovations/agent-session-axi.git"
+  },
+  "bin": {
+    "agent-session-axi": "dist/bin/agent-session-axi.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "skills/agent-session-axi",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "axi",
+    "claude-code",
+    "session-logs",
+    "transcripts",
+    "agent-memory"
+  ]
+}
