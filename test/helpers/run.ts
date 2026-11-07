@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +11,19 @@ export const NOW = new Date("2026-11-07T14:00:00.000Z");
 
 const index = fixtureIndex();
 
-/** Tests never touch the real cache: every run gets this process's own cache root. */
-export const CACHE_HOME = mkdtempSync(join(tmpdir(), "asa-cache-"));
+/**
+ * Tests never touch the real cache. Under vitest the global setup provides a throwaway
+ * XDG_CACHE_HOME and removes it at teardown; outside it (a helper imported by a script), one is
+ * made here and removed when the process exits.
+ */
+function cacheHome(): string {
+  const inherited = process.env.XDG_CACHE_HOME;
+  if (inherited && /asa-cache-global-/.test(inherited)) return inherited;
+  const dir = mkdtempSync(join(tmpdir(), "asa-cache-"));
+  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+export const CACHE_HOME = cacheHome();
 /** Absolute path of a named fixture's log file. */
 export function fx(name: string): string {
   const rel = index[name];
