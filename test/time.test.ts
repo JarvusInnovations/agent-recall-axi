@@ -32,6 +32,21 @@ describe("time grammar", () => {
     expect(parseWhen("+90m", { tz, now }).toISOString()).toBe("2026-11-07T16:00:00.000Z");
   });
 
+  it("a wall time in a DST gap resolves to the first instant at or after it, in every zone", () => {
+    // Chile starts DST at midnight: 2026-09-06 00:00 does not exist; the day starts at 01:00 -03.
+    const cl = "America/Santiago";
+    expect(parseWhen("2026-09-06", { tz: cl }).toISOString()).toBe("2026-09-06T04:00:00.000Z");
+    expect(parseWhen("2026-09-05", { tz: cl, endOfDay: true }).toISOString()).toBe("2026-09-06T04:00:00.000Z");
+    expect(formatDay(parseWhen("2026-09-06", { tz: cl }), cl)).toBe("2026-09-06");
+    // New York springs forward 02:00 → 03:00 on 2026-03-08: 02:30 is 03:00 EDT.
+    expect(parseWhen("2026-03-08T02:30", { tz: "America/New_York" }).toISOString()).toBe("2026-03-08T07:00:00.000Z");
+    // London springs forward 01:00 → 02:00 on 2026-03-29: 01:30 is 02:00 BST; 02:30 exists.
+    expect(parseWhen("2026-03-29T01:30", { tz: "Europe/London" }).toISOString()).toBe("2026-03-29T01:00:00.000Z");
+    expect(parseWhen("2026-03-29T02:30", { tz: "Europe/London" }).toISOString()).toBe("2026-03-29T01:30:00.000Z");
+    // A repeated fall-back hour is its first occurrence (EDT).
+    expect(parseWhen("2026-11-01T01:30", { tz: "America/New_York" }).toISOString()).toBe("2026-11-01T05:30:00.000Z");
+  });
+
   it("spans", () => {
     expect(parseSpan("90m")).toBe(90 * 60_000);
     expect(parseSpan("24h")).toBe(86_400_000);

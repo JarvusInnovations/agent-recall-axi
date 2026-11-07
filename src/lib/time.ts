@@ -88,13 +88,34 @@ function zoneOffset(instant: number, tz: string): number {
   return asUtc - Math.floor(instant / 1000) * 1000;
 }
 
-/** The instant at which the wall clock in `tz` reads the given local time. */
+const DAY_MS = 86_400_000;
+
+/**
+ * The instant at which the wall clock in `tz` reads the given local time. An ambiguous time (a
+ * fall-back hour) is its first occurrence. A time that does not exist (a spring-forward gap,
+ * including zones whose DST starts at midnight) resolves to the first instant at or after it:
+ * the transition itself.
+ */
 export function zonedTime(year: number, month: number, day: number, hour: number, minute: number, second: number, tz: string): Date {
-  const guess = Date.UTC(year, month - 1, day, hour, minute, second);
-  let instant = guess - zoneOffset(guess, tz);
-  const second2 = guess - zoneOffset(instant, tz);
-  if (second2 !== instant) instant = second2;
-  return new Date(instant);
+  const wall = Date.UTC(year, month - 1, day, hour, minute, second);
+  // The offsets in force a day either side cover any single transition near this wall time.
+  const before = zoneOffset(wall - DAY_MS, tz);
+  const after = zoneOffset(wall + DAY_MS, tz);
+  const candidates = [...new Set([before, after])]
+    .map((off) => wall - off)
+    .filter((instant) => zoneOffset(instant, tz) === wall - instant)
+    .sort((a, b) => a - b);
+  if (candidates.length) return new Date(candidates[0]!);
+  // In a gap: the transition lies between the instants the two offsets would give. Binary
+  // search it to the second; the first instant on the far side is the answer.
+  let lo = wall - Math.max(before, after); // still on the old offset
+  let hi = wall - Math.min(before, after); // already on the new offset
+  while (hi - lo > 1000) {
+    const mid = lo + Math.floor((hi - lo) / 2000) * 1000;
+    if (zoneOffset(mid, tz) === before) lo = mid;
+    else hi = mid;
+  }
+  return new Date(hi);
 }
 
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
