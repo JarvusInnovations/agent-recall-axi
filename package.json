@@ -46,5 +46,14 @@
     "session-logs",
     "transcripts",
     "agent-memory"
-  ]
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/src/lib/index.d.ts",
+      "import": "./dist/src/lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/src/lib/index.js",
+  "types": "./dist/src/lib/index.d.ts"
 }
