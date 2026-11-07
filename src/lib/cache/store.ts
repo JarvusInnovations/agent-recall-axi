@@ -9,7 +9,7 @@
  * if it were absent. Nothing here writes anywhere else, and session files are only read.
  */
 import { createHash } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readLines, readLinesBackward } from "../reader.js";
@@ -95,8 +95,58 @@ export async function currentIdentity(path: string, now: Date): Promise<FileIden
   return id;
 }
 
+/**
+ * A record may be read only when it is a regular file owned by the current user and not writable
+ * by group or others (architecture.md#cache): anything else is treated as absent.
+ */
+export async function ownedRecord(path: string): Promise<boolean> {
+  try {
+    const st = await lstat(path);
+    if (!st.isFile() || (st.mode & 0o022) !== 0) return false;
+    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+    return uid === undefined || st.uid === uid;
+  } catch {
+    return false;
+  }
+}
+
+/** A cache directory that may be written into: absent, or a real directory (never a symlink). */
+export async function safeDir(path: string): Promise<boolean> {
+  try {
+    const st = await lstat(path);
+    return st.isDirectory() && !st.isSymbolicLink();
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+/**
+ * Write `<dir>/<sub>/<name>` via a temp file and rename, owner-only. Never through a symlinked
+ * cache or `<sub>` directory; the temp file is removed when anything fails. Failures are swallowed:
+ * an unwritable cache is the same as no cache.
+ */
+export async function writeRecord(dir: string, sub: string, name: string, data: string): Promise<void> {
+  const folder = join(dir, sub);
+  let tmp: string | undefined;
+  try {
+    if (!(await safeDir(dir)) || !(await safeDir(folder))) return;
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    if (!(await safeDir(dir)) || !(await safeDir(folder))) return;
+    const target = join(folder, name);
+    tmp = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2, 8)}.tmp`;
+    await writeFile(tmp, data, { mode: 0o600, flag: "wx" });
+    await rename(tmp, target);
+    tmp = undefined;
+  } catch {
+    // swallowed (see above)
+  } finally {
+    if (tmp) await rm(tmp, { force: true }).catch(() => undefined);
+  }
+}
+
 async function load(dir: string, path: string): Promise<FileIdentity | undefined> {
   try {
+    if (!(await ownedRecord(recordPath(dir, path)))) return undefined;
     const rec = JSON.parse(await readFile(recordPath(dir, path), "utf8")) as FileIdentity;
     return rec.path === path ? rec : undefined;
   } catch {
@@ -105,15 +155,7 @@ async function load(dir: string, path: string): Promise<FileIdentity | undefined
 }
 
 async function save(dir: string, rec: FileIdentity): Promise<void> {
-  try {
-    await mkdir(join(dir, "files"), { recursive: true, mode: 0o700 });
-    const target = recordPath(dir, rec.path);
-    const tmp = `${target}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(rec), { mode: 0o600 });
-    await rename(tmp, target);
-  } catch {
-    // The cache is optional: an unwritable cache directory is the same as no cache.
-  }
+  await writeRecord(dir, "files", recordName(rec.path), JSON.stringify(rec));
 }
 
 export interface RewriteCheck {

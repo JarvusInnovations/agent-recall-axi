@@ -7,17 +7,19 @@
  * Derived and disposable: every cache read or write failure is swallowed. A table that cannot be
  * saved is still returned for the current read.
  */
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { open, readFile, readdir, rm, stat } from "node:fs/promises";
+import { join, sep } from "node:path";
 import { newContext, type ClassifyContext } from "../adapters/adapter.js";
 import { claudeCode } from "../adapters/claude-code/index.js";
 import { formatId, parseId } from "../ids.js";
 import { KINDS, type Event, type EventId, type Kind, type Session } from "../model.js";
 import { readLines } from "../reader.js";
-import { cacheDir, readSlice, recordName, sha, tablePath, type CacheOpts } from "./store.js";
+import { VERSION as PACKAGE_VERSION } from "../../version.js";
+import { cacheDir, ownedRecord, readSlice, recordName, safeDir, sha, tablePath, writeRecord, type CacheOpts } from "./store.js";
 
 export const CHECKPOINT_EVERY = 256;
-const VERSION = 1;
+/** The table format; bumped whenever what a table records changes. */
+const VERSION = 2;
 
 /** A call still waiting for its result at a checkpoint: what linking a later result needs. */
 export interface PendingCall {
@@ -49,6 +51,8 @@ export interface Checkpoint {
 
 export interface OffsetTable {
   v: number;
+  /** The package version that built it: a classifier change discards every table. */
+  pkg: string;
   path: string;
   /** Last indexed seq (0 when no complete line has been indexed). */
   seq: number;
@@ -65,6 +69,52 @@ export interface OffsetTable {
   checkpoints: Checkpoint[];
   /** The state after the last indexed line, where an append resumes. */
   tail: Checkpoint;
+  /**
+   * Every tool-use id → tool-name assignment classification made, in file order, one
+   * `<seq>\t<use id>\t<tool>\n` line each: a checkpoint's share is the lines before its seq. One
+   * string, because it is consulted only for a result whose call is no longer pending (rare), so
+   * it is searched on demand instead of being parsed into a map on every seek.
+   */
+  tools: string;
+}
+
+/** A tool name inside the `tools` log: backslash, tab and newline escaped. */
+const escapeTool = (t: string) => t.replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n");
+const unescapeTool = (t: string) => t.replace(/\\(\\|t|n)/g, (_m, c: string) => (c === "t" ? "\t" : c === "n" ? "\n" : "\\"));
+
+/**
+ * The tool-use id → tool map of a seeded context: assignments made during this read, then the
+ * table's assignments before the checkpoint, searched on a miss (classify asks only for a result
+ * whose call is no longer pending).
+ */
+class SeededTools extends Map<string, string> {
+  constructor(
+    private readonly log: string,
+    private readonly before: number,
+  ) {
+    super();
+  }
+
+  override get(use: string): string | undefined {
+    if (super.has(use)) return super.get(use);
+    const key = `\t${use}\t`;
+    let pos = this.log.lastIndexOf(key);
+    while (pos >= 0) {
+      const start = this.log.lastIndexOf("\n", pos) + 1;
+      if (Number(this.log.slice(start, pos)) < this.before) {
+        const end = this.log.indexOf("\n", pos + key.length);
+        const tool = unescapeTool(this.log.slice(pos + key.length, end === -1 ? undefined : end));
+        super.set(use, tool);
+        return tool;
+      }
+      pos = start > 0 ? this.log.lastIndexOf(key, start - 1) : -1;
+    }
+    return undefined;
+  }
+
+  override has(use: string): boolean {
+    return this.get(use) !== undefined;
+  }
 }
 
 const opensTurn = (k: Kind) => k === "human" || k === "human.slash";
@@ -81,9 +131,10 @@ export function countOf(cp: Checkpoint, visible: ReadonlySet<Kind>): number {
   return n;
 }
 
-/** A classification context seeded with a checkpoint's state. */
-export function seedContext(session: Session, cp: Checkpoint): ClassifyContext {
+/** A classification context seeded with a checkpoint's state (and the table's tool names before it). */
+export function seedContext(session: Session, cp: Checkpoint, table?: OffsetTable): ClassifyContext {
   const ctx = newContext(session);
+  if (table) ctx.tools = new SeededTools(table.tools, cp.seq);
   for (const p of cp.pending) {
     const id = parseId(p.id);
     if (!id) continue;
@@ -144,7 +195,8 @@ function isTable(v: unknown, path: string): v is OffsetTable {
   const t = v as OffsetTable;
   return (
     typeof t === "object" && t !== null && t.v === VERSION && t.path === path && typeof t.seq === "number" && typeof t.end === "number" &&
-    Array.isArray(t.checkpoints) && t.checkpoints.length > 0 && typeof t.tail === "object" && Array.isArray(t.tail?.cum)
+    Array.isArray(t.checkpoints) && t.checkpoints.length > 0 && typeof t.tail === "object" && Array.isArray(t.tail?.cum) &&
+    t.pkg === PACKAGE_VERSION && typeof t.tools === "string"
   );
 }
 
@@ -152,7 +204,9 @@ function isTable(v: unknown, path: string): v is OffsetTable {
 export async function loadTable(path: string, opts: CacheOpts = {}): Promise<OffsetTable | undefined> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readFile(tablePath(cacheDir(opts), path), "utf8"));
+    const rec = tablePath(cacheDir(opts), path);
+    if (!(await ownedRecord(rec))) return undefined;
+    parsed = JSON.parse(await readFile(rec, "utf8"));
   } catch {
     return undefined;
   }
@@ -161,16 +215,7 @@ export async function loadTable(path: string, opts: CacheOpts = {}): Promise<Off
 }
 
 async function saveTable(table: OffsetTable, opts: CacheOpts): Promise<void> {
-  try {
-    const dir = join(cacheDir(opts), "index");
-    await mkdir(dir, { recursive: true, mode: 0o700 });
-    const target = join(dir, recordName(table.path));
-    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(tmp, JSON.stringify(table), { mode: 0o600 });
-    await rename(tmp, target);
-  } catch {
-    // An unwritable cache is the same as no cache.
-  }
+  await writeRecord(cacheDir(opts), "index", recordName(table.path), JSON.stringify(table));
 }
 
 /** The running state while indexing; ids stay objects until a checkpoint is written. */
@@ -206,8 +251,9 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
   const start = table?.tail ?? emptyState();
   const t: OffsetTable = table
     ? { ...table, checkpoints: [...table.checkpoints] }
-    : { v: VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start };
-  const ctx = seedContext(session, start);
+    : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "" };
+  const ctx = seedContext(session, start, table);
+  const tools: string[] = [];
   const st: Running = { window: start.window, cum: [...start.cum], malformed: start.malformed };
   if (start.turn) st.turn = start.turn;
   if (start.last) st.last = start.last;
@@ -229,6 +275,8 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
         if (opensTurn(ev.kind)) st.turn = ev.id;
         if (ev.kind === "compaction") st.window++;
         st.last = ev.id;
+        // Mirrors classify's `ctx.tools.set` (adapter link): every call with a tool and an id.
+        if (ev.kind === "call" && ev.toolUseId && ev.tool) tools.push(`${line.seq}\t${ev.toolUseId}\t${escapeTool(ev.tool)}\n`);
       }
     }
     const next = line.end ?? line.offset + Buffer.byteLength(line.text) + 1;
@@ -243,6 +291,8 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
     seq = line.seq + 1;
     offset = next;
   }
+  if (tools.length) t.tools = (table?.tools ?? "") + tools.join("");
+  else if (table) t.tools = table.tools;
   // Only the last indexed line is hashed: hashing every line doubled the build.
   if (lastText !== undefined) t.lastHash = sha(lastText);
   t.end = offset;
@@ -336,6 +386,23 @@ async function treeSize(dir: string): Promise<number> {
   return total;
 }
 
+/** Is there a newline in `[from, to)`? (Read in 1 MB blocks.) */
+async function hasNewline(path: string, from: number, to: number): Promise<boolean> {
+  const fh = await open(path, "r");
+  try {
+    const buf = Buffer.allocUnsafe(1 << 20);
+    for (let pos = from; pos < to; ) {
+      const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, to - pos), pos);
+      if (bytesRead === 0) return false;
+      if (buf.subarray(0, bytesRead).includes(0x0a)) return true;
+      pos += bytesRead;
+    }
+    return false;
+  } finally {
+    await fh.close();
+  }
+}
+
 async function stateOf(table: OffsetTable): Promise<TableState> {
   let size: number;
   try {
@@ -344,7 +411,9 @@ async function stateOf(table: OffsetTable): Promise<TableState> {
     return "missing";
   }
   if (!(await tableMatches(table, table.path))) return "rewritten";
-  return size > table.end ? "appended" : "fresh";
+  if (size === table.end) return "fresh";
+  // Only a line still being written after the indexed end: nothing a seek would index yet.
+  return (await hasNewline(table.path, table.end, size)) ? "appended" : "fresh";
 }
 
 /** The cache directory, its size, and every indexed file with its state (specs/api.md). */
@@ -363,6 +432,7 @@ export async function cacheStatus(opts: CacheOpts = {}): Promise<CacheStatus> {
   for (const name of await dirFiles(join(dir, "index"))) {
     const p = join(dir, "index", name);
     try {
+      if (!(await ownedRecord(p))) continue;
       const [text, st] = await Promise.all([readFile(p, "utf8"), stat(p)]);
       const t = JSON.parse(text) as OffsetTable;
       if (typeof t?.path !== "string" || !isTable(t, t.path) || recordName(t.path) !== name) continue;
@@ -375,7 +445,10 @@ export async function cacheStatus(opts: CacheOpts = {}): Promise<CacheStatus> {
   return status;
 }
 
-/** Delete the cache directory, or only the records of the given session files. */
+/**
+ * Delete the cache directory, or only the records whose stored path is one of `paths` or lies
+ * under one of them (a project's log directory), so records of deleted logs go too.
+ */
 export async function clearCache(opts: CacheOpts & { paths?: string[] } = {}): Promise<{ removed: number; existed: boolean }> {
   const dir = cacheDir(opts);
   let existed = false;
@@ -389,16 +462,20 @@ export async function clearCache(opts: CacheOpts & { paths?: string[] } = {}): P
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     return { removed: 1, existed };
   }
+  const roots = opts.paths;
+  const matches = (path: string) => roots.some((r) => path === r || path.startsWith(r.endsWith(sep) ? r : `${r}${sep}`));
   let removed = 0;
-  for (const path of opts.paths) {
-    for (const sub of ["files", "index"]) {
-      const p = join(dir, sub, recordName(path));
+  for (const sub of ["files", "index"]) {
+    if (!(await safeDir(join(dir, sub)))) continue;
+    for (const name of await dirFiles(join(dir, sub))) {
+      const p = join(dir, sub, name);
       try {
-        await stat(p);
+        const rec = JSON.parse(await readFile(p, "utf8")) as { path?: unknown };
+        if (typeof rec.path !== "string" || !matches(rec.path)) continue;
         await rm(p, { force: true });
         removed++;
       } catch {
-        // absent
+        // unreadable or vanished: not ours to judge
       }
     }
   }
