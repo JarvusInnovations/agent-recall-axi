@@ -323,7 +323,9 @@ async function pan(session: Session, anchor: EventId, before: number, after: num
   let malformedBeyond = 0;
   let lines = start.seq - 1;
   let held = 0;
-  const waiting = (ev: Event) => ev.kind === "call" && ev.toolUseId !== undefined && ctx.pending.get(ev.toolUseId) === ev;
+  // A row still waiting for its partner: a call for its result, a compaction for its summary.
+  const waiting = (ev: Event) =>
+    (ev.kind === "call" && ev.toolUseId !== undefined && ctx.pending.get(ev.toolUseId) === ev) || (ev.kind === "compaction" && ctx.compaction === ev);
 
   for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
     lines = line.seq;
@@ -482,6 +484,12 @@ export async function show(session: Session, id: EventId, opts: { cache?: CacheO
     const seeked = await showFrom(session, id, start);
     if (seeked) return seeked;
   }
+  return showFromStart(session, id);
+}
+
+/** `show` by a forward scan from the file start, without the offset table (the reference a seek must match). */
+export async function showFromStart(session: Session, id: EventId): Promise<Shown> {
+  checkSession(session, id);
   return (await showFrom(session, id, { offset: 0, seq: 1, ctx: newContext(session), window: 0, byUuid: new Map() }))!;
 }
 
