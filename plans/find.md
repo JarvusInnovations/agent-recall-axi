@@ -1,5 +1,5 @@
 ---
-status: done
+status: in-progress
 depends: [ids-and-show]
 specs:
   - specs/cli.md
