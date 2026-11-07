@@ -37,6 +37,27 @@ describe("streaming on a 200 MB session", () => {
   }, 120_000);
 });
 
+describe("find on a 200 MB session", () => {
+  it("streams: peak RSS stays under 150 MB while every call's result text is searched", () => {
+    // "turn 7777:" is one human prompt; every call still folds its result text into the search.
+    const r = spawnSync(node, ["--import", rss, BIN_JS, "find", big, "turn 7777:", "--context", "0"], {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^count: "?1 of 1 hit \(/m);
+    const kb = Number(/MAXRSS_KB (\d+)/.exec(r.stderr)![1]);
+    expect(kb / 1024).toBeLessThan(150);
+    const tools = spawnSync(node, ["--import", rss, BIN_JS, "find", big, "--tool", "bash", "zzz-not-there"], {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME },
+    });
+    expect(tools.status).toBe(0);
+    expect(tools.stdout).toMatch(/^hits: "0 events match/m);
+    expect(Number(/MAXRSS_KB (\d+)/.exec(tools.stderr)![1]) / 1024).toBeLessThan(150);
+  }, 180_000);
+});
+
 describe("backward reader on a very long line", () => {
   it("joins an 8 MB line read in 2 KB blocks once, not per block", async () => {
     const path = join(tmp, "long-line.jsonl");
