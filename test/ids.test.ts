@@ -1,9 +1,10 @@
-import { cpSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { AgentSessionError } from "../src/lib/errors.js";
 import { formatId, parseBareSeq, parseId, resolveId, resolveSession } from "../src/lib/ids.js";
+import { openSession } from "../src/lib/session.js";
 import { FIXTURE_ROOT, SUBAGENT_ID, fixtureIndex } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
 
@@ -54,6 +55,15 @@ describe("parseId / formatId", () => {
     const e = await failure(resolveId("7a2f1c:418", widget));
     expect(e.code).toBe("VALIDATION_ERROR");
     expect(e.message).toContain("8 hex characters");
+  });
+});
+
+describe("ids in --from/--to", () => {
+  it("an uppercase id is still an id, not a time", async () => {
+    const lower = await run(["events", "a3000003", "--from", "a3000003:3", "--to", "a3000003:9"]);
+    const upper = await run(["events", "a3000003", "--from", "A3000003:3", "--to", "A3000003:9"]);
+    expect(upper.exitCode).toBe(0);
+    expect(upper.stdout.replace(/A3000003/g, "a3000003")).toBe(lower.stdout);
   });
 });
 
@@ -127,6 +137,28 @@ describe("latest", () => {
     const shown = await run(["show", `${s8}:2`], { env: tenv });
     expect(shown.stdout).toMatch(/^kind: call$/m);
     rmSync(join(tmp, "projects", "-src-widget", "copied-log.jsonl"));
+  });
+
+  it("a directory named like a reference is not a path; only a regular file is", async () => {
+    const cwdDir = join(tmp, "work");
+    mkdirSync(join(cwdDir, "latest"), { recursive: true });
+    mkdirSync(join(cwdDir, "aa00000a"), { recursive: true });
+    const scope = { env: tenv, cwd: cwdDir, project: "/src/widget" };
+    expect((await resolveSession("latest", scope)).short).toBe("b2000012");
+    expect((await resolveSession("aa00000a", scope)).short).toBe("aa00000a");
+  });
+
+  it("an uppercase uuid filename gets a lowercase <s8> that resolves", async () => {
+    const upper = join(tmp, "projects", "-src-widget", "AB00000B-0000-4000-8000-0000000000AA.jsonl");
+    cpSync(fx("skill"), upper);
+    onTestFinished(() => rmSync(upper, { force: true }));
+    const s = await openSession(upper);
+    expect(s.short).toBe("ab00000b");
+    const listed = await run(["events", upper, "--limit", "1"], { env: tenv });
+    const id = /^ {2}"([^"]+)"/m.exec(listed.stdout)![1]!;
+    expect(id.startsWith("ab00000b:")).toBe(true);
+    const shown = await run(["show", id, "--session", "ab00000b-0000-4000-8000-0000000000aa"], { env: tenv });
+    expect(shown.exitCode).toBe(0);
   });
 
   it("is the main session with the newest mtime", async () => {

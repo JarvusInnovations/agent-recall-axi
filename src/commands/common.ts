@@ -36,7 +36,8 @@ export function parseKinds(text: string | undefined): readonly Kind[] | "all" | 
 
 /** `<when>` or an event id (ids first, then the time grammar). */
 export function parseWhenOrId(text: string, tz: string, now: Date, endOfDay: boolean): Date | EventId {
-  const id = parseId(text);
+  // Ids print lowercase; an uppercased one is still an id, never a time (as in resolveId).
+  const id = parseId(text.toLowerCase());
   if (id) return id;
   return parseWhen(text, { tz, now, endOfDay });
 }

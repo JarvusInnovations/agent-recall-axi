@@ -109,7 +109,8 @@ export async function* listProjects(root: string): AsyncGenerator<Project> {
  * instead, so every printed id still matches the id grammar and resolves back to this file.
  */
 export function shortId(id: string, path: string): string {
-  return /^[0-9a-f]{8}/.test(id) ? id.slice(0, 8) : createHash("sha1").update(basename(path)).digest("hex").slice(0, 8);
+  // Lowercased: ids print lowercase and resolution matches lowercase.
+  return /^[0-9a-f]{8}/i.test(id) ? id.slice(0, 8).toLowerCase() : createHash("sha1").update(basename(path)).digest("hex").slice(0, 8);
 }
 
 export function sessionForPath(path: string, project?: Project): Session {
