@@ -408,3 +408,13 @@ export async function readPointer(
     return { text: pointer.preview, exists: false, followed: false, reason: "the file is missing" };
   }
 }
+
+/**
+ * The partner of a linked event (specs/api.md#reading): a call's result, or a result's (or
+ * answer's) call; undefined when there is none in the file (a pending call, an unlinked result).
+ */
+export async function linkedResult(session: Session, event: Event): Promise<Event | undefined> {
+  if (event.kind === "call") return (await show(session, event.id)).events[0]?.linked;
+  if (event.call) return (await show(session, event.call)).events[0]?.event;
+  return undefined;
+}
