@@ -106,7 +106,10 @@ function classifyUser(raw: Json, ctx: ClassifyContext): Draft[] {
     return [{ kind: "summary", text: joinText(content) }];
   }
   if (typeof content === "string") {
-    return [userText(content, raw, ctx)];
+    // String content has no stored blocks; when it splits (a hook wrapper followed by a prompt)
+    // its parts are numbered in order, the way blocks are.
+    const parts = userText(content, raw, ctx);
+    return parts.length > 1 ? parts.map((d, i) => ({ ...d, block: i + 1 })) : parts;
   }
   if (!Array.isArray(content)) return [];
   const out: Draft[] = [];
@@ -116,7 +119,7 @@ function classifyUser(raw: Json, ctx: ClassifyContext): Draft[] {
     switch (block.type) {
       case "text": {
         const text = str(block.text) ?? "";
-        out.push({ ...userText(text, raw, ctx), block: n });
+        out.push({ ...foldParts(userText(text, raw, ctx)), block: n });
         break;
       }
       case "tool_result":
@@ -139,36 +142,67 @@ const SKILL_PREFIX = "Base directory for this skill:";
 const CONTINUED_PREFIX = "This session is being continued from a previous conversation";
 const REMINDER_ONLY = /^(?:\s*<system-reminder>[\s\S]*?<\/system-reminder>)+\s*$/;
 const HARNESS_WRAPPER = /^\s*<(local-command-stdout|local-command-stderr|local-command-caveat|bash-stdout|bash-stderr)>/;
-const HOOK_WRAPPER = /^\s*<user-prompt-submit-hook>([\s\S]*?)(<\/user-prompt-submit-hook>|$)/;
+const HOOK_WRAPPER = /^\s*<user-prompt-submit-hook>([\s\S]*?)(?:<\/user-prompt-submit-hook>|$)/;
+/**
+ * A slash command is text made only of `<command-*>` tag blocks (and the local-command output
+ * the harness folds into them). A prompt that merely mentions a tag is the human's own text.
+ */
+const SLASH_ONLY = /^(?:\s*<(command-[\w-]+|local-command-(?:stdout|stderr|caveat))>[\s\S]*?<\/\1>)+\s*$/;
+/** Text that is nothing but image placeholders (`[Image #1]`, `[Image: source: …]`). */
+const IMAGE_ONLY = /^\s*(?:\[Image(?:[:\s#][^\]]*)?\]\s*)+$/;
 
 function originKind(raw: Json): string | undefined {
   return isObj(raw.origin) ? str(raw.origin.kind) : undefined;
 }
 
-function userText(text: string, raw: Json, ctx: ClassifyContext): Draft {
+/**
+ * One user text → its drafts: usually one; two when a hook wrapper is followed by a prompt (the
+ * hook output and the remainder are classified separately).
+ */
+function userText(text: string, raw: Json, ctx: ClassifyContext): Draft[] {
   const origin = originKind(raw);
   const trimmed = text.trimStart();
-  if (trimmed.startsWith(CONTINUED_PREFIX)) return { kind: "summary", text };
+  // The legacy compaction summary (no isCompactSummary flag) is recognized by its opening
+  // sentence, unless the entry says a human typed it.
+  if (origin !== "human" && trimmed.startsWith(CONTINUED_PREFIX)) return [{ kind: "summary", text }];
   if (raw.isMeta === true) {
-    if (trimmed.startsWith(SKILL_PREFIX)) return skillDraft(text);
-    if (trimmed.includes("<task-notification>")) return taskNotice(text);
-    return notice(text, origin ? { source: origin } : undefined);
+    if (trimmed.startsWith(SKILL_PREFIX)) return [skillDraft(text)];
+    if (trimmed.includes("<task-notification>")) return [taskNotice(text)];
+    return [notice(text, origin ? { source: origin } : undefined)];
   }
-  if (origin === "task-notification" || trimmed.startsWith("<task-notification>")) return taskNotice(text);
-  if (origin !== undefined && origin !== "human") return notice(text, { source: origin });
-  if (/<command-name>/.test(text)) return slash(text, raw);
-  if (HARNESS_WRAPPER.test(text)) return notice(text);
+  if (origin === "task-notification" || trimmed.startsWith("<task-notification>")) return [taskNotice(text)];
+  if (origin !== undefined && origin !== "human") return [notice(text, { source: origin })];
+  if (/<command-name>/.test(text) && SLASH_ONLY.test(text)) return [slash(text, raw)];
+  if (HARNESS_WRAPPER.test(text)) return [notice(text)];
   const hook = HOOK_WRAPPER.exec(text);
-  if (hook) return { kind: "hook", text: (hook[1] ?? "").trim(), extra: { meta: { hook: "UserPromptSubmit" } } };
-  if (REMINDER_ONLY.test(text)) return notice(text);
-  if (/^\[Request interrupted by user/.test(trimmed) || /^\[Image[:\s#]/.test(trimmed)) return notice(text);
-  // A subagent transcript is driven by its parent agent: user text there is the parent's prompt,
-  // never something the human typed, unless the entry carries a human origin.
-  if (ctx.session.kind === "subagent" && origin !== "human") return notice(text, { source: "parent" });
+  if (hook) {
+    const draft: Draft = { kind: "hook", text: (hook[1] ?? "").trim(), extra: { meta: { hook: "UserPromptSubmit" } } };
+    const rest = text.slice(hook.index + hook[0].length).replace(/^\s+/, "");
+    return rest ? [draft, ...userText(rest, raw, ctx)] : [draft];
+  }
+  if (REMINDER_ONLY.test(text)) return [notice(text)];
+  if (/^\[Request interrupted by user/.test(trimmed) || IMAGE_ONLY.test(text)) return [notice(text)];
+  // A subagent transcript, or a sidechain inside a main file, is driven by its parent agent: user
+  // text there is the parent's prompt, never something the human typed, unless the entry carries
+  // a human origin.
+  if ((ctx.session.kind === "subagent" || raw.isSidechain === true) && origin !== "human") {
+    return [notice(text, { source: "parent" })];
+  }
   const meta: Json = {};
   if (raw.queuePriority === "later") meta.scheduled = true;
   const kind: Kind = raw.promptSource === "queued" ? "human.queued" : "human";
-  return { kind, text, ...(Object.keys(meta).length ? { extra: { meta } } : {}) };
+  return [{ kind, text, ...(Object.keys(meta).length ? { extra: { meta } } : {}) }];
+}
+
+/**
+ * A text block that splits cannot take two ids (`.n` indexes stored blocks), so in array
+ * content the hook output rides on the remainder's event as `meta.hook` / `meta.hook_text`.
+ */
+function foldParts(parts: Draft[]): Draft {
+  if (parts.length === 1) return parts[0]!;
+  const [hook, rest] = parts as [Draft, Draft];
+  const meta = { ...((rest.extra?.meta as Json | undefined) ?? {}), hook: "UserPromptSubmit", hook_text: hook.text };
+  return { ...rest, extra: { ...(rest.extra ?? {}), meta } };
 }
 
 function skillDraft(text: string): Draft {
@@ -244,7 +278,8 @@ function joinText(content: unknown): string {
 // ---------------------------------------------------------------------------------------------
 // tool results and pointers
 
-const POINTER_RE = /Output too large \(([\d.]+)\s*([KMG]?B)\)\.\s*Full output saved to:\s*(\S+)/;
+// The path runs to the end of its line or the closing tag: stored paths may contain spaces.
+const POINTER_RE = /Output too large \(([\d.]+)\s*([KMG]?B)\)\.\s*Full output saved to:[ \t]*([^\n]*?)[ \t]*(?:<\/persisted-output>|\r?\n|$)/;
 const SIZE_MULT: Record<string, number> = { B: 1, KB: 1_000, MB: 1_000_000, GB: 1_000_000_000 };
 
 /**
@@ -254,8 +289,8 @@ const SIZE_MULT: Record<string, number> = { B: 1, KB: 1_000, MB: 1_000_000, GB: 
  */
 export function parsePointer(text: string, sidecar?: string): Pointer | undefined {
   const m = POINTER_RE.exec(text);
-  if (!m) return undefined;
-  const stored = m[3]!;
+  if (!m || !m[3]) return undefined;
+  const stored = m[3];
   const bytes = Math.round(Number(m[1]) * (SIZE_MULT[m[2]!] ?? 1));
   let preview = text;
   const pv = /Preview \(first [^)]*\):\n?/.exec(text);
@@ -292,7 +327,26 @@ function toolResult(block: Json, raw: Json, ctx: ClassifyContext): Draft {
   const meta: Json = {};
   if (images) meta.images = images;
   if (Object.keys(meta).length) extra.meta = meta;
-  return { kind: isAnswer ? "human.answer" : "result", text, extra };
+  if (isAnswer) {
+    const answers = tur && isObj(tur.answers) ? tur.answers : undefined;
+    const answerText = answers ? answersText(answers) : undefined;
+    if (answers) extra.meta = { ...(extra.meta ?? {}), answers };
+    return { kind: "human.answer", text: answerText ?? text, extra };
+  }
+  return { kind: "result", text, extra };
+}
+
+/**
+ * The human's answers without the harness wrapper (`User has answered your questions: …`): one
+ * answer is its text alone; several are `<question>: <answer>` lines in the stored order. A
+ * multi-select answer (an array) joins with `, `. Undefined when there is no answer text.
+ */
+function answersText(answers: Json): string | undefined {
+  const entries = Object.entries(answers)
+    .map(([q, a]) => [q, Array.isArray(a) ? a.map(String).join(", ") : typeof a === "string" ? a : a == null ? "" : String(a)] as const);
+  if (entries.length === 0) return undefined;
+  if (entries.length === 1) return entries[0]![1];
+  return entries.map(([q, a]) => `${q}: ${a}`).join("\n");
 }
 
 function resultFiles(tur: Json | undefined): string[] {

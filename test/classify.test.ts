@@ -4,6 +4,9 @@ import { formatId } from "../src/lib/ids.js";
 import { AUTHORITY, KINDS, type Event, type Kind } from "../src/lib/model.js";
 import { openSession } from "../src/lib/session.js";
 import { fixtures, QUEUED_PROMPT, SUBAGENT_ID } from "./fixtures/build.js";
+import { classify, parsePointer } from "../src/lib/adapters/claude-code/classify.js";
+import { newContext } from "../src/lib/adapters/adapter.js";
+import type { Session } from "../src/lib/model.js";
 import { fx } from "./helpers/run.js";
 
 async function all(name: string) {
@@ -83,7 +86,9 @@ describe("classify: tool-call linkage", () => {
     const evs = await eventsOf("question");
     const answer = byKind(evs, "human.answer")[0]!;
     expect(answer.authority).toBe("H");
-    expect(answer.text).toContain('"Which channel?"="beta"');
+    // The answer itself, not the harness's "User has answered your questions: …" wrapper.
+    expect(answer.text).toBe("beta");
+    expect(answer.meta).toMatchObject({ answers: { "Which channel?": "beta" } });
     expect(formatId(answer.call!)).toBe("b2000012:2");
   });
 
@@ -189,5 +194,70 @@ describe("classify: silent, unknown, malformed", () => {
     const listing = await all("silent");
     expect(listing.rows).toHaveLength(0);
     expect(listing.malformed).toBe(1);
+  });
+});
+
+describe("classify: authority edges", () => {
+  const at = async (id: string) => {
+    const evs = await eventsOf("authority-edges");
+    return evs.filter((e) => formatId(e.id) === id || formatId(e.id).startsWith(`${id}.`));
+  };
+
+  it("a prompt that mentions a <command-*> tag is human, verbatim", async () => {
+    const [ev] = await at("b3000014:2");
+    expect(ev).toMatchObject({ kind: "human", text: "what does the <command-name> tag mean?" });
+  });
+
+  it("text after a hook wrapper is its own human event", async () => {
+    const evs = await at("b3000014:4");
+    expect(evs.map((e) => [formatId(e.id), e.kind, e.text])).toEqual([
+      ["b3000014:4.1", "hook", "widget lint: clean"],
+      ["b3000014:4.2", "human", "now bump the gadget version"],
+    ]);
+  });
+
+  it("only an all-placeholder text is an image notice", async () => {
+    const evs = await at("b3000014:5");
+    expect(evs.map((e) => [e.kind, e.text])).toEqual([
+      ["human", "[Image #1] why is this widget row misaligned?"],
+      ["notice", "[Image #2]"],
+    ]);
+  });
+
+  it("a human-origin prompt that opens like a compaction summary stays human", async () => {
+    const [ev] = await at("b3000014:6");
+    expect(ev!.kind).toBe("human");
+    expect(ev!.text).toMatch(/^This session is being continued/);
+  });
+
+  it("a sidechain prompt inside a main session is the parent's, not the human's", async () => {
+    const [ev] = await at("b3000014:7");
+    expect(ev).toMatchObject({ kind: "notice", text: "Survey the sprockets under src/sprocket.", meta: { source: "parent" } });
+  });
+
+  it("several answers are question: answer lines, without the harness wrapper", async () => {
+    const [ev] = await at("b3000014:9");
+    expect(ev!.kind).toBe("human.answer");
+    expect(ev!.text).toBe("Which channel?: beta\nWhich regions?: eu, us");
+  });
+
+  it("a persisted path with a space parses whole and resolves in the sidecar", async () => {
+    const [ev] = await at("b3000014:11");
+    expect(ev!.pointer!.stored).toMatch(/\/tool-results\/bfx 0003\.txt$/);
+    expect(ev!.pointer!.exists).toBe(true);
+    expect(ev!.pointer!.bytes).toBe(3_100);
+    const unwrapped = parsePointer("Output too large (1.0KB). Full output saved to: /tmp/a b/c d.txt\n\nPreview (first 2KB):\nx");
+    expect(unwrapped!.stored).toBe("/tmp/a b/c d.txt");
+  });
+
+  it("array content: a hook wrapper with a prompt keeps one id and rides in meta", () => {
+    const session: Session = { id: "d0000001-0000-4000-8000-000000000000", short: "d0000001", kind: "main", path: "/x.jsonl", sidecar: "/x", adapter: "claude-code" };
+    const raw = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "<user-prompt-submit-hook>ok</user-prompt-submit-hook>\nship the widget" }] },
+    };
+    const evs = classify({ seq: 3, offset: 0, type: "user", raw }, newContext(session));
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({ kind: "human", text: "ship the widget", meta: { hook: "UserPromptSubmit", hook_text: "ok" } });
   });
 });
