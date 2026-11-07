@@ -40,7 +40,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       status: "not implemented yet — see specs/ and plans/ in the repository",
       help: ["Run `agent-session-axi --help` for the planned command list"],
     }),
-    commands: {},
+    commands: {
+      // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
+      update: async () => ({
+        update: `agent-session-axi ${VERSION}`,
+        help: [
+          "Run `npx skills update agent-session-axi` to update the skill bundle",
+          "Run `npm i -g agent-session-axi@latest` if installed from npm",
+        ],
+      }),
+    },
     formatError,
   });
 }

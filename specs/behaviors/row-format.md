@@ -51,6 +51,9 @@ Event listings show every kind except `thinking` and `result` (both reachable by
 would otherwise misread (why the model suddenly knew a skill, why a turn ended). `--kind` takes a
 comma list and replaces the default set; `--kind all` shows everything.
 
+These defaults are a first call on token cost versus legibility; revisit them after a month of
+unattended bot use, with real `--kind` usage from the bots' own session logs as the evidence.
+
 ### Headers and footers
 
 A listing opens with a header block (`session: <s8> <title>`, `day:`/`days:`, `tz:`,

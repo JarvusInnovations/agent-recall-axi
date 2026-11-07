@@ -33,10 +33,12 @@ Every id the tool prints or accepts: session short ids, entry ids, event ids, an
 - Any prefix of 8 or more hex characters resolves a session; fewer → `code: VALIDATION_ERROR`
   explaining the minimum.
 
-### The one threat: a rewritten file
+### Append-only is assumed
 
-If a writer ever rewrites a log in place (truncates, re-serializes, inserts), earlier ids point at
-different lines. The tool cannot prevent this but must not hide it:
+Session files are append-only; that is the operator's decision and the premise of this id scheme.
+The tool does not remap, repair, or renumber ids after a rewrite, and no command is specified to
+work across one. What it does owe is a notice: if a writer ever rewrites a log in place, earlier
+ids point at different lines and the tool must not hide it:
 
 - The cache (`architecture.md#cache`) records, per file, the byte length and a hash of the first
   line and of the last indexed line. On the next read, a shorter file or a changed hash marks the

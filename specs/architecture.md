@@ -150,6 +150,12 @@ header → rows or blocks → `help[]` (block form, hand-rendered because `encod
 arrays). `truncate.ts` owns the marks and the URL/path/id protection. The home header (`bin`,
 `description`) is the SDK's.
 
+## `update` shadow
+
+`commands/update.ts` is registered under the SDK's reserved name so the built-in self-updater (a
+registry call) never runs. It is print-only (`cli.md#update`); the install channel is inferred from
+the resolved entrypoint path.
+
 ## Error handling
 
 `AxiError` with the codes in `behaviors/errors.md`; `formatError` maps usage codes to exit 2 and
@@ -173,9 +179,10 @@ Two channels from one source, both committed to the same tag:
    comparison, and CI fails when it or `SKILL.md` is stale. The skill's examples invoke the shim
    by resolved path (never a bare name, since the bundle is not on `PATH`).
 
-The house tools so far ship the npm channel alone; this tool adds the bundle because its first
-consumers are unattended bots whose hosts may lack npm access, and because a memory tool must work
-exactly when everything else is broken.
+Both channels are required, not optional: bots install this tool with `npx skills add` on hosts
+that may not reach the npm registry at cold start, and a memory tool has to work exactly then. The
+npm channel serves interactive installs and `npx -y`; the committed bundle serves the bots. The
+other house tools ship npm alone; this one deliberately ships both.
 
 ### Version fast path
 

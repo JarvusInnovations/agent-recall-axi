@@ -364,7 +364,7 @@ summary:              # C — the compaction summary that opened this window, if
   id: 7a2f1c3e:1203
   text: |
     ...
-human[4]:             # H — verbatim, oldest first
+human[4]:             # H — human, human.queued, human.slash, human.answer; verbatim, oldest first
   - id: 7a2f1c3e:1210
     t: 11-07 13:40:02
     kind: human
@@ -384,6 +384,9 @@ help[2]:
 ```
 
 Layer order is fixed (summary, human, tools, claims) so a consumer can read authority top-down.
+The `human` layer is every `H`-class event in the window: `human`, `human.queued` (messages sent
+while the agent was working), `human.slash`, and `human.answer` (replies to the agent's questions);
+none is filtered out, because a cold start that misses a mid-turn correction repeats the mistake.
 
 ## `hook`
 
@@ -408,10 +411,29 @@ agent-session-axi cache clear [--project <p> | --all]
 Reports the cache directory, size, indexed session count and staleness; `clear` deletes it.
 Nothing else depends on the cache existing.
 
+## `update`
+
+```
+agent-session-axi update [--check]
+```
+
+Shadows the SDK's built-in self-updater so the tool never contacts a registry
+(`behaviors/privacy.md`). Print-only: reports the running version and the two ways to update,
+`npx skills update agent-session-axi` for a skill install and `npm i -g agent-session-axi@latest`
+for an npm install, choosing the first line by how the running binary was installed (inside a
+`skills/` directory → skill first). `--check` is accepted and prints the same text; exit 0.
+
+```
+update: agent-session-axi 0.3.1 (skill install)
+help[2]:
+  Run `npx skills update agent-session-axi` to update the skill bundle
+  Run `npm i -g agent-session-axi@latest` if installed from npm
+```
+
 ## Built-ins
 
-`--help`, `<command> --help`, `-v`/`-V`/`--version` (fast path, no command graph loaded), and the
-SDK's `update` (`behaviors/privacy.md` notes its registry call).
+`--help`, `<command> --help`, `-v`/`-V`/`--version` (fast path, no command graph loaded). The
+SDK's `update` is not used; see above.
 
 ## Principles
 

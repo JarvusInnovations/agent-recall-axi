@@ -14,9 +14,9 @@ Every command, the library, the skill and the session hook.
 - **Inputs** are files under the agent's log directory (`~/.claude/projects` for the Claude Code
   adapter) or paths the caller names. The tool never widens permissions, never follows symlinks
   out of the log directory without being handed the path, and never reads another user's home.
-- **No network.** No command opens a socket. The only exception is the SDK's built-in `update`,
-  which asks the npm registry for the package's latest version and sends the package name only;
-  it is documented as such in `--help` and the README.
+- **No network, ever.** No command opens a socket. The SDK's built-in `update` (which would query
+  the npm registry) is shadowed by the tool's own `update`, a print-only command that tells the
+  caller how to update by hand (`cli.md#update`). There is no exception.
 - **No writes next to the logs.** The tool never creates, modifies, or deletes anything under the
   log directory, including the session sidecar directories. Session files are opened read-only.
 - **Cache** (`architecture.md#cache`): derived indexes only (offsets, hashes, per-session stats,

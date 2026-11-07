@@ -68,7 +68,9 @@ session stats (`sessions-and-recall`), the skill bundle (`skill-and-hook`).
 7. **Commands**: `sessions` (id, started, last, title=`(pending)` placeholder → replaced in
    `sessions-and-recall`; make the placeholder explicit, not a lie), `events`, `tail`. Home view
    prints a minimal listing (no `last_human` yet).
-8. **CI** (`.github/workflows/ci.yml`): check, build, test, smoke test (`sessions --project
+8. **`update` shadow**: register `update` (print-only, channel inferred from the entrypoint path)
+   so the SDK built-in never runs; no network anywhere (`privacy.md`).
+9. **CI** (`.github/workflows/ci.yml`): check, build, test, smoke test (`sessions --project
    /nonexistent` → exit 1, `code: NO_SESSIONS`, no stack trace).
 
 ## Validation
@@ -97,6 +99,9 @@ session stats (`sessions-and-recall`), the skill bundle (`skill-and-hook`).
       `--limit 5` agree.
 - [ ] `events <fixture> --bogus` → exit 2, `code: UNKNOWN_FLAG`, valid flags listed inline;
       `events` with a leading flag → the SDK's "Flags must come after the command".
+- [ ] `update` and `update --check` print the version and the two update commands, exit 0, and a
+      test with network disabled (`--network none` sandbox or a blocked resolver) passes; `--help`
+      shows no SDK `built-in` block.
 - [ ] `sessions --project /nonexistent` → exit 1, `code: NO_SESSIONS`, hint names `--project`/`--all`.
 - [ ] A test opens every fixture through the adapter and asserts no file under the fixture root
       changed (mtime + hash) — read-only guarantee.

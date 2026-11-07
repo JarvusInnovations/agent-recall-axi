@@ -26,6 +26,13 @@ Claude Code, Codex and OpenCode at user or project scope, and hook mode for the 
 
 ## Approach
 
+0. **Prove the hook payload path first.** Install the SDK's SessionStart hook into a scratch
+   settings file, run the installed command string the way Claude Code does (JSON payload with
+   `session_id`, `transcript_path`, `source: compact` on stdin), and record whether the home view
+   process receives it. If it does, hook mode rides the SDK install. If the SDK's command wrapping
+   drops stdin, register our own `ManagedHookSpec` via `computeSessionStartHookUpdate` with a
+   command that reads stdin, and keep the SDK helpers for status/uninstall. Write the finding into
+   this plan's Notes before step 1 begins.
 1. `scripts/build-cli.ts` (from the axi-skills templates): esbuild `src/cli-bundle-entry.ts` →
    `skills/agent-session-axi/scripts/agent-session-axi.mjs`, `platform: node`, `target: node22`,
    `format: esm`, shebang banner, version stamped from `git describe`; `--check` normalizes the
@@ -51,6 +58,9 @@ Claude Code, Codex and OpenCode at user or project scope, and hook mode for the 
 
 ## Validation
 
+- [ ] Step 0 recorded in Notes: a reproducible test shows whether the SDK-installed command
+      receives the SessionStart stdin payload; hook mode is wired through whichever path the
+      test proved, and a fixture test pipes `source: compact` through that exact command string.
 - [ ] `bun run build:bundle` produces a single `.mjs` with no `import` of a bare package name
       (grep); `node skills/agent-session-axi/scripts/agent-session-axi.mjs --version` works in a
       checkout with `node_modules` removed; the shim runs the same.
@@ -75,10 +85,8 @@ Claude Code, Codex and OpenCode at user or project scope, and hook mode for the 
 
 ## Risks / unknowns
 
-- **SDK hook command shape** — the SDK installs a hook that runs the bare home view; hook mode
-  relies on Claude Code's SessionStart stdin payload reaching that process. Verify against the
-  SDK's installed command string; if the SDK wraps the command in a way that drops stdin, register
-  our own `ManagedHookSpec` via `computeSessionStartHookUpdate`.
+- **Hook payload path** — settled by Approach step 0 before any other work in this plan; the
+  custom `ManagedHookSpec` is the fallback, not an open design question.
 - **Bundle reproducibility** — esbuild output must be deterministic across machines for the drift
   gate; pin esbuild exactly and build in CI with the same Node major.
 - **`.mjs` and SDK auto-install** — the SDK's filename heuristic never auto-installs hooks for a

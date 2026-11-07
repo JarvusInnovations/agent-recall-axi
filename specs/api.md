@@ -143,9 +143,11 @@ The CLI converts these to `AxiError` one-to-one.
 
 ## Stability
 
-The library is pre-1.0; the types above are the contract the first plan set builds to. Breaking
-changes bump the minor version until 1.0 and are listed in the release notes. The `render`
-subpath is provided for the kit's convenience and follows the CLI's output rules exactly.
+The library ships at `0.x`: the types above are the contract the first plan set builds to, and
+breaking changes bump the minor version and are listed in the release notes. The whole surface,
+and the `render` subpath in particular, is **unstable until the ops kit consumes it**; the first
+kit release that imports it is what promotes the contract to stable (and starts the path to 1.0).
+The `render` subpath follows the CLI's output rules exactly.
 
 ## Principles
 

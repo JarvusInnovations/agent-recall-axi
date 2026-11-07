@@ -63,6 +63,9 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
 - [ ] `recall "phrase"` groups by session with `hits` and `first`, newest first; `scanned:` and
       `index: none` on first run, `index: fresh` on the second with identical results; results
       also identical with the cache deleted.
+- [ ] Measured: `recall` over 20 copies of the 200 MB fixture completes cold (no index) and warm
+      (indexed); both timings recorded in Notes with the verdict on whether an indexed store is
+      needed.
 - [ ] `recall` with no matches prints the definitive empty line with the scanned count and a
       `--since 1y` hint.
 - [ ] Cache directory and files are created `0700`/`0600`; `cache clear --project` removes only
@@ -72,8 +75,11 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
 
 ## Risks / unknowns
 
-- **Scan cost at scale** — hundreds of sessions, gigabytes. The term index is the answer; the
-  first `recall` is honest about its cost (`scanned:` with time). Consider a `cache build` later.
+- **Scan cost at scale** — hundreds of sessions, gigabytes. The decision is a dependency-free
+  term index in the cache dir with default `--since 90d`; the first `recall` is honest about its
+  cost (`scanned:` with time). SQLite (or any native dependency) is considered only if a measured
+  scan over a realistic corpus (the 200 MB fixture × 20, recorded in Notes) is too slow for the
+  bots' use, and that measurement is part of this plan's closeout.
 - **Title quality** — `ai-title` may be absent on bots' sessions; the first-human-head fallback
   is always available.
 

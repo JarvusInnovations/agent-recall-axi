@@ -237,7 +237,7 @@ library's answer to "what was I doing":
 
 | layer | content | authority |
 | --- | --- | --- |
-| `human` | every `human*` event in the chosen window, verbatim, oldest first | H |
+| `human` | every `H`-class event in the chosen window — `human`, `human.queued`, `human.slash`, `human.answer` — verbatim, oldest first | H |
 | `tools` | the last N `call` events with `target`, result status and pointer, newest last | D |
 | `claims` | the last M `assistant` events, verbatim | C |
 | `summary` | the window's opening `summary` event, if any | C |
