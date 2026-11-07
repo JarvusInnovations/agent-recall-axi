@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [reader-and-event-model]
 specs:
   - specs/data-model.md
@@ -8,6 +8,7 @@ specs:
   - specs/behaviors/truncation.md
   - specs/behaviors/authority.md
 issues: [1]
+pr: 5
 ---
 
 # Plan: Ids and show
@@ -52,31 +53,31 @@ Out of scope: pan verbs (`pan`), search (`find`), the offset cache (`pan`).
 
 ## Validation
 
-- [ ] `parseId` accepts `7a2f1c3e:418` and `7a2f1c3e:418.2`, rejects `7a2f1c:418`, `418`,
+- [x] `parseId` accepts `7a2f1c3e:418` and `7a2f1c3e:418.2`, rejects `7a2f1c:418`, `418`,
       `7a2f1c3e:0`, `7a2f1c3e:418.0`; a bare `418` is accepted only with `--session`.
-- [ ] Fixture with two sessions sharing a 7-char prefix: an 8-char prefix resolves uniquely; a
+- [x] Fixture with two sessions sharing a 7-char prefix: an 8-char prefix resolves uniquely; a
       fixture with two sessions sharing 8 chars → `AMBIGUOUS_SESSION` with both candidates in
       `details`.
-- [ ] `latest` resolves to the fixture with the newest mtime; a subagent fixture resolves by its
+- [x] `latest` resolves to the fixture with the newest mtime; a subagent fixture resolves by its
       agentId prefix and prints `kind: subagent`, `parent:`.
-- [ ] `show` of a `call` prints `input`, `result`, `result_status`, `result_text`, `authority: C`;
+- [x] `show` of a `call` prints `input`, `result`, `result_status`, `result_text`, `authority: C`;
       of a `result` prints `call`; of a `compaction` prints `trigger`, `pre_tokens`, `post_tokens`,
       `summary`, `preserved: <n> events`.
-- [ ] `show <id-of-multi-block-entry>` prints `blocks[4]` with `.1`..`.4`; `show <id>.3` prints
+- [x] `show <id-of-multi-block-entry>` prints `blocks[4]` with `.1`..`.4`; `show <id>.3` prints
       only the third.
-- [ ] `show <pointer-result>` prints `pointer: … (exists)` and the preview; `--full` prints the
+- [x] `show <pointer-result>` prints `pointer: … (exists)` and the preview; `--full` prints the
       file contents; with the file deleted prints `(missing)` and exit 0.
-- [ ] `show <silent-seq>` prints `kind: silent` + raw and hints nearest event ids; `show
+- [x] `show <silent-seq>` prints `kind: silent` + raw and hints nearest event ids; `show
       <beyond-eof>` → `NOT_FOUND` with the line count.
-- [ ] Id stability test: list a fixture's ids, append 500 lines (including a new compaction and
+- [x] Id stability test: list a fixture's ids, append 500 lines (including a new compaction and
       a rewritten `sessions-index.json`), re-resolve every id → identical entries; truncate the
       fixture by one line → next read prints the rewrite `notice:` exactly once.
-- [ ] Truncation tests: a 300-char row head ends with `…` and the footer counts it; a URL spanning
+- [x] Truncation tests: a 300-char row head ends with `…` and the footer counts it; a URL spanning
       the cut is kept whole; a `call` target path is never cut; `show` text over 4,000 chars ends
       with ` … (truncated, N chars total)` and the `--full` hint appears; under the cap, no hint.
-- [ ] `--fields authority` adds `H|C|D` per `authority.md`.
-- [ ] `zoom` output is byte-identical to `show` for the same arguments.
-- [ ] `tail latest`, `tail <8-hex prefix>` and `events <uuid>` resolve through `resolveSession`
+- [x] `--fields authority` adds `H|C|D` per `authority.md`.
+- [x] `zoom` output is byte-identical to `show` for the same arguments.
+- [x] `tail latest`, `tail <8-hex prefix>` and `events <uuid>` resolve through `resolveSession`
       (from `reader-and-event-model`).
 
 ## Risks / unknowns
@@ -88,8 +89,58 @@ Out of scope: pan verbs (`pan`), search (`find`), the offset cache (`pan`).
 
 ## Notes
 
-(at closeout)
+Spec readings this plan settled, written into `cli.md`, `data-model.md` and `api.md` in the two
+leading `docs(specs):` commits:
+
+- **`--project`/`--all` on every command that resolves a `<session>` or `<id>`.**
+  `time-and-scope.md` already pointed `NO_SESSIONS` at them, but `cli.md` usage lines never
+  listed them.
+- **`show --session <ref>`** is what makes "a bare `418` only with `--session`" testable at the
+  CLI. With both a full id and `--session`, the id's `<s8>` must be that session's.
+- **`latest` is the newest main session.** A subagent file is often touched last, but it is
+  reached by its agentId, never as `latest`.
+- **`show --fields` is a projection** (keep only these fields). Every field already prints by
+  default, so a detail view has nothing to add.
+- **The `show` shape:** `event:` for one event; `entry:` + `t` + `blocks[N]` for a bare
+  multi-event id; `uuid`/`parent_uuid` close every entry; absent fields are omitted. A silent
+  entry prints `kind: silent`, `type` and `raw:` with nearest-event hints. A malformed line adds
+  `malformed: true`; a trailing line still being written adds `partial: true`.
+
+Decisions recorded only here:
+
+- `turn` is the nearest preceding `human`/`human.slash`; a compaction belongs to the window it
+  closes (window = compactions strictly before it); the summary after it opens the next window.
+  `views` owns turn segmentation and may refine this, but it must agree with `show`.
+- `preserved: <n> events` counts the events of the entries whose uuids the boundary lists, as
+  seen before the boundary in the file.
+- `show` caps `H` text at 4,000 chars like every kind, per the caps table, with the marker and
+  `--full`. `authority.md`'s verbatim guarantee is read as "never rewritten", and a marked cut is
+  not a rewrite. `human` and `resume-pack` keep their own budgets.
+- `--raw` prints the parsed line as nested TOON, not literal JSON, so stdout stays TOON. Each
+  string value over 4,000 chars is cut with the house marker unless `--full`.
+- `--raw` with a block id prints the whole line (`entry:`); the block is not validated.
+- A single-event entry's id is the entry form. `<id>.1` of it is `NOT_FOUND` naming the right id,
+  never silently accepted.
+- A call target is "a path" when it is in the event's `files` (path-valued input). Such a target
+  is never cut. In a shell command, path-like tokens are kept whole and the rest is cut.
+- The rewrite identity is length + first-line hash + the last read line's offset/length/hash.
+  It stores an offset, not the seq that `architecture.md#cache` names: seq bookkeeping arrives
+  with the offset table in `pan`. A notice prints once on `events`, `tail` and `show`; then the
+  new identity is recorded.
+- `AMBIGUOUS_SESSION` candidates carry `title: (pending)` until titles land.
+- Listing hints name a session by `<s8>` plus the scope flag it resolved in. When the caller
+  gave a path, they name it by path and point `show` hints at `--session <path>`. `sessions`
+  and the home view now hint `tail <s8>`.
+- Tests get a throwaway `XDG_CACHE_HOME` from the vitest global setup and the run helper. An
+  early local run without it wrote fixture identities into the real cache, which was deleted.
+- `show` scans from the file start (no offset cache yet), so its cost grows with the entry's
+  position. It was not measured here. The plan put that measurement in `pan`, which now owns it
+  as a Validation item.
 
 ## Follow-ups
 
-(at closeout)
+- Deferred to [`pan`](pan.md): `show` seeks by seq through the offset table and rebuilds link
+  context from the enclosing turn, instead of scanning from the file start; the identity record
+  gains the last-indexed seq.
+- Deferred to [`sessions-and-recall`](sessions-and-recall.md): `AMBIGUOUS_SESSION` candidates
+  carry real titles instead of `(pending)`.
