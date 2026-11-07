@@ -1,5 +1,6 @@
 /** `sessions` (specs/cli.md#sessions). Minimal schema for now: no stats, title pending. */
 import { AxiError } from "axi-sdk-js";
+import { hintName, sharedShorts } from "../lib/ids.js";
 import { sessionListing, type SessionInfo } from "../lib/session.js";
 import type { Scope } from "../lib/scope.js";
 import { formatAgo, formatMonthDayMinute } from "../lib/time.js";
@@ -98,7 +99,8 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   header.count = `${listing.sessions.length} of ${listing.matching}`;
   header.sessions = listing.sessions.map((s) => sessionRow(s, tz, io.now, extra));
   const top = listing.sessions[0]!;
-  help.push(`Run \`${BIN} tail ${shellPath(top.path)}${carry(p)}\` for the last rows of ${top.short}`);
+  const name = hintName(top, await sharedShorts(listing.scope));
+  help.push(`Run \`${BIN} tail ${name}${scopeFlag}${carry(p)}\` for the last rows of ${top.short}`);
   if (!fields.includes("path")) help.push(`Run \`${BIN} sessions${scopeFlag} --fields path${carry(p)}\` for each session's file path`);
   if (listing.sessions.length < listing.matching) {
     help.push(`Run \`${BIN} sessions${scopeFlag} --limit 0${carry(p)}\` for all ${listing.matching} sessions`);

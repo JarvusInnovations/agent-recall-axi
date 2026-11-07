@@ -20,7 +20,7 @@ Every command.
 | `UNKNOWN_FLAG` | 2 | a flag the command does not declare | `valid flags for \`<cmd>\`: …` inline, `--help` and `--tz` always allowed |
 | `VALIDATION_ERROR` | 2 | a value that does not parse (bad `<when>`, short prefix, bad id) | the grammar, one line |
 | `NOT_FOUND` | 1 | a session or id that resolves to nothing | nearest ids or `sessions` |
-| `AMBIGUOUS_SESSION` | 1 | a prefix matching several sessions | `details:` with candidates and titles |
+| `AMBIGUOUS_SESSION` | 1 | a prefix matching several sessions | `details:` with candidates and titles; for an id, `--session <uuid>` per candidate (an id's `<s8>` cannot be lengthened) |
 | `NO_SESSIONS` | 1 | no log directory for the current scope | `--project <path>` or `--all` |
 | `UNREADABLE` | 1 | a file exists but cannot be read | the path and the permission needed |
 | `INTERNAL_ERROR` | 1 | anything unexpected, wrapped as `unexpected failure: <message>` | file an issue; `--debug` for the stack on stderr |

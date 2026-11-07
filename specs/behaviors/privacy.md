@@ -11,6 +11,9 @@ Every command, the library, the skill and the session hook.
 
 ## Details
 
+- **Persisted outputs** are read only from the session's own `<sidecar>/tool-results/`, as regular
+  files (`data-model.md#pointer`). A path named inside a log is data, not an instruction to read
+  that file.
 - **Inputs** are files under the agent's log directory (`~/.claude/projects` for the Claude Code
   adapter) or paths the caller names. The tool never widens permissions, never follows symlinks
   out of the log directory without being handed the path, and never reads another user's home.

@@ -20,6 +20,7 @@ const VERSION = "2.1.0";
 export const PROJECTS = {
   widget: { cwd: "/src/widget", encoded: "-src-widget" },
   gadget: { cwd: "/src/gadget", encoded: "-src-gadget" },
+  sprocket: { cwd: "/src/sprocket", encoded: "-src-sprocket" },
 } as const;
 type ProjectName = keyof typeof PROJECTS;
 
@@ -42,10 +43,10 @@ class SessionBuilder {
     readonly project: ProjectName,
     s8: string,
     start: string,
-    readonly opts: { agentId?: string; parent?: string } = {},
+    readonly opts: { agentId?: string; parent?: string; id?: string } = {},
   ) {
     this.s8 = s8;
-    this.id = fixtureUuid(s8, 0);
+    this.id = opts.id ?? fixtureUuid(s8, 0);
     this.clock = Date.parse(start);
   }
 
@@ -526,6 +527,74 @@ function authorityEdges(): Fixture {
   return { name: "authority-edges", session: s, files: { [`${s.id}/tool-results/bfx 0003.txt`]: full } };
 }
 
+/** One assistant entry holding text plus three parallel calls: four events, `.1`..`.4`. */
+function multiBlock(): Fixture {
+  const id = "b4000015";
+  const s = new SessionBuilder("widget", id, START);
+  s.human("check the flange config, the sprocket tests and the build");
+  s.silent("file-history-snapshot", { note: "bookkeeping between two events" });
+  s.assistant([
+    { type: "text", text: "Three checks, in parallel." },
+    s.toolUse(TOOL(id, 1), "Read", { file_path: "config/flange.toml" }),
+    s.toolUse(TOOL(id, 2), "Grep", { pattern: "sprocket", path: "src/sprocket" }),
+    s.toolUse(TOOL(id, 3), "Bash", { command: "bun run build", description: "Build" }),
+  ]);
+  s.user(
+    [
+      { tool_use_id: TOOL(id, 2), type: "tool_result", content: "src/sprocket/a.test.ts", is_error: false },
+      { tool_use_id: TOOL(id, 1), type: "tool_result", content: "1\tteeth = 12\n", is_error: false },
+      { tool_use_id: TOOL(id, 3), type: "tool_result", content: "build ok", is_error: false },
+    ],
+  );
+  s.say("All three look fine.");
+  return { name: "multi-block", session: s };
+}
+
+export const LONG_URL = "https://docs.example.test/widget/guides/redirects/staging-callback-loop-troubleshooting";
+export const LONG_PATH = "src/widget/components/listing/table/pagination/controls/next-page-button/handlers/legacy/compat/adapters/on-click-handler.ts";
+
+/** Long texts for the caps: row heads, URLs and paths across the cut, the 4,000-char detail cap. */
+function longText(): Fixture {
+  const id = "b5000016";
+  const s = new SessionBuilder("widget", id, START);
+  s.human(deterministicText(VOCAB, 300).replace(/\n/g, " "));
+  // The 200-char head would fall inside the URL.
+  s.human(`${"see the redirect notes ".repeat(8).slice(0, 180)}${LONG_URL} and then fix it`);
+  s.assistant([s.toolUse(TOOL(id, 1), "Read", { file_path: `${LONG_PATH}` })]);
+  s.toolResult(TOOL(id, 1), deterministicText(VOCAB, 5000));
+  // A shell command whose 120-char target cut would fall inside a path.
+  s.assistant([s.toolUse(TOOL(id, 2), "Bash", { command: `${"echo widget && ".repeat(6)}cat ${LONG_PATH} && echo done`, description: "Show handler" })]);
+  s.toolResult(TOOL(id, 2), "export function onClick() {}");
+  s.say(deterministicText(VOCAB, 4500));
+  s.say("Short reply.");
+  // H text over the detail cap: `show` never cuts it.
+  s.human(deterministicText(VOCAB, 4600));
+  // A hook wrapper inside a text block rides on the prompt's event as meta.hook_text.
+  s.user([{ type: "text", text: `<user-prompt-submit-hook>${deterministicText(VOCAB, 4400)}</user-prompt-submit-hook>\nnow the short prompt` }], { origin: { kind: "human" }, promptSource: "typed" });
+  return { name: "long-text", session: s };
+}
+
+/**
+ * Prefix collisions in their own project: two sessions sharing 7 characters (an 8-character
+ * prefix tells them apart) and two sharing all 8 (only a longer prefix does).
+ */
+function prefixCollisions(): Fixture[] {
+  // The pair sharing 8 characters is the newest, so listings and `latest` land on it.
+  const one = (s8: string, idOverride?: string) => {
+    const start = s8 === "c3b5d7e9" ? "2026-11-06T10:00:00.000Z" : "2026-11-06T09:00:00.000Z";
+    const s = new SessionBuilder("sprocket", s8, start, idOverride ? { id: idOverride } : {});
+    s.human(`sprocket task for ${idOverride ?? s8}`);
+    s.say("Done.");
+    return s;
+  };
+  return [
+    { name: "seven-a", session: one("c2a4e6f1") },
+    { name: "seven-b", session: one("c2a4e6f9") },
+    { name: "eight-a", session: one("c3b5d7e9") },
+    { name: "eight-b", session: one("c3b5d7e9", "c3b5d7e9-ffff-4000-8000-000000000000") },
+  ];
+}
+
 function gadgetProject(): Fixture {
   const s = new SessionBuilder("gadget", "c1000013", "2026-11-06T10:00:00.000Z");
   s.human("add a gadget counter");
@@ -554,6 +623,9 @@ export function fixtures(): Fixture[] {
     twoDay(),
     question(),
     authorityEdges(),
+    multiBlock(),
+    longText(),
+    ...prefixCollisions(),
     gadgetProject(),
   ];
 }

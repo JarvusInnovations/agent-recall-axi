@@ -39,7 +39,7 @@ describe("scope", () => {
 
   it("--all spans every project", async () => {
     const s = await resolveScope({ env, project: "all" });
-    expect(s.projects.map((p) => p.cwd)).toEqual(["/src/gadget", "/src/widget"]);
+    expect(s.projects.map((p) => p.cwd)).toEqual(["/src/gadget", "/src/sprocket", "/src/widget"]);
   });
 
   it("lists sessions newest first; subagents only on request; the stale index entry is ignored", async () => {

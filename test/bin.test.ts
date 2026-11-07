@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FIXTURE_ROOT } from "./fixtures/build.js";
-import { BIN_JS, REPO } from "./helpers/run.js";
+import { BIN_JS, CACHE_HOME, REPO } from "./helpers/run.js";
 
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
 // Wall-clock bounds get headroom on shared CI runners.
@@ -13,7 +13,7 @@ const helper = (name: string) => join(REPO, "test", "helpers", name);
 function runBin(args: string[], nodeArgs: string[] = [], env: Record<string, string> = {}) {
   const r = spawnSync(node, [...nodeArgs, BIN_JS, ...args], {
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: FIXTURE_ROOT, TZ: "UTC", ...env },
+    env: { ...process.env, CLAUDE_CONFIG_DIR: FIXTURE_ROOT, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME, ...env },
     cwd: REPO,
   });
   return { stdout: r.stdout, stderr: r.stderr, status: r.status };

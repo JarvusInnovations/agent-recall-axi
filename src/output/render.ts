@@ -7,6 +7,8 @@ import { formatId } from "../lib/ids.js";
 import type { CallStatus, Event, EventId } from "../lib/model.js";
 import { formatClock, formatDay, formatMonthDayClock } from "../lib/time.js";
 import { formatSize } from "./sizes.js";
+import { head } from "./truncate.js";
+import type { RowField } from "../reference.js";
 
 export const DEFAULT_HEAD = 200;
 export const TARGET_HEAD = 120;
@@ -30,13 +32,20 @@ export function oneLine(text: string): string {
   return text.replace(/(\r?\n)+/g, " ");
 }
 
-/** A plain head cut marked with `…` (URL/path/id protection lands with the truncation module). */
+/** A row head cut (behaviors/truncation.md): URL/id-protected, marked with `…`. */
 export function headCut(text: string, n: number): { text: string; cut: boolean } {
-  if (n <= 0 || text.length <= n) return { text, cut: false };
-  let end = n;
-  const code = text.charCodeAt(end);
-  if (code >= 0xdc00 && code <= 0xdfff) end--;
-  return { text: `${text.slice(0, end)}…`, cut: true };
+  return head(text, n);
+}
+
+/**
+ * A `call` target cut to min(head, 120): a target that is itself a path is kept whole; inside a
+ * longer target (a shell command) path-like tokens are kept whole and the rest is cut.
+ */
+export function targetCut(ev: Event, cap: number): { text: string; cut: boolean } {
+  const target = oneLine(ev.target ?? "");
+  // A path target is kept whole, within the same bound as any protected span (twice the cap).
+  if (ev.files?.includes(ev.target ?? "") && (cap <= 0 || target.length <= 2 * cap)) return { text: target, cut: false };
+  return head(target, cap, { paths: true });
 }
 
 export function renderStatus(s: CallStatus | undefined): string {
@@ -65,7 +74,7 @@ export function rowText(ev: Event, opts: RowOpts): { text: string; cut: boolean 
   switch (ev.kind) {
     case "call": {
       const targetCap = head > 0 ? Math.min(head, TARGET_HEAD) : 0;
-      const target = ev.target !== undefined ? headCut(oneLine(ev.target), targetCap) : undefined;
+      const target = ev.target !== undefined ? targetCut(ev, targetCap) : undefined;
       const base = target ? `${ev.tool} ${target.text}` : (ev.tool ?? "?");
       return { text: `${base} → ${renderStatus(ev.status)}`, cut: target?.cut ?? false };
     }
@@ -125,20 +134,67 @@ export function timeColumn(rows: Event[], tz: string): TimeColumn {
 
 export interface RenderedRows {
   header: Record<string, string>;
-  rows: Array<{ id: string; t: string; kind: string; text: string }>;
+  rows: Array<Record<string, string | number | boolean>>;
   cut: number;
+  /** The first row whose head was cut. */
+  firstCut?: EventId;
   chars: number;
 }
 
-export function renderRows(events: Event[], tz: string, opts: RowOpts): RenderedRows {
+/** An opt-in column (`--fields`, cli.md#events-session); empty when the event lacks it. */
+export function fieldValue(ev: Event, field: RowField, opts: RowOpts): string | number | boolean {
+  return fieldCell(ev, field, opts).value;
+}
+
+/** A column's value and whether it was cut (a cut column counts toward the footer like the text). */
+export function fieldCell(ev: Event, field: RowField, opts: RowOpts): { value: string | number | boolean; cut: boolean } {
+  if (field === "target") {
+    if (ev.target === undefined) return { value: "", cut: false };
+    const t = targetCut(ev, opts.head > 0 ? Math.min(opts.head, TARGET_HEAD) : 0);
+    return { value: t.text, cut: t.cut };
+  }
+  return { value: plainField(ev, field), cut: false };
+}
+
+function plainField(ev: Event, field: Exclude<RowField, "target">): string | number | boolean {
+  switch (field) {
+    case "authority":
+      return ev.authority;
+    case "size":
+      return ev.size;
+    case "tool":
+      return ev.tool ?? "";
+    case "result":
+      return ev.result ? formatId(ev.result) : "";
+    case "call":
+      return ev.call ? formatId(ev.call) : "";
+    case "error":
+      return ev.error === undefined ? "" : ev.error;
+  }
+}
+
+export function renderRows(events: Event[], tz: string, opts: RowOpts & { fields?: readonly RowField[] }): RenderedRows {
   const time = timeColumn(events, tz);
   let cut = 0;
+  let firstCut: EventId | undefined;
   let chars = 0;
   const rows = events.map((ev) => {
     const t = rowText(ev, opts);
-    if (t.cut) cut++;
+    let rowCut = t.cut;
     chars += t.text.length;
-    return { id: formatId(ev.id), t: time.format(ev), kind: ev.kind, text: t.text };
+    const row: Record<string, string | number | boolean> = { id: formatId(ev.id), t: time.format(ev), kind: ev.kind, text: t.text };
+    for (const f of opts.fields ?? []) {
+      const cell = fieldCell(ev, f, opts);
+      row[f] = cell.value;
+      rowCut ||= cell.cut;
+    }
+    if (rowCut) {
+      cut++;
+      firstCut ??= ev.id;
+    }
+    return row;
   });
-  return { header: time.header, rows, cut, chars };
+  const out: RenderedRows = { header: time.header, rows, cut, chars };
+  if (firstCut) out.firstCut = firstCut;
+  return out;
 }

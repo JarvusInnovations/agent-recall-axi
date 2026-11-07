@@ -39,6 +39,10 @@ continuation commands). `--before`/`--after`/`--context` as visible-event counts
    a per-kind visible-event count in the cache so the header no longer falls back to
    `count: N (newest; earlier rows exist)` (deferred from
    [`reader-and-event-model`](reader-and-event-model.md)).
+6. `show` seeks by seq through the offset table and rebuilds call/result context from the
+   enclosing turn, instead of the forward scan from the file start it shipped with; the
+   per-file identity record in `src/lib/cache/store.ts` gains the last-indexed seq (deferred
+   from [`ids-and-show`](ids-and-show.md)).
 
 ## Validation
 
@@ -60,6 +64,9 @@ continuation commands). `--before`/`--after`/`--context` as visible-event counts
 - [ ] Deleting the cache directory mid-run never produces an error (recreated or bypassed).
 - [ ] With a warm cache, `tail <200 MB fixture>` prints `count: 20 of <exact matching>`; with the
       cache absent it still prints the honest fallback (from `reader-and-event-model`).
+- [ ] With a warm cache, `show` of an id near the end of the 200 MB fixture completes under
+      300 ms and prints the same bytes as the cold forward scan, links included (from
+      `ids-and-show`).
 
 ## Risks / unknowns
 

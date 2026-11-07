@@ -1,14 +1,15 @@
 /** Shared argument handling for the row commands. Validation happens before any file is opened. */
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
-import { parseId } from "../lib/ids.js";
+import { AgentSessionError } from "../lib/errors.js";
+import { hintName, parseId, resolveSession, sharedShorts } from "../lib/ids.js";
+import { checkRewrite } from "../lib/cache/store.js";
 import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
-import { openSession } from "../lib/session.js";
-import { parseSpan, parseWhen, resolveZone } from "../lib/time.js";
+import type { Scope } from "../lib/scope.js";
+import { formatClock, formatDay, parseSpan, parseWhen, resolveZone } from "../lib/time.js";
 import type { Session } from "../lib/model.js";
-import { getString, usageLine, type Parsed } from "../flags.js";
+import { getBool, getString, usageLine, type Parsed } from "../flags.js";
 
 export const BIN = "agent-session-axi";
 
@@ -35,7 +36,8 @@ export function parseKinds(text: string | undefined): readonly Kind[] | "all" | 
 
 /** `<when>` or an event id (ids first, then the time grammar). */
 export function parseWhenOrId(text: string, tz: string, now: Date, endOfDay: boolean): Date | EventId {
-  const id = parseId(text);
+  // Ids print lowercase; an uppercased one is still an id, never a time (as in resolveId).
+  const id = parseId(text.toLowerCase());
   if (id) return id;
   return parseWhen(text, { tz, now, endOfDay });
 }
@@ -78,19 +80,74 @@ export function shellPath(path: string): string {
   return shellArg(collapseHome(path));
 }
 
-/**
- * A `<session>` argument. This version resolves file paths; uuids, prefixes and `latest`
- * resolve once ids-and-show lands, and say so instead of guessing.
- */
-export async function sessionFromArg(ref: string, io: Io): Promise<Session> {
-  const abs = resolve(io.cwd, ref.startsWith("~/") ? `${homedir()}${ref.slice(1)}` : ref);
-  if (!existsSync(abs) && !ref.includes("/") && !ref.endsWith(".jsonl")) {
-    throw new AxiError(`${ref} is not a session file path`, "NOT_FOUND", [
-      "This version takes a session's .jsonl path; uuids, prefixes and `latest` arrive with ids-and-show",
-      `Run \`${BIN} sessions --fields path\` to list session paths`,
-    ]);
+/** The resolution scope a command's `--project`/`--all` set (cli.md#conventions). */
+export function scopeOf(command: string, p: Parsed, io: Io): Scope {
+  const project = getString(p, "project");
+  const all = getBool(p, "all");
+  if (project !== undefined && all) {
+    throw new AxiError("--project and --all both set the scope; pass one", "USAGE", [usageLine(command)]);
   }
-  return openSession(abs);
+  const scope: Scope = { cwd: io.cwd, env: io.env };
+  if (all) scope.project = "all";
+  else if (project !== undefined) scope.project = project;
+  return scope;
+}
+
+/** ` --project <p>` / ` --all` as given, for hints that must resolve in the same scope. */
+export function scopeCarry(p: Parsed): string {
+  if (getBool(p, "all")) return " --all";
+  const project = getString(p, "project");
+  return project !== undefined ? ` --project ${shellPath(project)}` : "";
+}
+
+/** A `<session>` argument, resolved per data-model.md#session-reference. */
+export async function sessionFromArg(command: string, ref: string, p: Parsed, io: Io): Promise<Session> {
+  return resolveSession(ref, scopeOf(command, p, io));
+}
+
+/**
+ * How a hint names the session: the path when the caller gave a path (it may lie outside any
+ * scope), else the `<s8>` plus the scope flags it was resolved in.
+ */
+export interface SessionHint {
+  /** The session as hints name it, scope flags included: `<s8> --all`, `<uuid>`, or a path. */
+  ref: string;
+  /** What a `show <id>` hint appends so the id resolves the same way. */
+  showCarry: string;
+}
+
+export async function sessionHint(command: string, ref: string, session: Session, p: Parsed, io: Io): Promise<SessionHint> {
+  const looksLikePath = ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
+  if (looksLikePath || resolve(io.cwd, ref) === session.path) {
+    const path = shellPath(session.path);
+    return { ref: path, showCarry: ` --session ${path}` };
+  }
+  const name = hintName(session, await sharedShorts(scopeOf(command, p, io)));
+  const scope = scopeCarry(p);
+  return { ref: `${name}${scope}`, showCarry: name === session.short ? scope : ` --session ${name}${scope}` };
+}
+
+/**
+ * Run `fn`; an error it throws carries the rewrite notice in its details, so a NOT_FOUND caused
+ * by a rewrite says so (id-stability.md#append-only-is-assumed).
+ */
+export async function withNotice<T>(notice: string | undefined, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (notice && err instanceof AgentSessionError) {
+      throw new AgentSessionError(err.message, err.code, err.suggestions, { ...(err.details ?? {}), notice });
+    }
+    throw err;
+  }
+}
+
+/** The rewrite notice (id-stability.md#append-only-is-assumed), once per detected rewrite. */
+export async function rewriteNotice(session: Session, io: Io, tz: string): Promise<string | undefined> {
+  const check = await checkRewrite(session.path, { env: io.env, now: io.now });
+  if (!check.rewritten || !check.since) return undefined;
+  const since = new Date(check.since);
+  return `session file was rewritten since ${formatDay(since, tz)} ${formatClock(since, tz)}; ids printed earlier may have moved`;
 }
 
 export function carry(p: Parsed): string {

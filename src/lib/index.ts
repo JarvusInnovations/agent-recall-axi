@@ -18,11 +18,12 @@ export {
   type Session,
   type SessionKind,
 } from "./model.js";
-export { comparePosition, formatId, parseId } from "./ids.js";
+export { comparePosition, formatId, parseBareSeq, parseId, resolveId, resolveSession } from "./ids.js";
+export { cacheDir, checkRewrite, type CacheOpts, type FileIdentity, type RewriteCheck } from "./cache/store.js";
 export { parseSpan, parseWhen, resolveZone } from "./time.js";
 export { allProjects, resolveScope, rootOf, type ResolvedScope, type Scope } from "./scope.js";
 export { describeSession, listSessions, openSession, sessionListing, type SessionInfo, type SessionListing } from "./session.js";
-export { events, listEvents, tail, type ListOpts, type Listing } from "./events.js";
+export { events, linkedResult, listEvents, pointerAccess, readPointer, show, tail, type PointerAccess, type ListOpts, type Listing, type Shown, type ShownEvent } from "./events.js";
 export { claudeCode } from "./adapters/claude-code/index.js";
 export type { Adapter, ClassifyContext } from "./adapters/adapter.js";
 

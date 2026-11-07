@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "../../src/cli.js";
@@ -8,6 +10,20 @@ export const BIN_JS = join(REPO, "dist", "bin", "agent-session-axi.js");
 export const NOW = new Date("2026-11-07T14:00:00.000Z");
 
 const index = fixtureIndex();
+
+/**
+ * Tests never touch the real cache. Under vitest the global setup provides a throwaway
+ * XDG_CACHE_HOME and removes it at teardown; outside it (a helper imported by a script), one is
+ * made here and removed when the process exits.
+ */
+function cacheHome(): string {
+  const inherited = process.env.XDG_CACHE_HOME;
+  if (inherited && /asa-cache-global-/.test(inherited)) return inherited;
+  const dir = mkdtempSync(join(tmpdir(), "asa-cache-"));
+  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+export const CACHE_HOME = cacheHome();
 /** Absolute path of a named fixture's log file. */
 export function fx(name: string): string {
   const rel = index[name];
@@ -32,7 +48,7 @@ export async function run(
     await main(args, {
       stdout: { write: (c: string) => (stdout += c) },
       cwd: opts.cwd ?? "/src/widget",
-      env: { CLAUDE_CONFIG_DIR: FIXTURE_ROOT, TZ: "UTC", ...opts.env },
+      env: { CLAUDE_CONFIG_DIR: FIXTURE_ROOT, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME, ...opts.env },
       now: opts.now ?? NOW,
       ...(opts.entrypoint ? { entrypoint: opts.entrypoint } : {}),
     });

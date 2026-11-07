@@ -9,6 +9,10 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - Shape: `agent-session-axi <command> [args] [flags]`. Flags come after the command (the SDK
   rejects leading flags). `--x v` and `--x=v` both work; `--` ends flags.
 - The one global flag is `--tz <iana>`. `--help`/`-h` is always accepted.
+- Every command that resolves a `<session>` or an `<id>` (`turns`, `events`, `human`, `tools`,
+  `find`, `around`/`next`/`prev`, `tail`, `show`, `compactions`, `resume-pack`) also accepts
+  `--project <p>` or `--all`, which widen the scope the reference resolves in
+  (`behaviors/time-and-scope.md#which-sessions-session---project---all`); a path ignores them.
 - Every command declares its flags; unknown ones fail with the valid set inline.
 - Listing flags shared by all row commands: `--limit <n>`, `--kind <a,b|all>`, `--head <n>`,
   `--full`, `--fields <a,b>`, `--json-out[=path]`, `--window <k|last|all>`, `--from`, `--to`,
@@ -19,6 +23,9 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   carries `count: <shown> of <matching>` and the footer the way to see more.
 - Examples below use the synthetic session `7a2f1c3e` and generic paths. Output examples are
   illustrative of shape, not literal fixtures.
+- A hint names a session by its `<s8>` only when no other session in scope shares those 8
+  characters; otherwise by its full id (`tail <uuid>`, `show <id> --session <uuid>`), so every
+  hint resolves as printed.
 - `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
   (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
   `--head`, `--full` and the bounding `--to`, so the next page shows the same view of the range.
@@ -117,7 +124,7 @@ the head of the opening human text; `ended` is `stop`, `compaction` or `open`.
 ```
 agent-session-axi events <session> [--from <when|id>] [--to <when|id>] [--since <span>]
                          [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full]
-                         [--fields <a,b>] [--json-out[=path]]
+                         [--fields <a,b>] [--json-out[=path]] [--project <p> | --all]
 ```
 
 Rows of a session, in file order: the general range command that `tail`, `around`, `next` and
@@ -127,6 +134,8 @@ Default schema: `events[N]{id,t,kind,text}`. Default `--limit 40`, newest last u
 given (then oldest first from that point). Default kinds: all but `thinking` and `result`.
 
 - `--from <id> --to <id>` selects by position; with `<when>` values, by time.
+- `--fields <a,b>` adds columns after `text`: `authority` (`H|C|D`, `behaviors/authority.md`),
+  `size`, `tool`, `target`, `result`, `call`, `error`; a cell the event does not have is empty.
 - With `--limit 0 --full` the header carries `size: 1.8M chars` before any rows.
 - Footer: `prev <first-id>` / `next <last-id>` to continue, `show <id>` to zoom, the truncation
   note when heads were cut.
@@ -265,7 +274,8 @@ The pan verbs. Same rows as `events`; the difference is where they start.
 ## `tail <session>`
 
 ```
-agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full]
+agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+                       [--project <p> | --all]
 ```
 
 The last `n` visible rows (default 20): "what was I doing". Equivalent to `events <session>` with
@@ -275,7 +285,7 @@ the default limit, kept as a verb because it is the most common call. Footer: `p
 ## `show <id>` (alias: `zoom`)
 
 ```
-agent-session-axi show <id> [--full] [--raw] [--fields <a,b>]
+agent-session-axi show <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]
 ```
 
 One entry or one event, whole. The zoom.
@@ -295,10 +305,7 @@ input:
   file_path: config/staging.env
 result: 7a2f1c3e:413
 result_status: ok 1.1k
-result_text: |
-  1  APP_HOST=staging.example.test
-  2  OAUTH_REDIRECT=https://old.example.test/callback
-  ...
+result_text: "1\tAPP_HOST=staging.example.test\n2\tOAUTH_REDIRECT=https://old.example.test/callback\n…"
 uuid: 3c04f2b0-…
 help[1]:
   Run `agent-session-axi show 7a2f1c3e:413 --full` for the complete result (1.1k chars)
@@ -308,10 +315,23 @@ help[1]:
   status and text; a `result` shows its text and `call`; a `compaction` shows `trigger`,
   `pre_tokens`, `post_tokens`, `dropped_tokens`, `summary: <id>`, `preserved: <n> events`.
 - A pointer prints `pointer: <path> (42.8k, exists|missing)` and the preview; `--full` prints the
-  file.
+  file, but only a regular file inside the session's `tool-results/` (`data-model.md#pointer`).
+  A pointer outside it prints `followed: false` with the reason, and the preview, never the file.
+- `H` text prints whole; `C`/`D` text, input JSON, result text and `meta` strings are capped at
+  4,000 chars with the house marker and a `--full` hint (`behaviors/truncation.md#caps`).
 - A bare entry id for a multi-event entry prints every block as `blocks[N]` with its `.n` id.
-- `--raw` prints the original JSON line (pretty-printed) under `raw:` instead of the model view;
-  it works for silent and malformed entries too.
+- `--raw` prints the stored line under `raw:` instead of the model view: the parsed line as nested
+  TOON (a malformed line as a string), every string value capped at 4,000 chars with the house
+  marker unless `--full`. It works for any seq, silent and malformed entries included; a block
+  index only names the line.
+- An event prints `event: <id>`; an entry that yields several events prints `entry: <id>` and its
+  `t`, then `blocks[N]`. `uuid`/`parent_uuid` close every entry. Fields an event does not have are
+  omitted, never printed empty.
+- `<id>` may be a bare `<seq>` only with `--session <ref>`; with both, the id's `<s8>` must be
+  that session's.
+- A silent entry prints `kind: silent`, its `type` and `raw:`, with hints to `show` the nearest
+  event before and after; a malformed line adds `malformed: true` and prints the line as text.
+- `--fields <a,b>` keeps only the named fields (the `event:`/`entry:` id always prints).
 - `zoom` accepts exactly the same arguments and prints exactly the same output; `--help` for it
   says it is an alias.
 

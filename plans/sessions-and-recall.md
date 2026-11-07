@@ -47,6 +47,8 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
 6. Session `last` becomes the exact max entry timestamp from the stats pass, replacing the
    tail-256 KB read `reader-and-event-model` shipped; `title` replaces the `(pending)` placeholder
    (deferred from [`reader-and-event-model`](reader-and-event-model.md)).
+7. `AMBIGUOUS_SESSION` candidates (`src/lib/ids.ts`) carry the session title from the same
+   precedence instead of `(pending)` (deferred from [`ids-and-show`](ids-and-show.md)).
 
 ## Validation
 
@@ -75,6 +77,8 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
       that project's entries; `cache status` reports sizes.
 - [ ] A fixture whose newest timestamp lies more than 256 KB before the end of the file lists
       that timestamp as `last` (from `reader-and-event-model`).
+- [ ] An ambiguous prefix's `AMBIGUOUS_SESSION` `details.candidates` show each session's real
+      title (from `ids-and-show`).
 - [ ] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
       every other command's output is clock-independent.
 
