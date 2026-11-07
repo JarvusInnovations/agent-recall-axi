@@ -3,7 +3,7 @@ import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { comparePosition, formatId } from "../lib/ids.js";
 import { compileQuery, findListing, type FindQuery, type Hit, type Why } from "../lib/find.js";
-import type { Event, EventId, Kind } from "../lib/model.js";
+import { KINDS, type Event, type EventId, type Kind } from "../lib/model.js";
 import { findCommand, type RowField } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags, usageLine, type Parsed } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
@@ -30,12 +30,12 @@ function after(id: EventId): string {
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
 /** `phrase "redirect" + file *.env*` (cli.md#find). */
-function describeQuery(q: FindQuery): string {
+function describeQuery(q: FindQuery, kindText: string | undefined): string {
   const parts: string[] = [];
   if (q.phrase) parts.push(q.regex ? `phrase /${q.phrase}/` : `phrase "${q.phrase}"`);
   if (q.file !== undefined) parts.push(`file ${q.file}`);
   if (q.tool !== undefined) parts.push(`tool ${q.tool}`);
-  if (q.kinds?.length) parts.push(`kind ${q.kinds.join(",")}`);
+  if (q.kinds?.length) parts.push(`kind ${kindText ?? q.kinds.join(",")}`);
   return parts.join(" + ");
 }
 
@@ -49,21 +49,29 @@ export async function runFind(args: string[], io: Io): Promise<string> {
   if (p.positionals.length > 2) throw new AxiError("find takes at most <session> and <phrase>", "USAGE", [usage, "quote a phrase with spaces: find <session> \"two words\""]);
   let ref: string | undefined;
   let phrase: string | undefined;
+  /** A lone positional read as the session because of its form (cli.md#find). */
+  let lone: string | undefined;
   if (p.positionals.length === 2) [ref, phrase] = p.positionals as [string, string];
   else if (p.positionals.length === 1) {
-    if (looksLikeSessionRef(p.positionals[0]!)) ref = p.positionals[0];
+    if (looksLikeSessionRef(p.positionals[0]!)) ref = lone = p.positionals[0];
     else phrase = p.positionals[0];
   }
   if (phrase === "") throw new AxiError("the phrase is empty", "USAGE", [usage]);
 
   const tz = zoneOf(p, io);
-  const kinds = parseKinds(getString(p, "kind"));
-  if (kinds === "all") {
-    throw new AxiError("find --kind takes a list of kinds, not all", "VALIDATION_ERROR", ["e.g. --kind human,assistant; without --kind every kind but thinking and result is searched"]);
-  }
+  const parsedKinds = parseKinds(getString(p, "kind"));
+  // --kind all: every kind, results as rows of their own (so calls stop folding them in).
+  const kinds = parsedKinds === "all" ? [...KINDS] : parsedKinds;
   const file = getString(p, "file");
   const tool = getString(p, "tool");
   if (phrase === undefined && file === undefined && tool === undefined && !kinds) {
+    if (lone !== undefined) {
+      throw new AxiError(`find needs something to look for: \`${lone}\` was read as the <session> (it has a session reference's form)`, "USAGE", [
+        usage,
+        `Run \`${BIN} find latest ${loneArg(lone)}${scopeCarry(p)}${carry(p)}\` to search for it as a phrase in the newest session`,
+        `Run \`${BIN} find ${shellArg(lone)} "<phrase>"${scopeCarry(p)}${carry(p)}\` to search that session for a phrase`,
+      ]);
+    }
     throw new AxiError("find needs something to look for: a <phrase>, --file, --tool or --kind", "USAGE", [
       usage,
       `Run \`${BIN} find ${ref !== undefined ? shellArg(ref) : "latest"} "<phrase>"${scopeCarry(p)}${carry(p)}\` to search for a phrase, or add --tool <name> / --file <pattern> / --kind <a,b>`,
@@ -112,7 +120,18 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     ]);
   }
 
-  const session = await sessionFromArg("find", ref, p, io);
+  let session: Awaited<ReturnType<typeof sessionFromArg>>;
+  try {
+    session = await sessionFromArg("find", ref, p, io);
+  } catch (err) {
+    if (lone !== undefined && err instanceof AgentSessionError && (err.code === "NOT_FOUND" || err.code === "VALIDATION_ERROR")) {
+      throw new AgentSessionError(`${err.message} (\`${lone}\` was read as the <session>: it has a session reference's form)`, err.code, [
+        `Run \`${BIN} find latest ${loneArg(lone)}${tail(p)}${scopeCarry(p)}\` to search for it as a phrase in the newest session`,
+        ...err.suggestions,
+      ], err.details);
+    }
+    throw err;
+  }
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => findListing(session, q));
   const hint = await sessionHint("find", ref, session, p, io);
@@ -125,7 +144,7 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     header.kind = "subagent";
     if (session.parent) header.parent = session.parent.slice(0, 8);
   }
-  const query = describeQuery(q);
+  const query = describeQuery(q, getString(p, "kind"));
   header.query = query;
   if (deep) header.deep = "yes";
   const lines = plural(listing.lines, "line");
@@ -186,11 +205,13 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     whyById.set(formatId(h.event.id), h.why.join("+"));
     for (const c of h.context) if (!rowsById.has(formatId(c.id))) rowsById.set(formatId(c.id), c);
   }
+  // Hits past the limit that are already rows (context of a shown hit) keep their label only.
+  for (const h of listing.inContext) whyById.set(formatId(h.event.id), h.why.join("+"));
   const events = [...rowsById.values()].sort((a, b) => comparePosition(a.id, b.id));
   const rendered = renderRows(events, tz, { head, fields: fields as readonly RowField[] });
   Object.assign(header, rendered.header);
   header.tz = tz;
-  const shown = listing.hits.length;
+  const shown = listing.hits.length + listing.inContext.length;
   header.count = `${shown} of ${plural(listing.matching, "hit")} (${lines} scanned)`;
   if (listing.malformed > 0) header.malformed = plural(listing.malformed, "line");
   const label = before === 0 && afterN === 0 ? "hits" : "rows";
@@ -201,7 +222,8 @@ export async function runFind(args: string[], io: Io): Promise<string> {
 
   const first: Hit = listing.hits[0]!;
   const firstId = formatId(first.event.id);
-  const last = listing.hits[shown - 1]!.event.id;
+  // The last hit printed with a why, context-row hits included: the continuation starts after it.
+  const last = (listing.inContext.length ? listing.inContext[listing.inContext.length - 1]! : listing.hits[listing.hits.length - 1]!).event.id;
   if (findCommand("around")?.status === "available") {
     help.push(`Run \`${BIN} around ${firstId} --before 10 --after 10${hint.showCarry}${tzc}\` for more context`);
   } else {
@@ -214,6 +236,11 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     help.push(`Run \`${findHint({ extra: " --full" })}\` for the whole text of the ${plural(rendered.cut, "row")} cut to ${head} chars`);
   }
   return renderDocument(header, help);
+}
+
+/** A lone argument as a phrase in a hint: after `--` when it starts with a dash. */
+function loneArg(arg: string): string {
+  return arg.startsWith("-") ? `-- ${shellArg(arg)}` : shellArg(arg);
 }
 
 /** The non-phrase handles as given, for the no-session hint. */

@@ -117,10 +117,10 @@ const SHOW_FLAGS: FlagSpec[] = [
 
 // find (specs/cli.md#find)
 const FIND_FLAGS: FlagSpec[] = [
-  { name: "regex", value: "boolean", describe: "the phrase is a JavaScript regular expression (case-insensitive)" },
+  { name: "regex", value: "boolean", describe: "the phrase is a JavaScript regular expression (flags iu: case-insensitive, Unicode)" },
   { name: "file", value: "string", arg: "<pattern>", describe: "files touched: a substring, or a glob when it has * ? or [ (* crosses /)" },
   { name: "tool", value: "string", arg: "<name>", describe: "case-insensitive substring of the tool name; alone, every call of that tool" },
-  { name: "kind", value: "string", arg: "<a,b>", describe: "search only these kinds (they are also the context rows)", default: "all but thinking,result" },
+  { name: "kind", value: "string", arg: "<a,b|all>", describe: "search only these kinds (they are also the context rows); all = every kind, results as rows", default: "all but thinking,result" },
   FROM,
   TO,
   SINCE,
@@ -235,7 +235,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       {
         name: "find",
         usage:
-          "find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--from <when|id>] [--to <when|id>] [--since <span>] [--context <n>] [--before <n>] [--after <n>] [--limit <n>] [--deep] [--project <p> | --all]",
+          "find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b|all>] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--context <n>] [--before <n>] [--after <n>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all] [--deep]",
         summary: "search a session by phrase, file, tool or kind; each hit says why it matched",
         status: "available",
         args: [
