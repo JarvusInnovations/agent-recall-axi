@@ -9,6 +9,10 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - Shape: `agent-session-axi <command> [args] [flags]`. Flags come after the command (the SDK
   rejects leading flags). `--x v` and `--x=v` both work; `--` ends flags.
 - The one global flag is `--tz <iana>`. `--help`/`-h` is always accepted.
+- Every command that resolves a `<session>` or an `<id>` (`turns`, `events`, `human`, `tools`,
+  `find`, `around`/`next`/`prev`, `tail`, `show`, `compactions`, `resume-pack`) also accepts
+  `--project <p>` or `--all`, which widen the scope the reference resolves in
+  (`behaviors/time-and-scope.md#which-sessions-session---project---all`); a path ignores them.
 - Every command declares its flags; unknown ones fail with the valid set inline.
 - Listing flags shared by all row commands: `--limit <n>`, `--kind <a,b|all>`, `--head <n>`,
   `--full`, `--fields <a,b>`, `--json-out[=path]`, `--window <k|last|all>`, `--from`, `--to`,
@@ -117,7 +121,7 @@ the head of the opening human text; `ended` is `stop`, `compaction` or `open`.
 ```
 agent-session-axi events <session> [--from <when|id>] [--to <when|id>] [--since <span>]
                          [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full]
-                         [--fields <a,b>] [--json-out[=path]]
+                         [--fields <a,b>] [--json-out[=path]] [--project <p> | --all]
 ```
 
 Rows of a session, in file order: the general range command that `tail`, `around`, `next` and
@@ -127,6 +131,8 @@ Default schema: `events[N]{id,t,kind,text}`. Default `--limit 40`, newest last u
 given (then oldest first from that point). Default kinds: all but `thinking` and `result`.
 
 - `--from <id> --to <id>` selects by position; with `<when>` values, by time.
+- `--fields <a,b>` adds columns after `text`: `authority` (`H|C|D`, `behaviors/authority.md`),
+  `size`, `tool`, `target`, `result`, `call`, `error`; a cell the event does not have is empty.
 - With `--limit 0 --full` the header carries `size: 1.8M chars` before any rows.
 - Footer: `prev <first-id>` / `next <last-id>` to continue, `show <id>` to zoom, the truncation
   note when heads were cut.
@@ -265,7 +271,8 @@ The pan verbs. Same rows as `events`; the difference is where they start.
 ## `tail <session>`
 
 ```
-agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full]
+agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+                       [--project <p> | --all]
 ```
 
 The last `n` visible rows (default 20): "what was I doing". Equivalent to `events <session>` with
@@ -275,7 +282,7 @@ the default limit, kept as a verb because it is the most common call. Footer: `p
 ## `show <id>` (alias: `zoom`)
 
 ```
-agent-session-axi show <id> [--full] [--raw] [--fields <a,b>]
+agent-session-axi show <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]
 ```
 
 One entry or one event, whole. The zoom.
@@ -312,6 +319,15 @@ help[1]:
 - A bare entry id for a multi-event entry prints every block as `blocks[N]` with its `.n` id.
 - `--raw` prints the original JSON line (pretty-printed) under `raw:` instead of the model view;
   it works for silent and malformed entries too.
+- An event prints `event: <id>`; an entry that yields several events prints `entry: <id>`, its `t`
+  and `uuid`, then `blocks[N]`. `uuid`/`parent_uuid` close every entry. Fields an event does not
+  have are omitted, never printed empty.
+- `<id>` may be a bare `<seq>` only with `--session <ref>`; with both, the id's `<s8>` must be
+  that session's.
+- A silent entry prints `kind: silent`, its `type` and `raw:`, with hints to `show` the nearest
+  event before and after; a malformed line adds `malformed: true` and prints the line as text.
+- `--raw` caps each string value at 4,000 chars with the house marker unless `--full` is given.
+- `--fields <a,b>` keeps only the named fields (the `event:`/`entry:` id always prints).
 - `zoom` accepts exactly the same arguments and prints exactly the same output; `--help` for it
   says it is an alias.
 

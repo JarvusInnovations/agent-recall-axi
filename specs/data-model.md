@@ -37,7 +37,8 @@ Any of, resolved in this order:
 2. A full session uuid, or a full subagent `agentId`.
 3. A hex prefix of at least 8 characters of either. Ambiguity is an error listing the candidates
    (`code: AMBIGUOUS_SESSION`), never a guess.
-4. `latest` — the session in scope with the most recent file modification time.
+4. `latest` — the main session in scope with the most recent file modification time (a
+   subagent transcript is reached by its `agentId`, never as `latest`).
 
 Scope for 2–4 is the current project (the project whose `cwd` equals the working directory),
 widened by `--project <path>` or `--all` (`cli.md`). A path (1) ignores scope.

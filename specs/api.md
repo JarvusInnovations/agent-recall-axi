@@ -44,7 +44,8 @@ sessionStats(session: Session): Promise<SessionStats>         // turns, calls, c
 interface EventId { session: string /* s8 */; seq: number; block?: number }
 parseId(text: string): EventId | null                          // null when not an id
 formatId(id: EventId): string                                  // "7a2f1c3e:418.2"
-resolveId(text: string, scope?: Scope): Promise<{ session: Session; id: EventId }>
+resolveId(text: string, scope?: Scope, opts?: { session?: string }): Promise<{ session: Session; id: EventId }>
+                                                               // a bare "<seq>" only with opts.session
 ```
 
 ## Reading
@@ -63,7 +64,7 @@ tail(session: Session, n: number, opts?: Pick<ListOpts, "kinds">): Promise<Event
 around(session: Session, id: EventId, before: number, after: number, opts?): Promise<{ rows: Event[]; anchor: EventId; atStart: boolean; atEnd: boolean }>
 next(session: Session, id: EventId, n: number, opts?): Promise<{ rows: Event[]; atEnd: boolean }>
 prev(session: Session, id: EventId, n: number, opts?): Promise<{ rows: Event[]; atStart: boolean }>
-show(session: Session, id: EventId, opts?: { full?: boolean; followPointer?: boolean }): Promise<Event | Event[] | RawEntry>
+show(session: Session, id: EventId): Promise<Shown>           // the entry, its events, linkage, nearest ids
 turns(session: Session, opts?: ListOpts): AsyncIterable<Turn>
 windows(session: Session): Promise<Window[]>
 compactions(session: Session): Promise<Event[]>               // kind "compaction", with meta + summary id
@@ -71,6 +72,14 @@ humanMessages(session: Session, opts?: ListOpts & { budget?: number }): Promise<
 toolCalls(session: Session, opts?: ListOpts & { name?: string; file?: string; errors?: boolean }): AsyncIterable<Event>
 readPointer(pointer: Pointer): Promise<{ text: string; exists: boolean }>
 ```
+
+`Shown` carries the `Entry` (with `raw`), the line count, the events the id selects (one for an
+event id, all of them for a bare id of a multi-event entry, none for a silent entry) each with
+its `turn`, `window`, linked `result` event and, for a compaction, the preserved-event count, and
+the nearest event ids before and after a silent entry. An id past the end throws `NOT_FOUND`.
+
+`checkRewrite(path, opts?)` compares the file with the identity the cache recorded at the last
+read (`behaviors/id-stability.md#append-only-is-assumed`) and returns `{ rewritten, since? }`.
 
 `Event` is the type in `data-model.md#event`, with `text` uncut (the library never truncates;
 callers render). `Event.result`/`Event.call` are ids; `linkedResult(session, call)` fetches the
