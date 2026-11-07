@@ -6,6 +6,8 @@ import { FIXTURE_ROOT } from "./fixtures/build.js";
 import { BIN_JS, REPO } from "./helpers/run.js";
 
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
+// Wall-clock bounds get headroom on shared CI runners.
+const SLACK = process.env.CI ? 2 : 1;
 const helper = (name: string) => join(REPO, "test", "helpers", name);
 
 function runBin(args: string[], nodeArgs: string[] = [], env: Record<string, string> = {}) {
@@ -50,12 +52,12 @@ describe("built bin", () => {
     expect(JSON.parse(/LOADED (.*)/.exec(full.stderr)![1]!).some((u: string) => u.endsWith("/src/cli.js"))).toBe(true);
   });
 
-  it("--version runs within 3× the node -e floor", () => {
+  it("--version runs within 3× the node -e floor (×2 on CI)", () => {
     timeIt(["-e", "console.log(1)"], 2); // warm the file cache
     timeIt([BIN_JS, "--version"], 2);
     const floor = timeIt(["-e", "console.log(1)"]);
     const version = timeIt([BIN_JS, "--version"]);
-    expect(version).toBeLessThan(floor * 3);
+    expect(version).toBeLessThan(floor * 3 * SLACK);
   });
 
   it("update and update --check work with the network blocked", () => {
