@@ -25,6 +25,11 @@ Every command.
 | `UNREADABLE` | 1 | a file exists but cannot be read | the path and the permission needed |
 | `INTERNAL_ERROR` | 1 | anything unexpected, wrapped as `unexpected failure: <message>` | file an issue; `--debug` for the stack on stderr |
 
+`UNREADABLE` is raised when the unreadable file is the one the command was asked to read. In a
+listing over many files (`sessions`, the home view, cross-session `find`), one unreadable or
+vanished file never fails the listing: it is skipped, the header reports `unreadable: <n>`, and a
+`help[]` line names the first path.
+
 ### Not errors
 
 - Zero matches: `hits: 0 events match "<phrase>" in 7a2f1c3e (4,120 lines scanned)`, exit 0, with

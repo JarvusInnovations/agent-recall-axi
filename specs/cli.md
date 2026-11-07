@@ -19,7 +19,9 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   carries `count: <shown> of <matching>` and the footer the way to see more.
 - Examples below use the synthetic session `7a2f1c3e` and generic paths. Output examples are
   illustrative of shape, not literal fixtures.
-- `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given.
+- `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
+  (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
+  `--head`, `--full` and the bounding `--to`, so the next page shows the same view of the range.
 
 ## Zoom ladder
 
