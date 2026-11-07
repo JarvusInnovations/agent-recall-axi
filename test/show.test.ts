@@ -125,6 +125,14 @@ describe("show", () => {
     expect(malformed.stdout).toContain('raw: "{\\"type\\":\\"user\\"');
   });
 
+  it("a session opened by path keeps its path in the no-events hint", async () => {
+    const r = await run(["show", "3", "--session", fx("silent")], { cwd: "/elsewhere" });
+    expect(r.exitCode).toBe(0);
+    const hint = /`agent-session-axi (events [^`]*)`/.exec(r.stdout)![1]!;
+    expect(hint).toContain(fx("silent").replace(/^.*\/test\//, ""));
+    expect((await run(hint.split(" "), { cwd: "/elsewhere" })).exitCode).toBe(0);
+  });
+
   it("an id beyond the end → NOT_FOUND with the line count and a tail hint", async () => {
     const { stdout, exitCode } = await run(["show", "a3000003:9999"]);
     expect(exitCode).toBe(1);

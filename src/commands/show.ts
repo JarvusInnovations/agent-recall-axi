@@ -246,7 +246,11 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
     if (shown.silent && !raw) {
       if (shown.before) ctx.help.push(`Run \`${BIN} show ${formatId(shown.before)}${ctx.carry}\` for the nearest event before`);
       if (shown.after) ctx.help.push(`Run \`${BIN} show ${formatId(shown.after)}${ctx.carry}\` for the nearest event after`);
-      if (!shown.before && !shown.after) ctx.help.push(`The session has no events; run \`${BIN} events ${s.short}${scopeCarry(p)} --kind all\` to confirm`);
+      if (!shown.before && !shown.after) {
+        // Name the session the way the caller did: a path stays a path.
+        const ref = session !== undefined ? shellArg(session) : s.short;
+        ctx.help.push(`The session has no events; run \`${BIN} events ${ref}${scopeCarry(p)} --kind all${carry(p)}\` to confirm`);
+      }
     }
   } else if (shown.events.length === 1) {
     doc = await eventDoc(shown.events[0]!, ctx, true);
