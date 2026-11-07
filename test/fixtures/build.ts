@@ -723,6 +723,71 @@ export async function buildLarge(path: string, bytes: number): Promise<void> {
   await new Promise<void>((r) => out.end(() => r()));
 }
 
+// ---------------------------------------------------------------------------------------------
+// pan (plan pan): a long session generated at test time, never committed
+
+/**
+ * A session long enough for several offset-table checkpoints (~1,300 lines), mixing every shape
+ * a seek must reproduce: hidden kinds between visible rows, multi-event entries, silent runs,
+ * results that arrive turns later (pending across checkpoints), question answers, compactions
+ * with their summaries, and one malformed line.
+ */
+export function panSession(s8 = "e1000021"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  const late: Array<{ due: number; id: string; text: string }> = [];
+  for (let turn = 1; turn <= 130; turn++) {
+    if (turn % 60 === 0) {
+      // The second compaction sits on the last line before a checkpoint, so its summary opens one.
+      if (turn === 120) while ((s.lines.length + 1) % 256 !== 0) s.silent("file-history-snapshot", { pad: s.lines.length });
+      s.push({
+        parentUuid: null,
+        isSidechain: false,
+        type: "system",
+        subtype: "compact_boundary",
+        content: "Conversation compacted",
+        level: "info",
+        compactMetadata: { trigger: "auto", preTokens: 900_000 + turn, postTokens: 20_000, preservedMessages: { uuids: [fixtureUuid(s8, 1), fixtureUuid(s8, 2)] } },
+        uuid: fixtureUuid(s8, 50_000 + turn),
+        timestamp: s.tick(),
+        cwd: PROJECTS.widget.cwd,
+        sessionId: s.id,
+        version: VERSION,
+      });
+      for (let k = 0; k < turn % 5; k++) s.silent("file-history-snapshot", { n: k });
+      s.user(`This session is being continued from a previous conversation. Summary: turn ${turn} widget work.`, { isCompactSummary: true });
+    }
+    s.human(`turn ${turn}: process the next ${VOCAB[turn % VOCAB.length]} batch`);
+    if (turn % 3 === 0) s.attachment({ type: "queued_command", prompt: `also check ${VOCAB[(turn + 1) % VOCAB.length]} ${turn}`, commandMode: "prompt" });
+    s.assistant([{ type: "thinking", thinking: `turn ${turn} needs two calls`, signature: "sig-fixture" }]);
+    const a = TOOL(s8, turn * 4);
+    const b = TOOL(s8, turn * 4 + 1);
+    s.assistant([
+      { type: "text", text: `Running ${turn}a and ${turn}b.` },
+      s.toolUse(a, "Bash", { command: `process --batch ${turn}` }),
+      s.toolUse(b, "Read", { file_path: `src/${VOCAB[turn % VOCAB.length]}/batch-${turn}.ts` }),
+    ]);
+    for (let k = 0; k < (turn * 7) % 4; k++) s.silent("permission-mode", { permissionMode: "default", n: k });
+    s.toolResult(b, `export const batch${turn} = ${turn};`);
+    // Every fifth turn's Bash result arrives three turns later, after other prompts.
+    if (turn % 5 === 0) late.push({ due: turn + 3, id: a, text: `batch ${turn} finished late` });
+    else s.toolResult(a, turn % 7 === 0 ? `FAIL batch ${turn}` : `ok batch ${turn}`, {}, turn % 7 === 0 ? { is_error: true } : {});
+    for (const l of late.filter((x) => x.due === turn)) s.toolResult(l.id, l.text);
+    if (turn % 25 === 0) {
+      const q = TOOL(s8, turn * 4 + 2);
+      s.assistant([s.toolUse(q, "AskUserQuestion", { questions: [{ question: `Ship batch ${turn}?`, options: [{ label: "yes" }, { label: "no" }] }] })]);
+      for (let k = 0; k < 3; k++) s.silent("file-history-snapshot", { n: k });
+      s.toolResult(q, `User has answered your questions: "Ship batch ${turn}?"="yes".`, {
+        toolUseResult: { questions: [{ question: `Ship batch ${turn}?` }], answers: { [`Ship batch ${turn}?`]: "yes" } },
+      });
+    }
+    if (turn === 40) s.push('{"type":"assistant","message":{"content":[{"type":"text","text":"cut off');
+    s.say(`Batch ${turn} done.`);
+    s.system("turn_duration", { durationMs: 1000 + turn, messageCount: 6 });
+  }
+  for (const l of late.filter((x) => x.due > 130)) s.toolResult(l.id, l.text);
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 
