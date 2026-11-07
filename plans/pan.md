@@ -35,6 +35,10 @@ continuation commands). `--before`/`--after`/`--context` as visible-event counts
 3. `commands/pan.ts`: shared renderer; header `anchor:`; footer with edge ids; positional `<n>`.
 4. Travel from silent/hidden anchors begins at the nearest visible event in the direction of
    travel, noted in the header.
+5. Exact `count: <shown> of <matching>` for newest-last listings (`tail`, default `events`): keep
+   a per-kind visible-event count in the cache so the header no longer falls back to
+   `count: N (newest; earlier rows exist)` (deferred from
+   [`reader-and-event-model`](reader-and-event-model.md)).
 
 ## Validation
 
@@ -54,6 +58,8 @@ continuation commands). `--before`/`--after`/`--context` as visible-event counts
 - [ ] `cache status` lists the fixture with checkpoint count and size; `cache clear` removes the
       directory; every pan command still works afterwards.
 - [ ] Deleting the cache directory mid-run never produces an error (recreated or bypassed).
+- [ ] With a warm cache, `tail <200 MB fixture>` prints `count: 20 of <exact matching>`; with the
+      cache absent it still prints the honest fallback (from `reader-and-event-model`).
 
 ## Risks / unknowns
 

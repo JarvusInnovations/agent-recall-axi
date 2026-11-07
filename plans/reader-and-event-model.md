@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: []
 specs:
   - specs/architecture.md
@@ -9,6 +9,7 @@ specs:
   - specs/behaviors/time-and-scope.md
   - specs/behaviors/privacy.md
 issues: [1]
+pr: 3
 ---
 
 # Plan: Reader and event model
@@ -75,39 +76,39 @@ session stats (`sessions-and-recall`), the skill bundle (`skill-and-hook`).
 
 ## Validation
 
-- [ ] `bun run check`, `bun run build`, `bun run test` pass on a clean checkout; CI green.
-- [ ] `node dist/bin/agent-session-axi.js --version` prints the bare version; a test shows it does
+- [x] `bun run check`, `bun run build`, `bun run test` pass on a clean checkout; CI green.
+- [x] `node dist/bin/agent-session-axi.js --version` prints the bare version; a test shows it does
       not load `src/cli` (module registry check) and runs within 3× the `node -e` floor.
-- [ ] Fixture suite exists with one file per shape listed in `architecture.md#fixtures`; a test
+- [x] Fixture suite exists with one file per shape listed in `architecture.md#fixtures`; a test
       regenerates them and diffs clean; `grep -ri` for a denylist of real-world markers (home paths
       with usernames, `@` emails) finds nothing under `test/fixtures`.
-- [ ] `classify` tests assert, per fixture: every kind in `data-model.md#kinds` is produced at
+- [x] `classify` tests assert, per fixture: every kind in `data-model.md#kinds` is produced at
       least once with the right authority; a `tool_result` arriving three entries after its call,
       interleaved with another call's result, links to the right call in both directions.
-- [ ] Pointer fixture: `event.pointer` has `path`, `bytes: 42.8k`-equivalent number, `exists: true`;
+- [x] Pointer fixture: `event.pointer` has `path`, `bytes: 42.8k`-equivalent number, `exists: true`;
       a second fixture with the file removed yields `exists: false` and no error.
-- [ ] Compaction fixture: `compaction` event with `meta.trigger`, `pre_tokens`, `post_tokens`,
+- [x] Compaction fixture: `compaction` event with `meta.trigger`, `pre_tokens`, `post_tokens`,
       followed by a `summary` event; the summary-only legacy fixture still yields `summary`.
-- [ ] Queued-command fixture: `human.queued` text equals `attachment.prompt` exactly (no
+- [x] Queued-command fixture: `human.queued` text equals `attachment.prompt` exactly (no
       `<system-reminder>` wrapper); slash fixture yields `/name args`.
-- [ ] Silent/unknown/malformed fixture: zero events, `malformed: 1` in the session header,
+- [x] Silent/unknown/malformed fixture: zero events, `malformed: 1` in the session header,
       exit 0.
-- [ ] `events <fixture>` prints `events[N]{id,t,kind,text}` with full `<s8>:<seq>` ids, `day:` header
+- [x] `events <fixture>` prints `events[N]{id,t,kind,text}` with full `<s8>:<seq>` ids, `day:` header
       for a one-day fixture and `MM-DD HH:MM:SS` times for a two-day fixture; `thinking` and
       `result` rows absent by default and present with `--kind all`.
-- [ ] `tail <fixture>` prints the last 20 visible rows by default; `tail <fixture> 5` and
+- [x] `tail <fixture>` prints the last 20 visible rows by default; `tail <fixture> 5` and
       `--limit 5` agree.
-- [ ] `events <fixture> --bogus` → exit 2, `code: UNKNOWN_FLAG`, valid flags listed inline;
+- [x] `events <fixture> --bogus` → exit 2, `code: UNKNOWN_FLAG`, valid flags listed inline;
       `events` with a leading flag → the SDK's "Flags must come after the command".
-- [ ] `update` and `update --check` print the version and the two update commands, exit 0, and a
+- [x] `update` and `update --check` print the version and the two update commands, exit 0, and a
       test with network disabled (`--network none` sandbox or a blocked resolver) passes; `--help`
       shows no SDK `built-in` block.
-- [ ] `sessions --project /nonexistent` → exit 1, `code: NO_SESSIONS`, hint names `--project`/`--all`.
-- [ ] A test opens every fixture through the adapter and asserts no file under the fixture root
+- [x] `sessions --project /nonexistent` → exit 1, `code: NO_SESSIONS`, hint names `--project`/`--all`.
+- [x] A test opens every fixture through the adapter and asserts no file under the fixture root
       changed (mtime + hash) — read-only guarantee.
-- [ ] `--tz Asia/Tokyo` changes rendered times and the `tz:` header; `TZ` env is honored when
+- [x] `--tz Asia/Tokyo` changes rendered times and the `tz:` header; `TZ` env is honored when
       the flag is absent.
-- [ ] A 200 MB generated fixture: `tail` completes under 2 s with peak RSS under 150 MB.
+- [x] A 200 MB generated fixture: `tail` completes under 2 s with peak RSS under 150 MB.
 
 ## Risks / unknowns
 
@@ -123,8 +124,66 @@ session stats (`sessions-and-recall`), the skill bundle (`skill-and-hook`).
 
 ## Notes
 
-(at closeout)
+Spec readings this plan had to choose. The classification, id and listing rules among them
+were written into `data-model.md`, `cli.md` and `errors.md` in this PR's leading `docs(specs):`
+commit; the hook-failure question is #4:
+
+- **Subagent prompts are not human.** In a `kind: subagent` session, `user` text without
+  `origin.kind == "human"` is `notice` (`meta.source: parent`): it is the parent agent's prompt.
+  Read from `cli.md#human-session` ("0 human messages … a pure subagent run").
+- **Attachment subtypes.** Only `queued_command`, `hook_success`, `hook_additional_context`
+  yield events; every other attachment subtype (reminders, tool deltas, token reminders) is a
+  silent entry, reading "any `type` the adapter does not recognize" as covering subtypes.
+  `hook_cancelled` and hook error attachments are silent for now.
+- **Pointer relocation.** A stored persisted-output path that no longer exists is looked up as
+  `<sidecar>/tool-results/<basename>`; `pointer.path` is the readable location and
+  `pointer.stored` the path as written. This is also what lets committed fixtures carry a
+  machine-neutral stored path. `exists` is checked at classification time (the only I/O there).
+- **`human.answer` without its call in view** (a tail span that starts after the call) falls back
+  to `toolUseResult.questions`/`answers`.
+- **Newest-last `count:`.** The backward tail read cannot know the total of matching visible
+  events without a full parse, which `architecture.md#streaming-and-memory` rules out. When the
+  read reaches the file start the header is exact (`count: 8 of 8`); otherwise it says
+  `count: 20 (newest; earlier rows exist)`. Forward listings (`--from`/`--to`/`--since`) are exact.
+  Deferred to `pan`, whose cache can carry the count.
+- **`malformed:`** counts malformed lines among those scanned: the whole file for forward
+  listings, the tail span for `tail`/default `events`. A blank line is silent, not malformed; a
+  trailing partial line that does not parse is neither (a live file mid-append).
+- **Session `last`** is the newest timestamp in the file's final 256 KB (mtime when none), so
+  `sessions` never scans whole files. Exact max arrives with the stats pass (deferred to
+  `sessions-and-recall`). Titles print `(pending)` until then.
+- **`<session>` is a path only** in this plan; a uuid, prefix or `latest` gets `NOT_FOUND` saying
+  resolution arrives with `ids-and-show` (deferred there).
+- **Not-yet-built surface is honest, not hidden.** Planned commands are registered and fail with
+  `USAGE` (exit 2) naming their plan; spec'd flags not built yet (`--window`, `--fields` on rows,
+  `--json-out`) fail the same way instead of `UNKNOWN_FLAG`. No new error code was invented.
+- **`--full`** lifts the head cap and makes the row cap 0 unless `--limit` is given explicitly.
+- **TOON quoting.** `@toon-format/toon` quotes table cells containing `:` (ids, `HH:MM:SS`);
+  the spec examples show them bare, but they are illustrative of shape.
+- Synthesized texts where Claude Code stores none: `turn_duration` → `turn took 8.4s, 6 messages`;
+  `stop_hook_summary` → `meta.hook: Stop`, `meta.exit: ok|error`; `local_command` notices are
+  reconstructed as `/name args`.
+- `listSessions` follows `api.md` (an async iterable); `sessionListing` is the extra function
+  that also returns the totals the CLI header prints.
+- Renamed-flag hints: `--n`/`--num` → `--limit`, `--until` → `--to`, `--json` → `--json-out`,
+  `--kinds` → `--kind`. `--debug` is stripped before dispatch and only affects stderr.
+- Measured on a 200 MB generated session: `tail` 0.39 s, 71 MB peak RSS; a full forward
+  `events --from <first-id>` scan 3.1 s, 86 MB.
+- CI omits `check:skill`/`check:bundle`; `skill-and-hook` adds them with the bundle.
+- **Review round.** The adversarial pre-review found the human-text edges wrong in three ways —
+  `<command-name>` anywhere in a prompt made it `human.slash`, a prompt opening with `[Image #1]`
+  became `notice`, and text after a `<user-prompt-submit-hook>` block was dropped — plus one
+  unreadable file failing `sessions --all`. All fixed before closeout with failing-first tests
+  (66 → 88 tests); the rules they settled are in the spec commit above.
+- Wall-clock tests (`--version` floor, 200 MB tail, long-line reader) run serially in their own
+  vitest `perf` project with 2× headroom under `CI`.
 
 ## Follow-ups
 
-(at closeout)
+- Issue [#4](https://github.com/JarvusInnovations/agent-session-axi/issues/4) — decide whether
+  hook failure/cancel attachments surface as `hook` events or stay silent (spec first).
+- Deferred to [`pan`](pan.md) — exact `count: <shown> of <matching>` for newest-last listings.
+- Deferred to [`sessions-and-recall`](sessions-and-recall.md) — exact session `last` from the
+  stats pass instead of the tail-256 KB read.
+- Deferred to [`ids-and-show`](ids-and-show.md) — `events`/`tail` `<session>` resolution beyond a
+  file path.
