@@ -77,7 +77,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   }
   const tz = zoneOf(p, io);
   const kinds = parseKinds(p.flags.get("kind") as string | undefined);
-  const range = parseRange(p, tz, io.now, true);
+  const range = parseRange("events", p, tz, io.now, true);
   const full = getBool(p, "full");
   const limit = getNumber(p, "limit") ?? (full ? 0 : 40);
   const head = headOf(p, full);

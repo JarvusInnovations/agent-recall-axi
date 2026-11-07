@@ -66,6 +66,17 @@ describe("events", () => {
     expect(rowLines(since.stdout, "events")).toHaveLength(2);
   });
 
+  it("--since with --from is a usage error whose hint is valid grammar", async () => {
+    const both = await run(["events", fx("two-day"), "--since", "7d", "--from", "today"]);
+    expect(both.exitCode).toBe(2);
+    expect(both.stdout).toMatch(/^code: USAGE$/m);
+    expect(both.stdout).toContain("usage: agent-session-axi events <session>");
+    expect(both.stdout).toContain("--from -7d starts at the beginning of the local day");
+    expect(both.stdout).not.toContain("now-7d");
+    const hinted = await run(["events", fx("two-day"), "--from", "-7d"]);
+    expect(hinted.exitCode).toBe(0);
+  });
+
   it("an empty session says so, with the malformed count in the header, exit 0", async () => {
     const { stdout, exitCode } = await run(["events", fx("silent")]);
     expect(exitCode).toBe(0);

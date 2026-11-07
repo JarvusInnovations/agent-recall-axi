@@ -67,7 +67,7 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   const all = getBool(p, "all");
   if (project !== undefined && all) throw new AxiError("--project and --all both set the scope; pass one", "USAGE", [`usage: ${BIN} ${spec.usage}`]);
   const tz = zoneOf(p, io);
-  const range = parseRange(p, tz, io.now, false);
+  const range = parseRange("sessions", p, tz, io.now, false);
   const fields = parseFields(getString(p, "fields"));
   const subagents = getBool(p, "subagents");
   const limit = getNumber(p, "limit") ?? 20;

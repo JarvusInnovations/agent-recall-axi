@@ -8,7 +8,7 @@ import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
 import { openSession } from "../lib/session.js";
 import { parseSpan, parseWhen, resolveZone } from "../lib/time.js";
 import type { Session } from "../lib/model.js";
-import { getString, type Parsed } from "../flags.js";
+import { getString, usageLine, type Parsed } from "../flags.js";
 
 export const BIN = "agent-session-axi";
 
@@ -45,12 +45,15 @@ export interface Range {
   to?: Date | EventId;
 }
 
-export function parseRange(p: Parsed, tz: string, now: Date, allowIds: boolean): Range {
+export function parseRange(command: string, p: Parsed, tz: string, now: Date, allowIds: boolean): Range {
   const from = getString(p, "from");
   const to = getString(p, "to");
   const since = getString(p, "since");
   if (since !== undefined && from !== undefined) {
-    throw new AxiError("--since and --from both set the start; pass one", "USAGE", ["--since 7d is --from now-7d"]);
+    throw new AxiError("--since and --from both set the start; pass one", "USAGE", [
+      usageLine(command),
+      "--since 7d counts back 7×24h from now; --from -7d starts at the beginning of the local day 7 days ago",
+    ]);
   }
   const parse = (v: string, end: boolean) => (allowIds ? parseWhenOrId(v, tz, now, end) : parseWhen(v, { tz, now, endOfDay: end }));
   const range: Range = {};
