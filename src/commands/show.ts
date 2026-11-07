@@ -226,6 +226,8 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
   const session = getString(p, "session");
   const { session: s, id } = await resolveId(p.positionals[0]!, scope, session !== undefined ? { session } : {});
   const raw = getBool(p, "raw");
+  // Before the read, so an id a rewrite pushed past the end still gets the notice.
+  const notice = await rewriteNotice(s, io, tz);
   let shown: Shown;
   try {
     // `--raw` prints the stored line, so any seq works and a block index only names the line.
@@ -234,8 +236,9 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
     // Beyond the end: the `tail` hint must resolve the way this id did.
     if (err instanceof AgentSessionError && err.code === "NOT_FOUND" && typeof err.details?.lines === "number") {
       const ref = `${session !== undefined ? shellArg(session) : s.short}${scopeCarry(p)}`;
-      throw new AgentSessionError(err.message, "NOT_FOUND", [`Run \`${BIN} tail ${ref}${carry(p)}\` for the last rows of this session`]);
+      throw new AgentSessionError(err.message, "NOT_FOUND", [`Run \`${BIN} tail ${ref}${carry(p)}\` for the last rows of this session`], notice ? { notice } : undefined);
     }
+    if (notice && err instanceof AgentSessionError) throw new AgentSessionError(err.message, err.code, err.suggestions, { ...(err.details ?? {}), notice });
     throw err;
   }
   const ctx: Ctx = { session: s, full: getBool(p, "full"), tz, help: [], carry: hintCarry(p) };
@@ -265,7 +268,6 @@ export async function showCommand(args: string[], io: Io, name: "show" | "zoom" 
   }
   doc = project(doc, fields);
 
-  const notice = await rewriteNotice(s, io, tz);
   const parts: string[] = [];
   if (notice) parts.push(encode({ notice }));
   parts.push(encode(doc));

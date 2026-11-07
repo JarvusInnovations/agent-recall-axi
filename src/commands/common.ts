@@ -2,6 +2,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
+import { AgentSessionError } from "../lib/errors.js";
 import { hintName, parseId, resolveSession, sharedShorts } from "../lib/ids.js";
 import { checkRewrite } from "../lib/cache/store.js";
 import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
@@ -123,6 +124,21 @@ export async function sessionHint(command: string, ref: string, session: Session
   const name = hintName(session, await sharedShorts(scopeOf(command, p, io)));
   const scope = scopeCarry(p);
   return { ref: `${name}${scope}`, showCarry: name === session.short ? scope : ` --session ${name}${scope}` };
+}
+
+/**
+ * Run `fn`; an error it throws carries the rewrite notice in its details, so a NOT_FOUND caused
+ * by a rewrite says so (id-stability.md#append-only-is-assumed).
+ */
+export async function withNotice<T>(notice: string | undefined, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (notice && err instanceof AgentSessionError) {
+      throw new AgentSessionError(err.message, err.code, err.suggestions, { ...(err.details ?? {}), notice });
+    }
+    throw err;
+  }
 }
 
 /** The rewrite notice (id-stability.md#append-only-is-assumed), once per detected rewrite. */

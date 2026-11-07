@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { headHash, readLinesBackward } from "../reader.js";
+import { readLines, readLinesBackward } from "../reader.js";
 
 export interface CacheOpts {
   env?: Record<string, string | undefined>;
@@ -34,8 +34,8 @@ export interface FileIdentity {
   path: string;
   /** Byte length at the last read. */
   bytes: number;
-  /** sha256 of the first line. */
-  head: string;
+  /** sha256 of the first line, once that line is complete; absent for an empty or partial head. */
+  head?: string;
   /** Byte offset, length and sha256 of the last complete line at the last read. */
   lastOffset: number;
   lastLength: number;
@@ -74,8 +74,14 @@ export async function currentIdentity(path: string, now: Date): Promise<FileIden
     lastHash = sha(line.text);
     break;
   }
-  const head = size > 0 ? await headHash(path) : sha("");
-  return { path, bytes: size, head, lastOffset, lastLength, lastHash, seen: now.toISOString() };
+  const id: FileIdentity = { path, bytes: size, lastOffset, lastLength, lastHash, seen: now.toISOString() };
+  // A first line still being written is not settled: hashing it would make the append that
+  // completes it look like a rewrite.
+  for await (const line of readLines(path)) {
+    if (!line.partial) id.head = sha(line.text);
+    break;
+  }
+  return id;
 }
 
 async function load(dir: string, path: string): Promise<FileIdentity | undefined> {
@@ -121,7 +127,8 @@ export async function checkRewrite(path: string, opts: CacheOpts = {}): Promise<
   const before = await load(dir, path);
   let rewritten = false;
   if (before) {
-    if (now.bytes < before.bytes || now.head !== before.head) rewritten = true;
+    if (now.bytes < before.bytes) rewritten = true;
+    else if (before.head !== undefined && now.head !== before.head) rewritten = true;
     else if (before.lastLength > 0) {
       try {
         const slice = await readSlice(path, before.lastOffset, before.lastLength);

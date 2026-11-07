@@ -94,6 +94,13 @@ describe("id stability", () => {
     expect(third.stdout).not.toMatch(/^notice:/m);
     const shown = await run(["show", "a3000003:1"], { env });
     expect(shown.stdout).not.toMatch(/^notice:/m);
+    // A NOT_FOUND after a rewrite still carries the notice.
+    const lastSeq = readFileSync(file, "utf8").split("\n").filter(Boolean).length;
+    truncateSync(file, readFileSync(file).length - Buffer.byteLength(readFileSync(file, "utf8").split("\n").filter(Boolean).at(-1)! + "\n"));
+    const gone = await run(["show", `a3000003:${lastSeq}`], { env });
+    expect(gone.exitCode).toBe(1);
+    expect(gone.stdout).toMatch(/^code: NOT_FOUND$/m);
+    expect(gone.stdout).toContain("session file was rewritten since");
   });
 
   it("a same-length rewrite of the last read line is caught too; a missing cache dir is no error", async () => {
@@ -106,6 +113,19 @@ describe("id stability", () => {
     expect((await checkRewrite(f, cache)).rewritten).toBe(false);
     appendFileSync(f, '{"type":"user","n":4}\n');
     expect((await checkRewrite(f, cache)).rewritten).toBe(false);
+    // An empty file that gains its first line, and a partial first line that completes, are appends.
+    const g = join(tmp, "growing.jsonl");
+    writeFileSync(g, "");
+    expect((await checkRewrite(g, cache)).rewritten).toBe(false);
+    appendFileSync(g, '{"type":"user",');
+    expect((await checkRewrite(g, cache)).rewritten).toBe(false);
+    appendFileSync(g, '"n":1}\n');
+    expect((await checkRewrite(g, cache)).rewritten).toBe(false);
+    appendFileSync(g, '{"type":"user","n":2}\n');
+    expect((await checkRewrite(g, cache)).rewritten).toBe(false);
+    // …but once the first line is complete, changing it is a rewrite.
+    writeFileSync(g, '{"type":"user","n":9}\n{"type":"user","n":2}\n');
+    expect((await checkRewrite(g, cache)).rewritten).toBe(true);
     // An unwritable cache location behaves like no cache.
     writeFileSync(join(tmp, "not-a-dir"), "");
     expect(await checkRewrite(f, { dir: join(tmp, "not-a-dir", "cache") })).toEqual({ rewritten: false });

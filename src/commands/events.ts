@@ -8,7 +8,7 @@ import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { formatSize } from "../output/sizes.js";
-import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, sessionFromArg, sessionHint, shellArg, zoneOf, type Io, type SessionHint } from "./common.js";
+import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, withNotice, sessionFromArg, sessionHint, shellArg, zoneOf, type Io, type SessionHint } from "./common.js";
 
 function flagsOf(name: string) {
   return findCommand(name)?.flags ?? [];
@@ -131,8 +131,8 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (kinds) opts.kinds = kinds;
   if (range.from) opts.from = range.from;
   if (range.to) opts.to = range.to;
-  const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
+  const listing = await withNotice(notice, () => listEvents(session, opts));
   return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
@@ -161,8 +161,8 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   const session = await sessionFromArg("tail", ref, p, io);
   const opts: ListOpts = { limit };
   if (kinds) opts.kinds = kinds;
-  const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
+  const listing = await withNotice(notice, () => listEvents(session, opts));
   return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, hint: await sessionHint("tail", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
