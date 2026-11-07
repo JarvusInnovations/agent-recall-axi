@@ -44,8 +44,9 @@ ids point at different lines and the tool must not hide it:
   line (once it is complete) and the offset, length and hash of the last complete line read. On
   the next read, a shorter file or a changed hash marks the file `rewritten` and the cache for it
   is discarded. An empty file or a first line still being written records no head hash, so the
-  append that completes it is never a rewrite. (The last-indexed seq joins the record with the
-  line-offset table.)
+  append that completes it is never a rewrite. The line-offset table carries its own copy of
+  these fields at its last-indexed seq and is discarded on the same evidence
+  (`architecture.md#cache`).
 - A listing over a file marked `rewritten` since the last read carries `notice: session file was
   rewritten since <time>; ids printed earlier may have moved` once, then the mark clears.
 - Validation for the Claude Code adapter includes a fixture that appends to a file between two

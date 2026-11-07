@@ -292,23 +292,41 @@ help[3]:
 
 ```
 agent-session-axi around <id> [--before <n>] [--after <n>] [--context <n>] [--kind …] [--head <n>] [--full]
-agent-session-axi next <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full]
-agent-session-axi prev <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full]
+                         [--fields <a,b>] [--session <ref>] [--project <p> | --all]
+agent-session-axi next <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+                       [--session <ref>] [--project <p> | --all]
+agent-session-axi prev <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+                       [--session <ref>] [--project <p> | --all]
 ```
 
 The pan verbs. Same rows as `events`; the difference is where they start.
 
 - `around`: `--before 5 --after 5` by default; the anchor row is included and marked by a header
-  line `anchor: <id>`. Output label `rows`.
+  line `anchor: <id>`. `--context <n>` sets both sides; an explicit `--before` or `--after`
+  overrides its side. Output label `rows`.
 - `next`: the `n` visible events after the anchor (exclusive), default 20; `prev`: the `n` before,
-  default 20, printed in file order. The optional positional `<n>` equals `--limit`.
+  default 20, printed in file order. The optional positional `<n>` equals `--limit` (both given and
+  different: `code: USAGE`). `--full` without an `n` lifts the row cap, as on `events`. Output
+  labels `next` and `prev`.
 - Counts are over visible events (`--kind` applies before counting).
+- A bare entry id of an entry that yields several events anchors on the whole entry: `around`
+  shows every visible block of it as the anchor, `next`/`prev` start after/before all of them.
+- Header: `session:`, `anchor: <id>`, `day:`/`days:`, `tz:`, and `count: <shown> of <matching>`
+  where `<matching>` is every visible event of the session (of the kinds shown).
 - Starting from a silent entry or a hidden-kind event is fine: travel begins at the nearest
-  visible event in the direction of travel, and the header says so.
+  visible event in the direction of travel, and the header says so in `anchor_note:` (for example
+  `silent entry, not shown; travel starts at 7a2f1c3e:416`, or `thinking (hidden by default), not
+  shown; …`). `show` of the anchor still works.
 - Footer: the exact continuation in both directions using the edge ids
-  (`next 7a2f1c3e:431`, `prev 7a2f1c3e:402`), `show <anchor>`, and `at end of session` /
-  `at start of session` when a direction is exhausted (printed as a header field, not an error).
-- `<id>` may be a bare `<seq>` only with `--session <ref>`; listings never print that form.
+  (`next 7a2f1c3e:431`, `prev 7a2f1c3e:402`), carrying the caller's `--kind`, `--head`, `--full`,
+  `--fields` (and, for `next`/`prev`, an explicit `n` as `--limit`), and `show <anchor>`. When a
+  direction is exhausted the header carries `at_end: true` / `at_start: true` (a header field, not
+  an error) and the footer omits that direction's continuation.
+- Empty: `next: 0 events after 7a2f1c3e:431 (at end of session)` (and the `prev` mirror), exit 0.
+- `<id>` may be a bare `<seq>` only with `--session <ref>`; listings never print that form. An id
+  past the end of the file is `code: NOT_FOUND` with a `tail` hint, as for `show`.
+- These commands seek through the cache's line-offset table (`architecture.md#cache`), building
+  it on first use; a session they read is indexed afterwards.
 
 ## `tail <session>`
 
@@ -320,6 +338,11 @@ agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [
 The last `n` visible rows (default 20): "what was I doing". Equivalent to `events <session>` with
 the default limit, kept as a verb because it is the most common call. Footer: `prev <first-id>`,
 `resume-pack <session>`.
+
+`tail` and the default `events` read the file backwards and never build the offset table. When
+the table already exists (a pan command or `show` built it), its per-kind counts make the header
+exact, `count: 20 of 4120`; without it the header says `count: 20 (newest; earlier rows exist)`
+unless the read reached the file start.
 
 ## `show <id>` (alias: `zoom`)
 
@@ -471,6 +494,29 @@ agent-session-axi cache clear [--project <p> | --all]
 
 Reports the cache directory, size, indexed session count and staleness; `clear` deletes it.
 Nothing else depends on the cache existing.
+
+```
+cache: ~/.cache/agent-session-axi
+size: 61.3k
+tracked: 4 files
+count: 2 indexed
+indexed[2]{session,lines,checkpoints,size,state,path}:
+  7a2f1c3e,4120,17,9.8k,fresh,~/.claude/projects/-src-widget/7a2f1c3e-….jsonl
+  91b0c4d2,812,4,2.1k,appended,~/.claude/projects/-src-widget/91b0c4d2-….jsonl
+help[2]:
+  Run `agent-session-axi cache clear` to delete the cache (it is rebuilt on demand)
+  Run `agent-session-axi around <id>` to index a session
+```
+
+- `lines` is the last-indexed seq, `checkpoints` the offset-table size, `size` the record's bytes
+  on disk. `state` is `fresh` (the file is as indexed), `appended` (it grew; the next seek extends
+  the table), `rewritten` (shorter, or the indexed head or last line changed; the next read
+  discards the record) or `missing` (the file is gone).
+- `tracked` counts every per-file identity record (`behaviors/id-stability.md`).
+- Empty: `cache: ~/.cache/agent-session-axi (absent)` or `count: 0 indexed`, exit 0.
+- `cache clear` with no flag or `--all` deletes the whole directory; `--project <p>` deletes only
+  the records of that project's session files. Clearing an absent cache is a no-op, exit 0
+  (`cleared: nothing to clear`).
 
 ## `update`
 
