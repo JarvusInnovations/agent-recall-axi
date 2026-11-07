@@ -319,9 +319,9 @@ help[1]:
 - A bare entry id for a multi-event entry prints every block as `blocks[N]` with its `.n` id.
 - `--raw` prints the original JSON line (pretty-printed) under `raw:` instead of the model view;
   it works for silent and malformed entries too.
-- An event prints `event: <id>`; an entry that yields several events prints `entry: <id>`, its `t`
-  and `uuid`, then `blocks[N]`. `uuid`/`parent_uuid` close every entry. Fields an event does not
-  have are omitted, never printed empty.
+- An event prints `event: <id>`; an entry that yields several events prints `entry: <id>` and its
+  `t`, then `blocks[N]`. `uuid`/`parent_uuid` close every entry. Fields an event does not have are
+  omitted, never printed empty.
 - `<id>` may be a bare `<seq>` only with `--session <ref>`; with both, the id's `<s8>` must be
   that session's.
 - A silent entry prints `kind: silent`, its `type` and `raw:`, with hints to `show` the nearest
