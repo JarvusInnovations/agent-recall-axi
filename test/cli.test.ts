@@ -51,7 +51,7 @@ describe("events", () => {
     const all = await run(["events", fx("thinking"), "--kind", "all"]);
     expect(all.stdout).toContain(",thinking,The flange loop allocates on every pass.");
     const res = await run(["events", fx("parallel-tools"), "--kind=all"]);
-    expect(res.stdout).toContain(',result,"error: FAIL src/widget.test.ts expected 2 got 3"');
+    expect(res.stdout).toContain(',result,"error: FAIL src/widget.test.ts   expected 2 got 3"');
     const only = await run(["events", fx("parallel-tools"), "--kind", "result"]);
     expect(rowLines(only.stdout, "events")).toHaveLength(3);
   });

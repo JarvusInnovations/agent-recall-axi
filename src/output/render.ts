@@ -25,8 +25,9 @@ export function renderDocument(body: Record<string, unknown>, help: string[] = [
   return parts.join("\n");
 }
 
+/** row-format.md#text-by-kind: newline runs collapse to one space; nothing else changes. */
 export function oneLine(text: string): string {
-  return text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+  return text.replace(/(\r?\n)+/g, " ");
 }
 
 /** A plain head cut marked with `…` (URL/path/id protection lands with the truncation module). */
