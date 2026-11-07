@@ -143,6 +143,20 @@ export interface RenderedRows {
 
 /** An opt-in column (`--fields`, cli.md#events-session); empty when the event lacks it. */
 export function fieldValue(ev: Event, field: RowField, opts: RowOpts): string | number | boolean {
+  return fieldCell(ev, field, opts).value;
+}
+
+/** A column's value and whether it was cut (a cut column counts toward the footer like the text). */
+export function fieldCell(ev: Event, field: RowField, opts: RowOpts): { value: string | number | boolean; cut: boolean } {
+  if (field === "target") {
+    if (ev.target === undefined) return { value: "", cut: false };
+    const t = targetCut(ev, opts.head > 0 ? Math.min(opts.head, TARGET_HEAD) : 0);
+    return { value: t.text, cut: t.cut };
+  }
+  return { value: plainField(ev, field), cut: false };
+}
+
+function plainField(ev: Event, field: Exclude<RowField, "target">): string | number | boolean {
   switch (field) {
     case "authority":
       return ev.authority;
@@ -150,8 +164,6 @@ export function fieldValue(ev: Event, field: RowField, opts: RowOpts): string | 
       return ev.size;
     case "tool":
       return ev.tool ?? "";
-    case "target":
-      return ev.target !== undefined ? targetCut(ev, opts.head > 0 ? Math.min(opts.head, TARGET_HEAD) : 0).text : "";
     case "result":
       return ev.result ? formatId(ev.result) : "";
     case "call":
@@ -168,13 +180,18 @@ export function renderRows(events: Event[], tz: string, opts: RowOpts & { fields
   let chars = 0;
   const rows = events.map((ev) => {
     const t = rowText(ev, opts);
-    if (t.cut) {
+    let rowCut = t.cut;
+    chars += t.text.length;
+    const row: Record<string, string | number | boolean> = { id: formatId(ev.id), t: time.format(ev), kind: ev.kind, text: t.text };
+    for (const f of opts.fields ?? []) {
+      const cell = fieldCell(ev, f, opts);
+      row[f] = cell.value;
+      rowCut ||= cell.cut;
+    }
+    if (rowCut) {
       cut++;
       firstCut ??= ev.id;
     }
-    chars += t.text.length;
-    const row: Record<string, string | number | boolean> = { id: formatId(ev.id), t: time.format(ev), kind: ev.kind, text: t.text };
-    for (const f of opts.fields ?? []) row[f] = fieldValue(ev, f, opts);
     return row;
   });
   const out: RenderedRows = { header: time.header, rows, cut, chars };

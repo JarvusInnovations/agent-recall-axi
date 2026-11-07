@@ -86,3 +86,16 @@ describe("truncation bounds", () => {
     expect(r.text.length).toBeLessThanOrEqual(2 * 120 + 1);
   });
 });
+
+describe("--fields target", () => {
+  it("a target column cut counts toward the footer like a text cut", async () => {
+    const { renderRows } = await import("../src/output/render.js");
+    // An event whose text column is short but which carries a long target (as a future adapter's
+    // non-call kind could): the column's cut must still be counted.
+    const ev = { id: { session: "7a2f1c3e", seq: 3 }, kind: "notice", authority: "D", text: "short", size: 5, target: `run ${"word ".repeat(60)}` } as const;
+    const r = renderRows([ev as never], "UTC", { head: 200, fields: ["target"] });
+    expect(String(r.rows[0]!.target).endsWith("…")).toBe(true);
+    expect(r.cut).toBe(1);
+    expect(r.firstCut).toEqual({ session: "7a2f1c3e", seq: 3 });
+  });
+});
