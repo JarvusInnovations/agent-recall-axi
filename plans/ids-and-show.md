@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 depends: [reader-and-event-model]
 specs:
   - specs/data-model.md
