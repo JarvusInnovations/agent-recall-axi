@@ -98,7 +98,7 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   header.count = `${listing.sessions.length} of ${listing.matching}`;
   header.sessions = listing.sessions.map((s) => sessionRow(s, tz, io.now, extra));
   const top = listing.sessions[0]!;
-  help.push(`Run \`${BIN} tail ${shellPath(top.path)}${carry(p)}\` for the last rows of ${top.short}`);
+  help.push(`Run \`${BIN} tail ${top.short}${scopeFlag}${carry(p)}\` for the last rows of ${top.short}`);
   if (!fields.includes("path")) help.push(`Run \`${BIN} sessions${scopeFlag} --fields path${carry(p)}\` for each session's file path`);
   if (listing.sessions.length < listing.matching) {
     help.push(`Run \`${BIN} sessions${scopeFlag} --limit 0${carry(p)}\` for all ${listing.matching} sessions`);

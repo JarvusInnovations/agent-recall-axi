@@ -43,7 +43,8 @@ export const GLOBAL_FLAGS: FlagSpec[] = [
   { name: "tz", value: "string", arg: "<iana>", describe: "time zone for parsing and rendering", default: "TZ, else the system zone" },
 ];
 
-const SESSION_ARG = "<session>: path to a session .jsonl (ids, prefixes and `latest` arrive with plan ids-and-show)";
+const SESSION_ARG = "<session>: a log file path, a session uuid or agentId, a hex prefix of at least 8 characters, or latest";
+const ID_ARG = "<id>: <s8>:<seq>[.<n>] as listings print it (7a2f1c3e:418, 7a2f1c3e:418.2); a bare <seq> only with --session";
 
 const LIMIT = (d: string): FlagSpec => ({ name: "limit", value: "number", arg: "<n>", describe: "rows to show; 0 = no cap", default: d });
 const KIND: FlagSpec = {
@@ -59,10 +60,56 @@ const FROM: FlagSpec = { name: "from", value: "string", arg: "<when|id>", descri
 const TO: FlagSpec = { name: "to", value: "string", arg: "<when|id>", describe: "exclusive end: a time or an event id" };
 const SINCE: FlagSpec = { name: "since", value: "string", arg: "<span>", describe: "shorthand for --from now-<span> (90m, 24h, 7d, 2w)" };
 const WINDOW: FlagSpec = { name: "window", value: "string", arg: "<k|last|all>", describe: "one compaction window", planned: "views" };
-const FIELDS_PLANNED: FlagSpec = { name: "fields", value: "string", arg: "<a,b>", describe: "extra columns", planned: "ids-and-show" };
+export const ROW_FIELDS = ["authority", "size", "tool", "target", "result", "call", "error"] as const;
+export type RowField = (typeof ROW_FIELDS)[number];
+const FIELDS: FlagSpec = { name: "fields", value: "string", arg: "<a,b>", describe: `extra columns: ${ROW_FIELDS.join(", ")}` };
 const JSON_OUT: FlagSpec = { name: "json-out", value: "string", arg: "[=path]", describe: "write the uncapped result as JSON", planned: "sessions-and-recall" };
 const PROJECT: FlagSpec = { name: "project", value: "string", arg: "<p>", describe: "a project path, encoded dir name, or unique cwd substring" };
 const ALL: FlagSpec = { name: "all", value: "boolean", describe: "every project under the log root" };
+const REF_PROJECT: FlagSpec = { ...PROJECT, describe: "resolve <session>/<id> in this project (a path, encoded dir name, or unique cwd substring)" };
+const REF_ALL: FlagSpec = { ...ALL, describe: "resolve <session>/<id> across every project" };
+
+export const SHOW_FIELDS = [
+  "t",
+  "kind",
+  "authority",
+  "turn",
+  "window",
+  "tool",
+  "target",
+  "input",
+  "result",
+  "result_status",
+  "result_text",
+  "call",
+  "error",
+  "pointer",
+  "preview",
+  "text",
+  "trigger",
+  "pre_tokens",
+  "post_tokens",
+  "dropped_tokens",
+  "summary",
+  "compaction",
+  "preserved",
+  "agent",
+  "files",
+  "meta",
+  "type",
+  "raw",
+  "uuid",
+  "parent_uuid",
+] as const;
+
+const SHOW_FLAGS: FlagSpec[] = [
+  { name: "full", value: "boolean", describe: "lift the 4,000-char caps and print persisted outputs instead of their preview" },
+  { name: "raw", value: "boolean", describe: "the stored line under raw: instead of the model view (works for silent and malformed lines)" },
+  { name: "fields", value: "string", arg: "<a,b>", describe: `print only these fields: ${SHOW_FIELDS.join(", ")}` },
+  { name: "session", value: "string", arg: "<ref>", describe: "the session a bare <seq> belongs to" },
+  REF_PROJECT,
+  REF_ALL,
+];
 
 export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "kind", "parent"] as const;
 
@@ -101,25 +148,21 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       {
         name: "events",
-        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full]",
+        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
         summary: "rows of a session in file order; newest last unless --from is given",
         status: "available",
         args: [SESSION_ARG],
-        flags: [FROM, TO, SINCE, KIND, LIMIT("40"), HEAD, FULL, WINDOW, FIELDS_PLANNED, JSON_OUT],
-        examples: [
-          "events ./7a2f1c3e-0000-4000-8000-000000000001.jsonl",
-          "events ./7a2f1c3e-0000-4000-8000-000000000001.jsonl --kind all --limit 0",
-          "events ./7a2f1c3e-0000-4000-8000-000000000001.jsonl --from 7a2f1c3e:418 --limit 20",
-        ],
+        flags: [FROM, TO, SINCE, KIND, LIMIT("40"), HEAD, FULL, FIELDS, REF_PROJECT, REF_ALL, WINDOW, JSON_OUT],
+        examples: ["events 7a2f1c3e", "events latest --kind all --limit 0", "events 7a2f1c3e --from 7a2f1c3e:418 --limit 20 --fields authority"],
       },
       {
         name: "tail",
-        usage: "tail <session> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full]",
+        usage: "tail <session> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
         summary: "the last n visible rows (default 20): what was I doing",
         status: "available",
         args: [SESSION_ARG, "<n>: same as --limit"],
-        flags: [LIMIT("20"), KIND, HEAD, FULL],
-        examples: ["tail ./7a2f1c3e-0000-4000-8000-000000000001.jsonl", "tail ./7a2f1c3e-0000-4000-8000-000000000001.jsonl 5 --kind all"],
+        flags: [LIMIT("20"), KIND, HEAD, FULL, FIELDS, REF_PROJECT, REF_ALL],
+        examples: ["tail latest", "tail 7a2f1c3e 5 --kind all", "tail ./7a2f1c3e-0000-4000-8000-000000000001.jsonl"],
       },
       { name: "around", usage: "around <id> [--before <n>] [--after <n>]", summary: "rows on both sides of an id", status: { planned: "pan" } },
       { name: "next", usage: "next <id> [<n>]", summary: "the n visible rows after an id", status: { planned: "pan" } },
@@ -129,8 +172,25 @@ export const COMMAND_GROUPS: CommandGroup[] = [
   {
     group: "zoom",
     commands: [
-      { name: "show", usage: "show <id> [--full] [--raw]", summary: "one entry or event, whole (alias: zoom)", status: { planned: "ids-and-show" } },
-      { name: "zoom", usage: "zoom <id> [--full] [--raw]", summary: "alias of show", status: { planned: "ids-and-show" }, alias: "show" },
+      {
+        name: "show",
+        usage: "show <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        summary: "one entry or event, whole (alias: zoom)",
+        status: "available",
+        args: [ID_ARG],
+        flags: SHOW_FLAGS,
+        examples: ["show 7a2f1c3e:418", "show 7a2f1c3e:418.2 --full", "show 418 --session latest --raw"],
+      },
+      {
+        name: "zoom",
+        usage: "zoom <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        summary: "alias of show: the same arguments, the same output",
+        status: "available",
+        alias: "show",
+        args: [ID_ARG],
+        flags: SHOW_FLAGS,
+        examples: ["zoom 7a2f1c3e:418", "zoom 7a2f1c3e:418.2 --full"],
+      },
     ],
   },
   {

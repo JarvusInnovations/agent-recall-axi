@@ -39,11 +39,16 @@ describe("privacy: read-only", () => {
         await listEvents(session, { limit: 3 });
         await run(["events", s.path, "--kind", "all"]);
         await run(["tail", s.path]);
+        for (const seq of ["1", "2", "3"]) {
+          await run(["show", seq, "--session", s.path, "--full"]);
+          await run(["show", seq, "--session", s.path, "--raw"]);
+        }
       }
     }
     await sessionListing({ env, project: "all", subagents: true }, { limit: 0 });
     await run(["sessions", "--all", "--subagents"]);
     await run([]);
+    await run(["tail", "latest"]);
     expect(snapshot(FIXTURE_ROOT)).toEqual(before);
   });
 });

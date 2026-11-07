@@ -1,14 +1,13 @@
 /** Shared argument handling for the row commands. Validation happens before any file is opened. */
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
-import { parseId } from "../lib/ids.js";
+import { parseId, resolveSession } from "../lib/ids.js";
+import { checkRewrite } from "../lib/cache/store.js";
 import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
-import { openSession } from "../lib/session.js";
-import { parseSpan, parseWhen, resolveZone } from "../lib/time.js";
+import type { Scope } from "../lib/scope.js";
+import { formatClock, formatDay, parseSpan, parseWhen, resolveZone } from "../lib/time.js";
 import type { Session } from "../lib/model.js";
-import { getString, usageLine, type Parsed } from "../flags.js";
+import { getBool, getString, usageLine, type Parsed } from "../flags.js";
 
 export const BIN = "agent-session-axi";
 
@@ -78,19 +77,46 @@ export function shellPath(path: string): string {
   return shellArg(collapseHome(path));
 }
 
-/**
- * A `<session>` argument. This version resolves file paths; uuids, prefixes and `latest`
- * resolve once ids-and-show lands, and say so instead of guessing.
- */
-export async function sessionFromArg(ref: string, io: Io): Promise<Session> {
-  const abs = resolve(io.cwd, ref.startsWith("~/") ? `${homedir()}${ref.slice(1)}` : ref);
-  if (!existsSync(abs) && !ref.includes("/") && !ref.endsWith(".jsonl")) {
-    throw new AxiError(`${ref} is not a session file path`, "NOT_FOUND", [
-      "This version takes a session's .jsonl path; uuids, prefixes and `latest` arrive with ids-and-show",
-      `Run \`${BIN} sessions --fields path\` to list session paths`,
-    ]);
+/** The resolution scope a command's `--project`/`--all` set (cli.md#conventions). */
+export function scopeOf(command: string, p: Parsed, io: Io): Scope {
+  const project = getString(p, "project");
+  const all = getBool(p, "all");
+  if (project !== undefined && all) {
+    throw new AxiError("--project and --all both set the scope; pass one", "USAGE", [usageLine(command)]);
   }
-  return openSession(abs);
+  const scope: Scope = { cwd: io.cwd, env: io.env };
+  if (all) scope.project = "all";
+  else if (project !== undefined) scope.project = project;
+  return scope;
+}
+
+/** ` --project <p>` / ` --all` as given, for hints that must resolve in the same scope. */
+export function scopeCarry(p: Parsed): string {
+  if (getBool(p, "all")) return " --all";
+  const project = getString(p, "project");
+  return project !== undefined ? ` --project ${shellPath(project)}` : "";
+}
+
+/** A `<session>` argument, resolved per data-model.md#session-reference. */
+export async function sessionFromArg(command: string, ref: string, p: Parsed, io: Io): Promise<Session> {
+  return resolveSession(ref, scopeOf(command, p, io));
+}
+
+/**
+ * How a hint names the session: the path when the caller gave a path (it may lie outside any
+ * scope), else the `<s8>` plus the scope flags it was resolved in.
+ */
+export function sessionHintRef(ref: string, session: Session, p: Parsed): string {
+  const isPath = ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
+  return isPath ? shellPath(session.path) : `${session.short}${scopeCarry(p)}`;
+}
+
+/** The rewrite notice (id-stability.md#append-only-is-assumed), once per detected rewrite. */
+export async function rewriteNotice(session: Session, io: Io, tz: string): Promise<string | undefined> {
+  const check = await checkRewrite(session.path, { env: io.env, now: io.now });
+  if (!check.rewritten || !check.since) return undefined;
+  const since = new Date(check.since);
+  return `session file was rewritten since ${formatDay(since, tz)} ${formatClock(since, tz)}; ids printed earlier may have moved`;
 }
 
 export function carry(p: Parsed): string {
