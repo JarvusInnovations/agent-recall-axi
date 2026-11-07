@@ -1,5 +1,6 @@
 /** Shared argument handling for the row commands. Validation happens before any file is opened. */
 import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { AxiError } from "axi-sdk-js";
 import { parseId, resolveSession } from "../lib/ids.js";
 import { checkRewrite } from "../lib/cache/store.js";
@@ -106,8 +107,9 @@ export async function sessionFromArg(command: string, ref: string, p: Parsed, io
  * How a hint names the session: the path when the caller gave a path (it may lie outside any
  * scope), else the `<s8>` plus the scope flags it was resolved in.
  */
-export function sessionHintRef(ref: string, session: Session, p: Parsed): string {
-  const isPath = ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
+export function sessionHintRef(ref: string, session: Session, p: Parsed, io: Io): string {
+  const looksLikePath = ref.includes("/") || ref.startsWith(".") || ref.startsWith("~") || ref.endsWith(".jsonl");
+  const isPath = looksLikePath || resolve(io.cwd, ref) === session.path;
   return isPath ? shellPath(session.path) : `${session.short}${scopeCarry(p)}`;
 }
 

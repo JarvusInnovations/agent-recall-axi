@@ -97,6 +97,8 @@ export const SHOW_FIELDS = [
   "files",
   "meta",
   "type",
+  "malformed",
+  "partial",
   "raw",
   "uuid",
   "parent_uuid",

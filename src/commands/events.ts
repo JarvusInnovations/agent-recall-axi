@@ -136,7 +136,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (range.to) opts.to = range.to;
   const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
-  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, ref: sessionHintRef(ref, session, p), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, ref: sessionHintRef(ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 export async function tailCommand(args: string[], io: Io): Promise<string> {
@@ -166,7 +166,7 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   if (kinds) opts.kinds = kinds;
   const listing = await listEvents(session, opts);
   const notice = await rewriteNotice(session, io, tz);
-  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, ref: sessionHintRef(ref, session, p), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, ref: sessionHintRef(ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 function helpOf(name: string): string {
