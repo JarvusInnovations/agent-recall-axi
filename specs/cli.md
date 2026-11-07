@@ -276,8 +276,8 @@ The pan verbs. Same rows as `events`; the difference is where they start.
   where `<matching>` is every visible event of the session (of the kinds shown).
 - Starting from a silent entry or a hidden-kind event is fine: travel begins at the nearest
   visible event in the direction of travel, and the header says so in `anchor_note:` (for example
-  `silent entry, not shown; travel starts at 7a2f1c3e:416`, or `thinking (hidden by default), not
-  shown; …`). `show` of the anchor still works.
+  `silent entry, not shown; travel starts at the nearest visible event (7a2f1c3e:416)`, or
+  `thinking (not a shown kind), not shown; …`). `show` of the anchor still works.
 - Footer: the exact continuation in both directions using the edge ids
   (`next 7a2f1c3e:431`, `prev 7a2f1c3e:402`), carrying the caller's `--kind`, `--head`, `--full`,
   `--fields` (and, for `next`/`prev`, an explicit `n` as `--limit`), and `show <anchor>`. When a
