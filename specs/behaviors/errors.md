@@ -32,7 +32,8 @@ vanished file never fails the listing: it is skipped, the header reports `unread
 
 ### Not errors
 
-- Zero matches: `hits: 0 events match "<phrase>" in 7a2f1c3e (4,120 lines scanned)`, exit 0, with
+- Zero matches: `hits: 0 events match phrase "<phrase>" in 7a2f1c3e (4,120 lines scanned)` (the
+  query as `find` prints it, `cli.md#find`), exit 0, with
   a hint to widen (`--all`, drop a filter).
 - A malformed line in a log: skipped, counted, surfaced as `malformed: 2 lines` in the session
   header; `show <id>` of such a line prints it raw.

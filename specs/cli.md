@@ -205,29 +205,58 @@ Default schema: `tools[N]{id,t,tool,target,result}` — `result` is the status (
 agent-session-axi find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>]
                        [--kind <a,b>] [--from <when|id>] [--to <when|id>] [--since <span>]
                        [--window <k|last>] [--context <n>] [--before <n>] [--after <n>]
-                       [--limit <n>] [--project <p> | --all] [--deep] [--json-out[=path]]
+                       [--limit <n>] [--head <n>] [--full] [--fields <a,b>]
+                       [--project <p> | --all] [--deep] [--json-out[=path]]
 ```
 
 Search one session, the project, or everything, by any combination of handles. Each hit row says
 why it matched.
 
-- `<phrase>`: case-insensitive substring over `text` of every visible kind and over `call` inputs
-  (stringified); `--regex` treats it as a JavaScript regular expression.
+- Positionals: with two, they are `<session>` then `<phrase>`. With one, it is `<session>` when it
+  has a session reference's form (it contains `/`, starts with `.` or `~`, ends in `.jsonl`, is a
+  hex string of at least 8 characters, a uuid, or `latest`; `data-model.md#session-reference`)
+  and `<phrase>` otherwise. A phrase of that form is searched by naming the session first
+  (`find latest 7a2f1c3e`).
+- The handles combine with AND: a hit satisfies every one given. `why` names the handles given,
+  in the fixed order `phrase`, `file`, `tool`, `kind`, joined with `+`.
+- Searched kinds are the kinds an `events` listing shows: the `--kind` set when given, else every
+  kind but `thinking` and `result`. A tool's output is searched through its call: a `call`
+  matches a phrase in its linked result's text, so the hit is the call row (whose status already
+  rides on it) and `show <call>` prints both. With `--kind result`, results are searched as rows
+  of their own and calls no longer match their results' text.
+- `<phrase>`: case-insensitive substring over the `text` of every searched event and, for a
+  `call`, over its input (stringified, and each string value as stored) and its result's text;
+  `--regex` treats it as a JavaScript regular expression, also case-insensitive. An invalid
+  pattern, or one that repeats a group containing a quantifier or an alternation (`(a+)+`,
+  `(a|ab)*`: they can backtrack for hours), is `VALIDATION_ERROR`.
 - `--file <pattern>`: matches `files` touched; substring, or glob when the pattern contains `*`,
-  `?` or `[`.
+  `?` or `[` (a glob matches the whole path and its `*` and `?` match `/` too, so `*.env` matches
+  `config/staging.env`). Case-sensitive, as paths are.
 - `--tool <name>`: case-insensitive substring of the tool name; alone, it lists every call of that
   tool.
 - `--kind`: restrict to kinds (e.g. `--kind human` is "what did the human say about X").
 - At least one of `<phrase>`, `--file`, `--tool`, `--kind` is required (`code: USAGE`).
 - Without `<session>`, scope is the current project (`--project` to pick, `--all` for every
   project); hits print `<s8>:<seq>` ids as always, and the header lists the sessions scanned.
-- `--deep` also searches persisted-output files (slow; off by default; the header says
-  `deep: yes` when on).
+  With `<session>`, `--project`/`--all` only widen where the reference resolves.
+- `--deep` also searches persisted-output files for the phrase (slow; off by default; the header
+  says `deep: yes` when on). Only a pointer that may be followed is read (`data-model.md#pointer`,
+  containment); any other is searched by its stored preview alone.
+- `--from`/`--to`/`--since` bound the search by position or time
+  (`behaviors/time-and-scope.md`); `--head`, `--full` and `--fields` shape rows as in `events`.
 
 Output: `hits[N]{id,t,kind,why,text}` where `why` is `phrase`, `file`, `tool`, `kind`, or a
 combination joined with `+`; with `--context n` (default 1) each hit is followed by its
 surrounding rows with `why` empty, and the table is labeled `rows` instead of `hits`. The hit row
 is the one with a non-empty `why`. Default `--limit 20` hits.
+
+- Context rows are drawn from the searched kinds and counted over them (a hidden `thinking` or
+  `result` between two hits takes no slot). `--before`/`--after` set one side and override that
+  side of `--context`; when both sides are 0 the table is `hits`.
+- A row prints once even when it falls in the context of several hits, or is itself a hit inside
+  another hit's context; rows stay in file order.
+- When more hits match than `--limit` shows, the footer carries the same query continued from the
+  event after the last hit shown (`--from <id>`).
 
 ```
 scope: 7a2f1c3e fix auth redirect loop
