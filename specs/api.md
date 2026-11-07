@@ -88,7 +88,8 @@ the nearest event ids before and after a silent entry. An id past the end throws
 
 `cacheStatus(opts?)` lists the cache directory, its size and every indexed file with its state
 (`fresh | appended | rewritten | missing`); `clearCache(opts?: { paths?: string[] })` deletes the
-directory, or only the records of the given session files. Both swallow cache I/O failures.
+directory, or only the records whose stored path is one of `paths` or lies under one of them (a
+project's log directory, so records of logs since deleted go too). Both swallow cache I/O failures.
 
 `checkRewrite(path, opts?)` compares the file with the identity the cache recorded at the last
 read (`behaviors/id-stability.md#append-only-is-assumed`) and returns `{ rewritten, since? }`.

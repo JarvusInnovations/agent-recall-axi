@@ -512,13 +512,14 @@ help[2]:
 ```
 
 - `lines` is the last-indexed seq, `checkpoints` the offset-table size, `size` the record's bytes
-  on disk. `state` is `fresh` (the file is as indexed), `appended` (it grew; the next seek extends
-  the table), `rewritten` (shorter, or the indexed head or last line changed; the next read
+  on disk. `state` is `fresh` (the file is as indexed, or only a line still being written
+  follows), `appended` (it grew; the next seek extends the table), `rewritten` (shorter, or the indexed head or last line changed; the next read
   discards the record) or `missing` (the file is gone).
 - `tracked` counts every per-file identity record (`behaviors/id-stability.md`).
 - Empty: `cache: ~/.cache/agent-session-axi (absent)` or `count: 0 indexed`, exit 0.
 - `cache clear` with no flag or `--all` deletes the whole directory; `--project <p>` deletes only
-  the records of that project's session files. Clearing an absent cache is a no-op, exit 0
+  the records stored for files under that project's log directory (logs since deleted
+  included). Clearing an absent cache is a no-op, exit 0
   (`cleared: nothing to clear`).
 
 ## `update`
