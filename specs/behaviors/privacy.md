@@ -3,7 +3,9 @@
 ## Rule
 
 The tool reads local files the current user can already read, writes nothing except its own cache
-under the user's cache directory, and never sends session content anywhere.
+under the user's cache directory, and never sends session content anywhere. The one exception is
+`hook install`: only when asked, it writes the agent settings files it names (`cli.md#hook`), and
+`hook uninstall` reverts that; nothing else installs a hook or writes outside the cache.
 
 ## Applies To
 
@@ -37,6 +39,9 @@ Every command, the library, the skill and the session hook.
   output names the path. A named path is opened owner-only, never through a symlink, and only
   as a regular file the current user owns (`cli.md#conventions`). They are the only way session content leaves stdout, and the caller
   invokes them explicitly.
+- **Hooks**: `hook install` is the only command that writes outside the cache, the only one
+  that writes agent settings, and it writes only the files its output names. Exports below are
+  the caller's own files, not settings.
 - **The skill and the README** state this rule in one sentence near the top, because session logs
   hold everything a human typed.
 
