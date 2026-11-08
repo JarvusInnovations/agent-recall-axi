@@ -19,6 +19,14 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   `--since`.
 - `--json-out[=path]` writes the complete, uncapped result as JSON to `path` (or an owner-only
   temp file whose path is printed) while stdout keeps the TOON view. There is no JSON stdout mode.
+  The path is given only with `=` (`--json-out=out.json`; a bare `--json-out` means the temp
+  file). The result is the library's (`api.md`): every row the filters match with no `--limit`,
+  budget or head cut, ids as printed (`7a2f1c3e:418`) and times as ISO-8601 UTC, streamed to the
+  file. A given path is resolved against the working directory and created (or truncated)
+  owner-only (`0600`); the temp file is `<command>.json` in a new owner-only (`0700`) directory
+  under the system temp directory (`TMPDIR`). A path whose directory does not exist is
+  `VALIDATION_ERROR`, before any log is read. The output names the file in a `json_out:` line,
+  the last before `help[]`.
 - Default `--limit` values are chosen so the common case fits in one call; the header always
   carries `count: <shown> of <matching>` and the footer the way to see more.
 - Examples below use the synthetic session `7a2f1c3e` and generic paths. Output examples are
@@ -72,6 +80,18 @@ help[5]:
 - Must complete in under 300 ms on a project with 100 sessions: it reads `sessions-index.json`
   when present and otherwise stats files and reads only the tail of the latest one. It never scans
   a whole file.
+- Sessions are main sessions ordered by file modification time, newest first; `latest` is the
+  first (as `latest` resolves). Each row takes its values from the cheapest source that has them:
+  the cache's session stats when they match the file or an append of at most 8 MB extends them
+  (exact, as `sessions` prints them); else the `sessions-index.json` entry whose `fileMtime`
+  matches (`title`, `last`); else the file's mtime as `last`, `custom-title.json` or the first
+  `human` event in the file's first 1 MB as `title`, and an empty `turns` cell. `last` prints as
+  in `sessions` (absolute plus relative).
+- `last_human` is the newest `H`-class event in the latest session's final 4 MB, read backwards
+  (`<id> <time> "<head>"`, the time `HH:MM:SS` on today's local date and `MM-DD HH:MM:SS`
+  otherwise); its line number comes from the cache's line count, or a count of the newline bytes
+  before it, as `tail`'s do. `last_human: none` when the session has no human message, and
+  `none in the last 4M` when the read stopped at that bound.
 - **Hook mode.** When stdin is not a TTY and carries a SessionStart hook payload (JSON with
   `session_id` and `source`), the home view adapts: `source: compact` or `resume` prints
   `resume-pack <that session> --budget 6000` instead of the listing; `startup`/`clear` print the
@@ -96,7 +116,10 @@ Extra fields: `uuid`, `path`, `project`, `bytes`, `lines`, `calls`, `compactions
 `live`, `kind`, `parent`, `model`.
 
 - Default `--limit 20`. Default time window: none (all sessions in scope); `--since 7d` is the
-  typical narrowing.
+  typical narrowing. The window selects sessions by `last`.
+- Order and `last` are exact, so every session in scope has its stats computed (one streaming
+  pass per session on first touch, cached; `data-model.md#session`). One unreadable file is
+  skipped and counted (`behaviors/errors.md`).
 - `--subagents` includes subagent sessions, with `kind` and `parent` in the default schema.
 - Empty: `sessions: 0 sessions in ~/src/widget` (exit 0), hint `--all`.
 - Footer hints: `turns <id>`, `resume-pack <id>`, `find --project … "<phrase>"`.
@@ -305,6 +328,21 @@ help[3]:
   with hints to drop a filter or widen scope.
 - Cross-session scans report `scanned: 12 sessions, 38.4 MB` and respect `--since` (default none
   for a project, 90 days for `--all`).
+- **Cross-session** (no `<session>`): every main and subagent session in scope is searched, newest
+  file modification time first, each in file order, with the single-session rules; hits are
+  counted across all of them and the first `--limit` printed. `--since`/`--from`/`--to` bound
+  events by time as for one session, and a session whose file was last modified before the
+  window's start is not read (no entry can be newer than the write that stored it); a defaulted
+  window prints `since: 90d (the --all default)`. An id is a position in one session, so an id
+  given to `--from`/`--to` here is `VALIDATION_ERROR` with a hint to name its session. The header
+  opens `scope: <project cwd> (project)` or `scope: all projects`, then `query:`, `scanned:`,
+  `count: <shown> of <n> hits`; an unreadable file is skipped and counted. Hints name sessions
+  as everywhere (`<s8>` unless shared in scope) and carry the scope flag; past `--limit` the
+  footer continues the last shown hit's session (`find <s8> … --from <id>`) and offers
+  `--limit 0` for every hit. Empty: `hits: 0 events match <query> in <scope> (12 sessions,
+  38.4 MB scanned)`, with a hint to widen (`--all`, or `--since 1y` under `--all`).
+- The single-session footer carries `find <query> --all` (the same handles, `--tz`, never an id
+  bound) unless the search was already across every project.
 
 ## `around <id>` · `next <id>` · `prev <id>`
 
@@ -455,6 +493,24 @@ the earliest hit; the header carries `scanned: 83 sessions, 412 MB, 2.1s` and th
 - Empty: `sessions: 0 of 83 scanned mention "<phrase>" since 90d`, exit 0, hint `--since 1y`.
 - Uses the cache's term index when present and falls back to a streaming scan; the header says
   which (`index: fresh|partial|none`).
+- **What it searches.** `recall` matches as `find` does, over what the human and the agent said and
+  the calls the agent made: the `H` and `C` kinds of an `events` listing (`human*`, `assistant`,
+  `call`, `summary`; `--kind` may name any `H` or `C` kind, `thinking` included, and naming
+  another is `VALIDATION_ERROR` pointing at `find --all`). A call matches on its text and input,
+  never its result's text: tool output is `find`'s (`find "<phrase>" --all`). These are exactly the
+  texts the term index covers (`architecture.md#cache`), so an indexed and a scanned `recall`
+  return the same sessions, hits and first ids.
+- `--since`/`--from`/`--to` bound events by time as in `find`; a session whose file was last
+  modified before the window's start is not read and not counted in `scanned:`. `--since` and
+  `--from` both set the start (`USAGE`).
+- `hits` counts matching events; sessions with none are not listed; ties in `last` by id. `last`
+  is `MM-DD HH:MM` (no relative suffix). `--project <p>` narrows to one project, `--all` is the
+  default. The footer carries `find <id> "<phrase>"` for each of the first five sessions shown
+  (scope and `--tz` carried) and, when more sessions matched, the `--limit 0` continuation.
+- `index:` is `fresh` when every session read was answered by an index that already covered the
+  file, `none` when none was (first run, a `--regex` phrase, or a phrase with no letters or
+  digits, which the index cannot narrow), and `partial` otherwise (some sessions indexed, some
+  new or appended).
 
 ## `resume-pack <session>`
 

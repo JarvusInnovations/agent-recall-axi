@@ -32,7 +32,7 @@ listProjects(scope?: Scope): AsyncIterable<Project>
 listSessions(scope?: Scope, opts?: { since?: Date; from?: Date; to?: Date; limit?: number }): AsyncIterable<Session>
 resolveSession(ref: string, scope?: Scope): Promise<Session>  // path | uuid | agentId | ≥8-hex prefix | "latest"
 openSession(path: string): Promise<Session>                   // ignores scope
-sessionStats(session: Session): Promise<SessionStats>         // turns, calls, compactions, humans, lines, bytes, last, title
+sessionStats(session: Session): Promise<SessionStats>         // turns, calls, compactions, humans, lines, bytes, started, last, title, model
 ```
 
 `resolveSession` throws `AgentSessionError` with `code: "NOT_FOUND" | "AMBIGUOUS_SESSION" |
@@ -115,12 +115,16 @@ interface Hit { event: Event; why: ("phrase" | "file" | "tool" | "kind")[]; cont
 
 find(session: Session, q: FindQuery): AsyncIterable<Hit>
 findAcross(scope: Scope, q: FindQuery & { since?: Date }): AsyncIterable<Hit & { session: Session }>
-recall(phrase: string, opts?: { scope?: Scope; since?: Date; regex?: boolean; file?: string; tool?: string; kinds?: Kind[]; limit?: number }):
+recall(phrase: string, opts?: { scope?: Scope; since?: Date; from?: Date; to?: Date; regex?: boolean; file?: string; tool?: string; kinds?: Kind[]; limit?: number }):
   Promise<{ sessions: RecallResult[]; scanned: { sessions: number; bytes: number; ms: number; index: "fresh" | "partial" | "none" } }>
 interface RecallResult { session: Session; hits: number; first: EventId; last: Date }
 ```
 
 At least one of `phrase`, `file`, `tool`, `kinds` is required; otherwise `VALIDATION_ERROR`.
+`findAcross` yields each session's hits in file order, sessions newest file modification time
+first (`cli.md#find`); `recall` searches the `H` and `C` kinds only and resolves `since` as
+`from` (`cli.md#recall`). `listSessions` computes each session's stats (`sessionStats`), so its
+order and `last` are exact.
 
 ## Resume pack
 
