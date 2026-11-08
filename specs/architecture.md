@@ -184,16 +184,19 @@ identity, so a listing reads a few hundred bytes per session instead of the tabl
 while that identity matches the file (a trailing line still being written aside), and otherwise
 the table is extended (or built) and the mirror rewritten.
 
-The **term index** (`terms/`) is built by `recall`, in the same pass as the table, and carries the
-table's identity: lower-cased word tokens (runs of letters, digits and `_`) of exactly the text
-`find` tests on an `H` or `C` event (its `text` and, for a `call`, its input stringified and each
-string value), each mapped to the seqs of the entries that hold it. Nothing else is stored: no
-phrase, no position inside a line. A substring of a text has each of its word runs inside a word
+The **term index** (`terms/`) is built by `recall`, in the same pass as the table, and carries its
+own identity (its last indexed seq, the byte offset past it, the first line's hash and the last
+indexed line's offset, length and hash): lower-cased word tokens (runs of letters, digits and
+`_`) of exactly the text `find` tests on an `H` or `C` event (its `text` and, for a `call`, its
+input stringified and each string value), each mapped to the seqs of the entries that hold it,
+stored sorted by token so the record keeps no trace of the order words were written in. Nothing
+else is stored: no phrase, no position inside a line. A substring of a text has each of its word runs inside a word
 run of that text, so a line none of whose tokens contains some word run of the phrase cannot
 match it: the index only ever skips lines that cannot hold a hit, and the lines it cannot rule out
 are verified by classifying them from their checkpoint. An appended file is indexed from the
-index's last seq in the pass that extends the table; an index whose identity differs from the
-table's is rebuilt with it.
+index's own last seq, reading from the table checkpoint at or before it, whether or not another
+command has extended the table since; only an index whose identity no longer matches the file (a
+rewrite) is rebuilt. `recall` never rewrites a record it did not change.
 
 The table records the format version of the table and the package version that built it; a
 mismatch on either discards it, so a classifier change never serves counts or kinds computed by

@@ -32,7 +32,17 @@ listProjects(scope?: Scope): AsyncIterable<Project>
 listSessions(scope?: Scope, opts?: { since?: Date; from?: Date; to?: Date; limit?: number }): AsyncIterable<Session>
 resolveSession(ref: string, scope?: Scope): Promise<Session>  // path | uuid | agentId | ≥8-hex prefix | "latest"
 openSession(path: string): Promise<Session>                   // ignores scope
-sessionStats(session: Session): Promise<SessionStats>         // turns, calls, compactions, humans, lines, bytes, started, last, title, model
+sessionStats(session: Session): Promise<SessionStats>
+cachedStats(session: Session, opts?: { cache?: CacheOpts; maxAppend?: number }): Promise<SessionStats | undefined>   // no whole-file pass
+homeListing(scope: Scope, opts?: { limit?: number; cache?: CacheOpts }): Promise<HomeListing>                       // the home view's rows
+lastHumanOf(session: Session, opts?: { bound?: number; cache?: CacheOpts }): Promise<LastHuman>
+interface SessionStats {
+  turns: number; calls: number; compactions: number; humans: number;   // data-model.md#session
+  lines: number; bytes: number; malformed: number; mtime: string;
+  started?: string; last: string; title?: string; model?: string;
+  titleSource?: "custom-title.json" | "custom-title" | "ai-title" | "human";
+}
+interface LastHuman { event?: Event; numbered: boolean; missing?: "none" | "bound" }    // numbered: the cache gave its line
 ```
 
 `resolveSession` throws `AgentSessionError` with `code: "NOT_FOUND" | "AMBIGUOUS_SESSION" |
@@ -115,6 +125,10 @@ interface Hit { event: Event; why: ("phrase" | "file" | "tool" | "kind")[]; cont
 
 find(session: Session, q: FindQuery): AsyncIterable<Hit>
 findAcross(scope: Scope, q: FindQuery & { since?: Date }): AsyncIterable<Hit & { session: Session }>
+findAcrossListing(scope: Scope, q: FindQuery & { since?: Date }): Promise<AcrossListing>   // the first q.limit hits and the totals
+scopeSessions(scope: Scope, from?: Date): Promise<ScopeSessions>                             // the sessions a cross-session read visits
+tokens(text: string): string[]                                                               // the term index's tokens of a text
+// RECALL_KINDS: the kinds recall searches by default
 recall(phrase: string, opts?: { scope?: Scope; since?: Date; from?: Date; to?: Date; regex?: boolean; file?: string; tool?: string; kinds?: Kind[]; limit?: number }):
   Promise<{ sessions: RecallResult[]; scanned: { sessions: number; bytes: number; ms: number; index: "fresh" | "partial" | "none" } }>
 interface RecallResult { session: Session; hits: number; first: EventId; last: Date }

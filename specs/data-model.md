@@ -103,7 +103,7 @@ and in a different order than the calls (parallel tool use).
 | `started` | timestamp | first entry timestamp in file order |
 | `last` | timestamp | max entry timestamp (file mtime when the file has none) |
 | `bytes`, `lines` | numbers | file size and line count (lines are counted lazily) |
-| `title` | string | first of: `custom-title.json` (`customTitle`), the last `custom-title` entry (`customTitle`), the last `ai-title` entry (`aiTitle`), the head of the first `human` event; one line, cut to the row head (200 chars) |
+| `title` | string | first of: `custom-title.json` (`customTitle`), the last `custom-title` entry (`customTitle`), the last `ai-title` entry (`aiTitle`), the head of the first `human` event; one line, cut to the row head (200 chars). The last entry of a kind wins even when it is empty (a cleared title), and an empty value falls through to the next source. Single-session headers use the cheap sources only (`cli.md#conventions`) |
 | `turns`, `calls`, `compactions`, `humans` | counts | computed on demand; `turns` counts `human` and `human.slash` events (the prompts that open a turn), `compactions` the window boundaries (as `compactions` lists them), `humans` the `human*` events |
 | `live` | boolean | `last` is within 5 minutes of now |
 | `model` | string | the `message.model` of the last assistant entry |

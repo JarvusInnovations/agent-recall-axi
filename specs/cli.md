@@ -20,13 +20,25 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - `--json-out[=path]` writes the complete, uncapped result as JSON to `path` (or an owner-only
   temp file whose path is printed) while stdout keeps the TOON view. There is no JSON stdout mode.
   The path is given only with `=` (`--json-out=out.json`; a bare `--json-out` means the temp
-  file). The result is the library's (`api.md`): every row the filters match with no `--limit`,
-  budget or head cut, ids as printed (`7a2f1c3e:418`) and times as ISO-8601 UTC, streamed to the
-  file. A given path is resolved against the working directory and created (or truncated)
-  owner-only (`0600`); the temp file is `<command>.json` in a new owner-only (`0700`) directory
-  under the system temp directory (`TMPDIR`). A path whose directory does not exist is
-  `VALIDATION_ERROR`, before any log is read. The output names the file in a `json_out:` line,
-  the last before `help[]`.
+  file). A bare `--json-out` followed by an argument ending in `.json` is `USAGE` saying to write
+  `--json-out=<that>`. The result is the library's (`api.md`): every row the filters match with no
+  `--limit`, budget or head cut, the id fields the library returns (`id`, `result`, `call`,
+  `turn`, `first`, `continueTo`, `summary`, `compaction`) as printed (`7a2f1c3e:418`) and
+  everything else as stored (a call input is never rewritten), times as ISO-8601 UTC, streamed to
+  the file item by item as the command reads (never held whole, and never a second read of the
+  logs). A given path is resolved against the working directory and opened before any log is
+  read: created owner-only (`0600`) or truncated, never through a symlink, and refused
+  (`VALIDATION_ERROR`) when it is not a regular file owned by the current user or its directory
+  does not exist. The temp file is `<command>.json`, created exclusively in a new owner-only
+  (`0700`) directory under the system temp directory (`TMPDIR`). A failure while writing removes
+  the partial file and is `INTERNAL_ERROR` naming the path. The output names the file in a
+  `json_out:` line, the last before `help[]`.
+- Single-session headers (`session: <s8> <title>`, `scope: <s8> <title>`) take the title from the
+  cheap sources only, so they depend on the file and its sidecar, never the cache: the
+  `custom-title.json` sidecar, else the `sessions-index.json` entry whose `fileMtime` matches the
+  file, else the first `human` event in the file's first 1 MB, else `(untitled)`; one line, cut
+  to the row head. `sessions`, `recall`, `resume-pack` and `AMBIGUOUS_SESSION` candidates use the
+  full precedence (`data-model.md#session`).
 - Default `--limit` values are chosen so the common case fits in one call; the header always
   carries `count: <shown> of <matching>` and the footer the way to see more.
 - Examples below use the synthetic session `7a2f1c3e` and generic paths. Output examples are
@@ -82,16 +94,19 @@ help[5]:
   a whole file.
 - Sessions are main sessions ordered by file modification time, newest first; `latest` is the
   first (as `latest` resolves). Each row takes its values from the cheapest source that has them:
-  the cache's session stats when they match the file or an append of at most 8 MB extends them
-  (exact, as `sessions` prints them); else the `sessions-index.json` entry whose `fileMtime`
-  matches (`title`, `last`); else the file's mtime as `last`, `custom-title.json` or the first
-  `human` event in the file's first 1 MB as `title`, and an empty `turns` cell. `last` prints as
-  in `sessions` (absolute plus relative).
+  the cache's session stats when they match the file, or when extending them over an append fits
+  the listing's budget of 8 MB of appended lines in total (exact, as `sessions` prints them); else
+  the file's mtime as `last` (the matching `sessions-index.json` entry's `modified` when there is
+  one) and, as `title`, `custom-title.json`, else that index entry's `summary`, else the first
+  `human` event in the file's first 1 MB; `turns` is empty without stats. `last` prints as in
+  `sessions` (absolute plus relative).
 - `last_human` is the newest `H`-class event in the latest session's final 4 MB, read backwards
   (`<id> <time> "<head>"`, the time `HH:MM:SS` on today's local date and `MM-DD HH:MM:SS`
-  otherwise); its line number comes from the cache's line count, or a count of the newline bytes
-  before it, as `tail`'s do. `last_human: none` when the session has no human message, and
-  `none in the last 4M` when the read stopped at that bound.
+  otherwise); its line number comes from the cache (the stats mirror or a table checkpoint at or
+  before it, counting only the bytes after that point). When the cache cannot number it, the id is
+  left out (`<time> "<head>"`) and the `tail <s8>` hint says it prints the rows with their ids;
+  the home view never reads or counts a whole file. `last_human: none` when the session has no
+  human message, and `none in the last 4M` when the read stopped at that bound.
 - **Hook mode.** When stdin is not a TTY and carries a SessionStart hook payload (JSON with
   `session_id` and `source`), the home view adapts: `source: compact` or `resume` prints
   `resume-pack <that session> --budget 6000` instead of the listing; `startup`/`clear` print the
