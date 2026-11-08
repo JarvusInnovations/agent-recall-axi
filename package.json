@@ -10,7 +10,9 @@
     "build:skill": "bun scripts/build-skill.ts",
     "check:skill": "bun scripts/build-skill.ts --check",
     "prepublishOnly": "npm run build",
-    "check:types": "tsc -p test/consumer/tsconfig.json"
+    "check:types": "tsc -p test/consumer/tsconfig.json",
+    "build:bundle": "bun scripts/build-cli.ts",
+    "check:bundle": "bun scripts/build-cli.ts --check"
   },
   "dependencies": {
     "@toon-format/toon": "^4.4.0",
