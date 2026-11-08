@@ -20,7 +20,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.0.0-g24da17a" : readVersion();
+    VERSION = true ? "0.0.0-g7d4fd4d" : readVersion();
   }
 });
 
@@ -6825,6 +6825,7 @@ function parseHookPayload(text) {
 function readHookStdin(stdin, limits = HOOK_READ_LIMITS) {
   if (!stdin || stdin.isTTY) return Promise.resolve(void 0);
   return new Promise((resolveText) => {
+    const chunks = [];
     let text = "";
     let bytes = 0;
     let done = false;
@@ -6847,9 +6848,10 @@ function readHookStdin(stdin, limits = HOOK_READ_LIMITS) {
     };
     const onData = (chunk) => {
       if (total2 === void 0) total2 = setTimeout(() => finish2(text || void 0), limits.totalMs);
-      const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-      text += s;
+      const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+      chunks.push(buf);
+      bytes += buf.length;
+      text = Buffer.concat(chunks).toString("utf8");
       if (bytes >= limits.maxBytes) return finish2(text);
       if (text.trimEnd().endsWith("}")) {
         try {
@@ -6876,7 +6878,7 @@ var init_hook = __esm({
     "use strict";
     HOOK_READ_LIMITS = { firstByteMs: 200, totalMs: 1e3, maxBytes: 64 * 1024 };
     RESUME_SOURCES = /* @__PURE__ */ new Set(["compact", "resume"]);
-    SESSION_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$|^[0-9a-f]{8,}$/i;
+    SESSION_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
   }
 });
 
@@ -7474,8 +7476,9 @@ function install(scope, agent, home, io, targets, scopeFlag, show2) {
   });
   const body = {};
   const changed = rows.some((r) => r.state === "added" || r.state === "updated") || watched.some((p) => before.get(p) !== read(p));
-  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope, no changes)`;
-  body.command = command;
+  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope; no changes)`;
+  const written = chosen.map((r) => installedCommand(r.agent, read(r.path))).find((c) => c !== void 0);
+  body.command = written ?? command;
   body.targets = rows;
   if (chosen.some((r) => r.agent === "codex")) {
     const err = errors.get(targets.codexConfig);
