@@ -44,3 +44,11 @@ export async function* listProjects(scope: Scope = {}): AsyncGenerator<Project> 
 
 // find (specs/api.md#searching)
 export { backtrackRisk, compileQuery, find, findListing, globRegex, WHY_ORDER, type FindListing, type FindQuery, type FindStats, type Hit, type Why } from "./find.js";
+
+// views (specs/api.md#reading): turns, windows, compactions, human messages, tool calls
+export { boundaries, compactions, formatWindow, parseWindow, resolveWindow, windowOf, windows, WINDOW_GRAMMAR, type Boundary, type Window, type WindowRange, type WindowSel } from "./windows.js";
+export { opensWindow, WindowCounter } from "./window-state.js";
+export { turns, type Turn, type TurnEnd, type TurnOpts } from "./turns.js";
+export { budgetCut, DEFAULT_HUMAN_BUDGET, humanMessages, type HumanMessages, type HumanOpts } from "./human.js";
+export { toolCalls, toolCallsWithResults, toolFilter, type ToolCall, type ToolOpts } from "./tools.js";
+export type { Span } from "./hold.js";
