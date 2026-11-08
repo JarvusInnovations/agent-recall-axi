@@ -14,15 +14,23 @@ is what the agent's live context held when it was interrupted.
 
 - Window indexes are 0-based in file order. `--window last` is the highest; `--window all` is the
   default and may be omitted; `--window 2` is exact; `--window 2..` runs to the end.
-- The `compaction` event is the last event of the window it closes. The `summary` event that
-  follows it opens the next window.
+- The `compaction` event is the last event of the window it closes. Its summary is the next
+  *event* after it (silent entries may come between): any other event, a human prompt included,
+  ends the wait and leaves the compaction without a summary. That summary opens the next window.
 - A session with no compaction has one window, `0`, which is also `last`.
 - **A summary with no boundary before it** (a log that predates the structured entry: a
-  `summary` event with no `compaction` waiting for it) is itself the boundary. It opens the next
-  window, so the window before it ends at the event just before it. `compactions` lists it with
-  `trigger` `unknown`, its own id as both `id` and `summary`, and empty `pre`/`post`.
+  `summary` event with no `compaction` waiting for it) is itself the boundary, when at least one
+  event precedes it. It opens the next window, so the window before it ends at the event just
+  before it. `compactions` lists it with `trigger` `unknown`, its own id as both `id` and
+  `summary`, and empty `pre`/`post`. A summary with no event before it is no boundary: it is
+  window 0's opening summary.
+- **Sidechains never cut the main session.** A `compact_boundary`, an `isCompactSummary` entry or
+  a legacy summary sentence on an `isSidechain` entry of a main session file belongs to a
+  subagent's context, not the main one: it is a `notice` with `meta.source: parent`, never a
+  boundary. In a subagent session, text without a human origin that opens with the summary
+  sentence is the parent's prompt (`notice`, `meta.source: parent`), not a summary.
 - An event's window is the number of boundaries before it in file order: a `compaction` counts
-  after itself, a boundary-less `summary` before itself. `show` prints that number; every
+  after itself, a boundary-less `summary` (with events before it) before itself. `show` prints that number; every
   listing's `--window k` keeps exactly the events whose number is `k`, and `compactions` reports
   the same boundaries, so every command agrees on where a window begins and ends.
 - `--window k` past the last window (or `k..` from one) is `VALIDATION_ERROR` naming the valid
@@ -37,8 +45,10 @@ is what the agent's live context held when it was interrupted.
   id and the window it opens; `--full` adds the dropped tokens, the event counts of the windows
   on both sides and the summary text, so an agent can see how much history each summary stands
   in for.
-- After a boundary, `human` output and `resume-pack` include the opening `summary` as a `C`-class
-  layer, clearly labeled, never merged into the human text.
+- A window's **opening summary** is a `summary` that is the window's first event (at or after the
+  window's start). When `--window` selects a window that begins with one, `human` and
+  `resume-pack` (whose default window is `last`) include it as a `C`-class layer, clearly
+  labeled, never merged into the human text. A summary further into a window opens nothing.
 - Cold-start logic keys on the structured boundary (`system/compact_boundary`), not on the summary's
   opening sentence; the sentence is a fallback for logs that predate the structured entry.
 - The compaction record's `preservedMessages` (uuids the harness kept verbatim across the boundary)
