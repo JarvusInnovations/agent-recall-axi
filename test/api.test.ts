@@ -63,7 +63,8 @@ function apiNames(): { values: Set<string>; types: Set<string>; render: Set<stri
 describe("api.md names resolve from the package entry", () => {
   const names = apiNames();
   const dts = readFileSync(join(REPO, "dist", "src", "lib", "index.d.ts"), "utf8");
-  const exported = (n: string) => new RegExp(`\\b(type |interface |class |function )?${n}\\b`).test(dts);
+  // The qualifier is required: a type re-exported as `type X`, or declared `export interface|type|class X`.
+  const exported = (n: string) => new RegExp(`(\\btype |export (interface|type|class) )${n}\\b`).test(dts);
   const pending = (n: string) => {
     const plan = PENDING[n];
     expect(plan, `${n} is in api.md but not exported`).toBeDefined();
@@ -129,7 +130,7 @@ describe("the library never writes to stdout", () => {
     const root = join(REPO, "test", "fixtures", "claude");
     const scope = { root: join(root, "projects"), cwd: "/src/widget" };
     const table = { bounds: [], checkpoints: [] } as never;
-    /** Arguments per export; an export not listed here is still called, with the session. */
+    /** Arguments per export: every function export must be listed (a new one fails until it is). */
     const calls: Record<string, () => unknown> = {
       allProjects: () => lib.allProjects(join(root, "projects")),
       around: () => lib.around(session, id, 2, 2),
@@ -192,29 +193,38 @@ describe("the library never writes to stdout", () => {
     };
     const fns = Object.entries(lib).filter(([, v]) => typeof v === "function" && !/^class /.test(Function.prototype.toString.call(v)));
     expect(fns.length).toBeGreaterThan(40);
+    expect(fns.map(([n]) => n).filter((n) => !calls[n])).toEqual([]);
     let written = "";
-    const real = process.stdout.write.bind(process.stdout);
-    const realLog = console.log;
-    process.stdout.write = ((chunk: string | Uint8Array) => {
+    const capture = (chunk: string | Uint8Array) => {
       written += String(chunk);
       return true;
-    }) as typeof process.stdout.write;
-    console.log = (...a: unknown[]) => void (written += a.join(" "));
+    };
+    const saved = {
+      out: process.stdout.write,
+      err: process.stderr.write,
+      log: console.log,
+      error: console.error,
+      warn: console.warn,
+      info: console.info,
+      debug: console.debug,
+    };
+    process.stdout.write = capture as typeof process.stdout.write;
+    process.stderr.write = capture as typeof process.stderr.write;
+    for (const k of ["log", "error", "warn", "info", "debug"] as const) console[k] = (...a: unknown[]) => void (written += a.join(" "));
     const failed: string[] = [];
     try {
-      for (const [name, fn] of fns) {
+      for (const [name] of fns) {
         try {
-          await settle(calls[name] ? calls[name]!() : (fn as (s: unknown) => unknown)(session));
+          await settle(calls[name]!());
         } catch (err) {
-          // An unlisted export called with the wrong arguments may throw; only stdout matters,
-          // but a listed one must succeed.
-          if (calls[name]) failed.push(`${name}: ${(err as Error).message}`);
+          failed.push(`${name}: ${(err as Error).message}`);
         }
       }
       await settle(render.renderResumePack(await lib.buildResumePack(comp, { cache: cacheOpts }), { tz: "UTC" }));
     } finally {
-      process.stdout.write = real;
-      console.log = realLog;
+      process.stdout.write = saved.out;
+      process.stderr.write = saved.err;
+      Object.assign(console, { log: saved.log, error: saved.error, warn: saved.warn, info: saved.info, debug: saved.debug });
     }
     expect(failed).toEqual([]);
     expect(written).toBe("");
