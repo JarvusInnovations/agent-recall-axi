@@ -1,12 +1,6 @@
 /** Typed library error; the CLI maps each code one-to-one onto an AxiError (specs/api.md#errors). */
-export type ErrorCode =
-  | "USAGE"
-  | "VALIDATION_ERROR"
-  | "NOT_FOUND"
-  | "AMBIGUOUS_SESSION"
-  | "NO_SESSIONS"
-  | "UNREADABLE"
-  | "INTERNAL_ERROR";
+export const ERROR_CODES = ["USAGE", "VALIDATION_ERROR", "NOT_FOUND", "AMBIGUOUS_SESSION", "NO_SESSIONS", "UNREADABLE", "INTERNAL_ERROR"] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
 
 export class AgentSessionError extends Error {
   readonly code: ErrorCode;
