@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 depends: [find, views]
 specs:
   - specs/cli.md
