@@ -3,7 +3,7 @@
  * specs/data-model.md#resume-pack): layers and their order, verbatim H text, the window, the
  * budget policy, determinism cold and warm, and tail's `resume-pack` footer.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decode } from "@toon-format/toon";
@@ -200,10 +200,13 @@ describe("validation", () => {
     expect(missing.stdout).toContain("code: USAGE");
   });
 
-  it("--json-out is registered as planned, not unknown", async () => {
-    const r = await run(["resume-pack", files.resume, "--json-out"]);
-    expect(r.exitCode).toBe(2);
-    expect(r.stdout).toContain("planned: sessions-and-recall");
+  it("--json-out writes the pack, its layers whole, and names the file (plan sessions-and-recall)", async () => {
+    const r = await run(["resume-pack", files.resume, "--json-out"], { env: { TMPDIR: tmp } });
+    expect(r.exitCode).toBe(0);
+    const path = /^json_out: (.+)$/m.exec(r.stdout)![1]!;
+    const doc = JSON.parse(readFileSync(path, "utf8")) as { human: Array<{ text: string }>; claims: unknown[]; window: { index: number } };
+    expect(doc.human.length).toBeGreaterThan(0);
+    expect(Array.isArray(doc.claims)).toBe(true);
   });
 });
 

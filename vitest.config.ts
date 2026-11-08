@@ -5,7 +5,7 @@ import { defineConfig } from "vitest/config";
  * their own project, after the unit project has finished and one file at a time, so a parallel
  * neighbour cannot eat their budget.
  */
-const PERF = ["test/large.test.ts", "test/bin.test.ts"];
+const PERF = ["test/large.test.ts", "test/bin.test.ts", "test/home-perf.test.ts"];
 
 export default defineConfig({
   test: {

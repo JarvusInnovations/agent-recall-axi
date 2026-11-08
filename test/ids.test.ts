@@ -130,7 +130,7 @@ describe("latest", () => {
   it("a log not named by a uuid resolves by the short id it prints", async () => {
     cpSync(fx("parallel-tools"), join(tmp, "projects", "-src-widget", "copied-log.jsonl"));
     const listed = await run(["events", join(tmp, "projects", "-src-widget", "copied-log.jsonl"), "--limit", "1"], { env: tenv });
-    const s8 = /^session: ([0-9a-f]{8}) /m.exec(listed.stdout)![1]!;
+    const s8 = /^session: "?([0-9a-f]{8}) /m.exec(listed.stdout)![1]!;
     expect(s8).not.toBe("a3000003");
     const resolved = await resolveSession(s8, { env: tenv, cwd: "/src/widget" });
     expect(resolved.id).toBe("copied-log");
@@ -168,12 +168,12 @@ describe("latest", () => {
   it("tail latest, tail <8-hex prefix> and events <uuid> resolve through resolveSession", async () => {
     const latest = await run(["tail", "latest"], { env: tenv });
     expect(latest.exitCode).toBe(0);
-    expect(latest.stdout).toMatch(/^session: b2000012 /m);
+    expect(latest.stdout).toMatch(/^session: "?b2000012 /m);
     const prefix = await run(["tail", "aa00000a", "2"], { env: tenv });
-    expect(prefix.stdout).toMatch(/^session: aa00000a /m);
+    expect(prefix.stdout).toMatch(/^session: "?aa00000a /m);
     expect(prefix.stdout).toContain("Run `agent-session-axi prev aa00000a:");
     const uuid = await run(["events", "a3000003-0000-4000-8000-000000000000"], { env: tenv });
-    expect(uuid.stdout).toMatch(/^session: a3000003 /m);
+    expect(uuid.stdout).toMatch(/^session: "?a3000003 /m);
     const both = await run(["tail", "latest", "--all", "--project", "/src/widget"], { env: tenv });
     expect(both.exitCode).toBe(2);
     expect(both.stdout).toContain("usage: agent-session-axi tail <session>");

@@ -1,4 +1,8 @@
+import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { FIXTURE_ROOT } from "./fixtures/build.js";
 import { run } from "./helpers/run.js";
 
 /** Every `Run \`agent-session-axi …\`` hint in an output, as argv. */
@@ -23,12 +27,25 @@ describe("hints when an <s8> is shared in scope", () => {
     }
   });
 
-  it("sessions and the home view hint `tail <uuid>` for a shared <s8>", async () => {
-    for (const args of [["sessions"], []]) {
-      const out = await run(args, { cwd });
-      const tail = hints(out.stdout).find((h) => h[0] === "tail")!;
-      expect(tail[1], args.join(" ")).toMatch(/^c3b5d7e9-(0000|ffff)-4000-8000-000000000000$/);
-      expect((await run(tail, { cwd })).exitCode).toBe(0);
+  it("sessions (`turns <uuid>`) and the home view (`tail <uuid>`) hint the full id for a shared <s8>", async () => {
+    // The home view's latest is the newest file: make it one of the two that share c3b5d7e9.
+    const root = mkdtempSync(join(tmpdir(), "asa-hints-"));
+    cpSync(join(FIXTURE_ROOT, "projects", "-src-sprocket"), join(root, "projects", "-src-sprocket"), { recursive: true });
+    const dir = join(root, "projects", "-src-sprocket");
+    const old = new Date("2026-11-06T12:00:00.000Z");
+    for (const f of readdirSync(dir)) if (f.endsWith(".jsonl")) utimesSync(join(dir, f), old, old);
+    const t = new Date("2026-11-07T13:59:00.000Z");
+    utimesSync(join(dir, `${FULL}.jsonl`), t, t);
+    const env = { CLAUDE_CONFIG_DIR: root };
+    try {
+      for (const args of [["sessions"], []]) {
+        const out = await run(args, { cwd, env });
+        const tail = hints(out.stdout).find((h) => h[0] === (args.length ? "turns" : "tail"))!;
+        expect(tail[1], args.join(" ")).toMatch(/^c3b5d7e9-(0000|ffff)-4000-8000-000000000000$/);
+        expect((await run(tail, { cwd, env })).exitCode).toBe(0);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

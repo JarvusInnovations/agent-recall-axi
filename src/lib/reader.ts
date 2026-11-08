@@ -130,11 +130,16 @@ async function readFully(fh: import("node:fs/promises").FileHandle, buf: Buffer,
 
 /** Count newline bytes in `[0, endOffset)`; the seq of the line starting at `endOffset` is this + 1. */
 export async function countNewlines(path: string, endOffset?: number, blockSize = BLOCK_SIZE): Promise<number> {
+  return countNewlinesBetween(path, 0, endOffset, blockSize);
+}
+
+/** Count newline bytes in `[startOffset, endOffset)` (to the end of the file when no end is given). */
+export async function countNewlinesBetween(path: string, startOffset: number, endOffset?: number, blockSize = BLOCK_SIZE): Promise<number> {
   const fh = await open(path, "r");
   try {
     const limit = endOffset ?? (await fh.stat()).size;
     const buf = Buffer.allocUnsafe(blockSize);
-    let position = 0;
+    let position = startOffset;
     let count = 0;
     while (position < limit) {
       const want = Math.min(blockSize, limit - position);

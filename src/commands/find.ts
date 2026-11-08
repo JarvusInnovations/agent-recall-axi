@@ -3,14 +3,16 @@ import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { comparePosition, formatId } from "../lib/ids.js";
 import { compileQuery, findListing, type FindQuery, type Hit, type Why } from "../lib/find.js";
+import { jsonOutTarget, openJsonOut, withJsonOutLine } from "./json-out.js";
+import { allHint, runFindAcross } from "./find-across.js";
 import { KINDS, type Event, type EventId, type Kind } from "../lib/model.js";
 import { findCommand, type RowField } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags, usageLine, type Parsed } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
-import { VERSION } from "../version.js";
 import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeCarry, scopeOf, sessionFromArg, sessionHint, shellArg, windowFlag, withNotice, zoneOf, type Io } from "./common.js";
 import { parseRowFields } from "./events.js";
+import { headerName } from "./sessions.js";
 
 /**
  * cli.md#find: with one positional, it is the session when it has a session reference's form
@@ -30,7 +32,7 @@ function after(id: EventId): string {
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
 /** `phrase "redirect" + file *.env*` (cli.md#find). */
-function describeQuery(q: FindQuery, kindText: string | undefined): string {
+export function describeQuery(q: FindQuery, kindText: string | undefined): string {
   const parts: string[] = [];
   if (q.phrase) parts.push(q.regex ? `phrase /${q.phrase}/` : `phrase "${q.phrase}"`);
   if (q.file !== undefined) parts.push(`file ${q.file}`);
@@ -111,14 +113,8 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     throw err;
   }
 
-  if (ref === undefined) {
-    // Cross-session scope (the project, or --all) lands with sessions-and-recall.
-    throw new AxiError(`find without a <session> (searching the whole project or every project) is not available yet in ${VERSION} (planned: sessions-and-recall)`, "USAGE", [
-      usage,
-      `Run \`${BIN} find latest${phrase !== undefined && !phrase.startsWith("-") ? ` ${shellArg(phrase)}` : ""}${tail(p)}${scopeCarry(p)}${phrase?.startsWith("-") ? ` -- ${shellArg(phrase)}` : ""}\` to search the newest session here, or name another one`,
-      `Run \`${BIN} sessions${scopeCarry(p)}\` to pick a session`,
-    ]);
-  }
+  const jsonOut = await jsonOutTarget("find", p, io);
+  if (ref === undefined) return runFindAcross({ p, io, q, phrase, file, tool, kinds, tz, head, fields, deep, before, afterN, full, jsonOut });
 
   let session: Awaited<ReturnType<typeof sessionFromArg>>;
   try {
@@ -133,13 +129,24 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     throw err;
   }
   const notice = await rewriteNotice(session, io, tz);
-  const listing = await withNotice(notice, () => findListing(session, q));
+  // The export (every hit, with its context) is written during the one read that builds the view.
+  const sink = jsonOut ? await openJsonOut(jsonOut) : undefined;
+  let listing: Awaited<ReturnType<typeof findListing>>;
+  try {
+    await sink?.out.begin({ session: session.id, query: describeQuery(q, getString(p, "kind")) }, "hits");
+    listing = await withNotice(notice, () => findListing(session, q, sink ? (hit) => sink.out.item(hit) : undefined));
+    await sink?.out.end({ matching: listing.matching });
+  } catch (err) {
+    await sink?.abort();
+    throw err;
+  }
+  const finish = async (out: string): Promise<string> => (sink ? withJsonOutLine(out, await sink.close()) : out);
   const hint = await sessionHint("find", ref, session, p, io);
 
   // ---- render
   const header: Record<string, unknown> = {};
   if (notice) header.notice = notice;
-  header.scope = `${session.short} (title pending)`;
+  header.scope = await headerName(session);
   if (session.kind === "subagent") {
     header.kind = "subagent";
     if (session.parent) header.parent = session.parent.slice(0, 8);
@@ -194,7 +201,8 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     if (range.from || range.to) help.push(`Run \`${findHint({ drop: "range" })}\` to search the whole session`);
     if (phrase !== undefined && !deep) help.push(`Run \`${findHint({ extra: " --deep" })}\` to also search persisted outputs`);
     if (!kinds && phrase !== undefined) help.push(`Run \`${findHint({ extra: " --kind thinking,result" })}\` to search thinking and result rows instead`);
-    return renderDocument(header, help);
+    if (!getBool(p, "all")) help.push(`Run \`${allHint(p, phrase, q.regex === true)}\` to search every project`);
+    return finish(renderDocument(header, help));
   }
 
   // Hits and their contexts, each row once, in file order.
@@ -235,7 +243,8 @@ export async function runFind(args: string[], io: Io): Promise<string> {
   if (rendered.cut > 0) {
     help.push(`Run \`${findHint({ extra: " --full" })}\` for the whole text of the ${plural(rendered.cut, "row")} cut to ${head} chars`);
   }
-  return renderDocument(header, help);
+  if (!getBool(p, "all")) help.push(`Run \`${allHint(p, phrase, q.regex === true)}\` to search every project`);
+  return finish(renderDocument(header, help));
 }
 
 /** A lone argument as a phrase in a hint: after `--` when it starts with a dash. */

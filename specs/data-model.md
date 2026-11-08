@@ -103,13 +103,21 @@ and in a different order than the calls (parallel tool use).
 | `started` | timestamp | first entry timestamp in file order |
 | `last` | timestamp | max entry timestamp (file mtime when the file has none) |
 | `bytes`, `lines` | numbers | file size and line count (lines are counted lazily) |
-| `title` | string | first of: `custom-title.json`, the last `ai-title` entry, the head of the first `human` event |
-| `turns`, `calls`, `compactions`, `humans` | counts | computed on demand; `humans` counts `human*` events |
+| `title` | string | first of: `custom-title.json` (`customTitle`), the last `custom-title` entry (`customTitle`), the last `ai-title` entry (`aiTitle`), the head of the first `human` event; one line, cut to the row head (200 chars). The last entry of a kind wins even when it is empty (a cleared title), and an empty value falls through to the next source. Single-session headers use the cheap sources only (`cli.md#conventions`) |
+| `turns`, `calls`, `compactions`, `humans` | counts | computed on demand; `turns` counts `human` and `human.slash` events (the prompts that open a turn), `compactions` the window boundaries (as `compactions` lists them), `humans` the `human*` events |
 | `live` | boolean | `last` is within 5 minutes of now |
+| `model` | string | the `message.model` of the last assistant entry |
 
-The per-project `sessions-index.json` is an optional accelerator for `sessions` (title, counts,
-mtime); it may be missing or stale and is never required for correctness. A session absent from
-the index is still listed; a session in the index whose file is gone is not.
+`started`, `last`, the counts and `title` come from one streaming pass over the file, the same
+pass that builds the line-offset table, and are cached with it (`architecture.md#cache`); an
+append re-reads only the appended lines. The cache keeps where the title came from (its line),
+never its text (`behaviors/privacy.md`).
+
+The per-project `sessions-index.json` is an optional accelerator for the home view: an entry's
+`summary` (title) and `modified` (last) are used only while its `fileMtime` equals the file's
+modification time in milliseconds. It may be missing or stale and is never required for
+correctness: it never supplies counts (`messageCount` is not a turn count), a session absent from
+the index is still listed, and a session in the index whose file is gone is not.
 
 ## Entry
 

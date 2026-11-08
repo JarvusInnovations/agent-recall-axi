@@ -8,6 +8,7 @@ import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentSessionError } from "./errors.js";
+import { head, oneLine } from "../output/truncate.js";
 import type { EventId, Session } from "./model.js";
 import { resolveScope, type ResolvedScope, type Scope } from "./scope.js";
 import { openSession } from "./session.js";
@@ -137,14 +138,17 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
   if (matches.length === 0) {
     throw new AgentSessionError(`no session matches ${prefix} in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved, scope));
   }
-  const candidates = matches.map((s) => {
+  // Each candidate's title by the same precedence `sessions` prints (data-model.md#session).
+  const { sessionStats } = await import("./stats.js");
+  const candidates: Array<Record<string, string>> = [];
+  for (const s of matches) {
     const c: Record<string, string> = { id: s.id, kind: s.kind };
     if (s.parent) c.parent = s.parent;
     if (s.project) c.project = s.project.cwd;
-    // Titles arrive with the stats pass (sessions-and-recall); until then they say so.
-    c.title = "(pending)";
-    return c;
-  });
+    const stats = await sessionStats(s, { cache: scope.env ? { env: { ...process.env, ...scope.env } } : {} }).catch(() => undefined);
+    c.title = stats?.title !== undefined ? titleHead(stats.title) : "";
+    candidates.push(c);
+  }
   throw new AgentSessionError(
     `${prefix} matches ${matches.length} sessions`,
     "AMBIGUOUS_SESSION",
@@ -152,6 +156,17 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
     { candidates },
   );
 }
+
+/**
+ * A title as one line, cut to the row head (data-model.md#session): the same cut a `sessions`
+ * title cell gets (truncation.md's marks and protected spans), so a candidate reads like its row.
+ */
+function titleHead(title: string): string {
+  return head(oneLine(title).trim(), TITLE_HEAD).text;
+}
+
+/** The row head a title is cut to (truncation.md#caps). */
+const TITLE_HEAD = 200;
 
 /**
  * The `<s8>`s that more than one session in scope shares. A hint may name such a session only by

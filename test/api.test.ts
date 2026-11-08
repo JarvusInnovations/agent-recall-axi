@@ -25,12 +25,7 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 const spec = (name: string) => readFileSync(join(REPO, "specs", name), "utf8");
 
 /** Names api.md lists but a still-open plan owns; exempt only while that plan is not done. */
-const PENDING: Record<string, string> = {
-  recall: "sessions-and-recall",
-  RecallResult: "sessions-and-recall",
-  sessionStats: "sessions-and-recall",
-  findAcross: "sessions-and-recall",
-};
+const PENDING: Record<string, string> = {};
 
 function planStatus(slug: string): string {
   const text = readFileSync(join(REPO, "plans", `${slug}.md`), "utf8");
@@ -138,6 +133,7 @@ describe("the library never writes to stdout", () => {
       boundaries: () => lib.boundaries(comp, { cache: cacheOpts }),
       budgetCut: () => lib.budgetCut([ev], 10),
       buildResumePack: () => lib.buildResumePack(comp, { cache: cacheOpts }),
+      cachedStats: () => lib.cachedStats(session, { cache: cacheOpts }),
       cacheDir: () => lib.cacheDir(cacheOpts),
       cacheStatus: () => lib.cacheStatus(cacheOpts),
       checkRewrite: () => lib.checkRewrite(session.path, cacheOpts),
@@ -148,12 +144,16 @@ describe("the library never writes to stdout", () => {
       describeSession: () => lib.describeSession(session),
       events: () => lib.events(session),
       find: () => lib.find(session, { phrase: "redirect" }),
+      findAcross: () => lib.findAcross(scope, { phrase: "redirect" }),
+      findAcrossListing: () => lib.findAcrossListing(scope, { phrase: "redirect" }),
       findListing: () => lib.findListing(session, { phrase: "redirect" }),
       formatId: () => lib.formatId(id),
       formatWindow: () => lib.formatWindow("last"),
       globRegex: () => lib.globRegex("*.env"),
+      homeListing: () => lib.homeListing(scope, { cache: cacheOpts }),
       humanMessages: () => lib.humanMessages(session),
       isKind: () => lib.isKind("human"),
+      lastHumanOf: () => lib.lastHumanOf(session, { cache: cacheOpts }),
       linkedResult: () => lib.linkedResult(session, ev),
       listEvents: () => lib.listEvents(session),
       listProjects: () => lib.listProjects(scope),
@@ -170,15 +170,19 @@ describe("the library never writes to stdout", () => {
       pointerAccess: () => lib.pointerAccess(pointerEv.pointer!, persisted),
       prev: () => lib.prev(session, id, 3),
       readPointer: () => lib.readPointer(pointerEv.pointer!, persisted),
+      recall: () => lib.recall("redirect", { scope, cache: cacheOpts }),
       resolveId: () => lib.resolveId("e1000018:4", scope),
       resolveScope: () => lib.resolveScope(scope),
       resolveSession: () => lib.resolveSession("latest", scope),
       resolveWindow: () => lib.resolveWindow(comp, "last", { cache: cacheOpts }),
       resolveZone: () => lib.resolveZone(undefined, { TZ: "UTC" }),
       rootOf: () => lib.rootOf(scope),
+      scopeSessions: () => lib.scopeSessions(scope),
       sessionListing: () => lib.sessionListing(scope),
+      sessionStats: () => lib.sessionStats(session, { cache: cacheOpts }),
       show: () => lib.show(session, id),
       tail: () => lib.tail(session, 5),
+      tokens: () => lib.tokens("Redirect loop"),
       toolCalls: () => lib.toolCalls(session),
       toolCallsWithResults: () => lib.toolCallsWithResults(session, { withResults: true }),
       toolFilter: () => lib.toolFilter({ name: "bash" })(ev),

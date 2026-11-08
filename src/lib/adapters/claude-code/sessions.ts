@@ -145,14 +145,61 @@ export function sessionForPath(path: string, project?: Project): Session {
 
 export async function* listSessions(project: Project, opts: { subagents?: boolean } = {}): AsyncGenerator<Session> {
   const files = await jsonlFiles(project.dir);
+  // Sidecar directories from one listing, so a session without one costs no stat.
+  let sidecars: Set<string> | undefined;
+  if (opts.subagents) {
+    try {
+      sidecars = new Set((await readdir(project.dir, { withFileTypes: true })).filter((d) => !d.isFile()).map((d) => d.name));
+    } catch {
+      sidecars = new Set();
+    }
+  }
   for (const f of files) {
     const main = sessionForPath(join(project.dir, f), project);
     yield main;
-    if (!opts.subagents) continue;
+    if (!opts.subagents || !sidecars?.has(basename(main.sidecar))) continue;
     const subDir = join(main.sidecar, "subagents");
     if (!(await isDir(subDir))) continue;
     for (const sf of await jsonlFiles(subDir)) {
       if (sf.startsWith("agent-")) yield sessionForPath(join(subDir, sf), project);
     }
   }
+}
+
+/** One `sessions-index.json` entry, as far as the home view uses it (data-model.md#session). */
+export interface IndexEntry {
+  /** The file's modification time, in ms, when the entry was written. */
+  fileMtime?: number;
+  /** The title Claude Code gave the session. */
+  summary?: string;
+  /** ISO time of the session's last activity. */
+  modified?: string;
+}
+
+/**
+ * The project's optional `sessions-index.json`, by session id. Missing, unreadable or malformed
+ * is the same as empty: the index is an accelerator, never required.
+ */
+export async function readSessionsIndex(projectDir: string): Promise<Map<string, IndexEntry>> {
+  const out = new Map<string, IndexEntry>();
+  let parsed: unknown;
+  try {
+    const { readFile } = await import("node:fs/promises");
+    parsed = JSON.parse(await readFile(join(projectDir, "sessions-index.json"), "utf8"));
+  } catch {
+    return out;
+  }
+  const entries = (parsed as { entries?: unknown })?.entries;
+  if (!Array.isArray(entries)) return out;
+  for (const e of entries) {
+    if (typeof e !== "object" || e === null) continue;
+    const r = e as Record<string, unknown>;
+    if (typeof r.sessionId !== "string") continue;
+    const entry: IndexEntry = {};
+    if (typeof r.fileMtime === "number") entry.fileMtime = r.fileMtime;
+    if (typeof r.summary === "string" && r.summary.trim()) entry.summary = r.summary;
+    if (typeof r.modified === "string" && !Number.isNaN(Date.parse(r.modified))) entry.modified = new Date(Date.parse(r.modified)).toISOString();
+    out.set(r.sessionId, entry);
+  }
+  return out;
 }

@@ -2,7 +2,9 @@
 import { AxiError } from "axi-sdk-js";
 import { formatId } from "../lib/ids.js";
 import type { EventId, Session } from "../lib/model.js";
-import { listEvents, type ListOpts, type Listing } from "../lib/events.js";
+import { events, listEvents, type ListOpts, type Listing } from "../lib/events.js";
+import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
+import { headerName } from "./sessions.js";
 import { findCommand, ROW_FIELDS, type RowField } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
@@ -29,6 +31,8 @@ interface RenderArgs {
   /** How hints name the session (path, `<s8>` or full id, + scope flags). */
   hint: SessionHint;
   notice: string | undefined;
+  /** `<s8> <title>` (cli.md#conventions). */
+  title: string;
   fields: readonly RowField[];
   tz: string;
   head: number;
@@ -43,7 +47,7 @@ function render(a: RenderArgs): string {
   const short = a.session.short;
   const header: Record<string, unknown> = {};
   if (a.notice) header.notice = a.notice;
-  header.session = `${short} (title pending)`;
+  header.session = a.title;
   if (a.session.kind === "subagent") {
     header.kind = "subagent";
     if (a.session.parent) header.parent = a.session.parent.slice(0, 8);
@@ -141,6 +145,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   const fields = parseRowFields(getString(p, "fields"));
   const window = windowFlag(p);
   scopeOf("events", p, io);
+  const jsonOut = await jsonOutTarget("events", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("events", ref, p, io);
   const opts: ListOpts = { limit, cache: { env: io.env } };
@@ -150,7 +155,16 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (range.to) opts.to = range.to;
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => listEvents(session, opts));
-  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  const out = render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, title: await headerName(session), fields, tz, head, defaultKinds: !kinds, full, limit });
+  if (!jsonOut) return out;
+  // --json-out (cli.md#conventions): every matching event of the range, uncapped, streamed.
+  const { limit: _limit, ...uncapped } = opts;
+  const path = await writeJsonOut(jsonOut, async (j) => {
+    await j.begin({ session: session.id }, "events");
+    for await (const ev of events(session, uncapped)) await j.item(ev);
+    await j.end();
+  });
+  return withJsonOutLine(out, path);
 }
 
 export async function tailCommand(args: string[], io: Io): Promise<string> {
@@ -182,7 +196,7 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   if (window !== undefined) opts.window = window;
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => listEvents(session, opts));
-  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, hint: await sessionHint("tail", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, hint: await sessionHint("tail", ref, session, p, io), notice, title: await headerName(session), fields, tz, head, defaultKinds: !kinds, full, limit });
 }
 
 function helpOf(name: string): string {

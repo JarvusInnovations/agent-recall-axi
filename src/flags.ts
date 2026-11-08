@@ -68,6 +68,15 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
         validFlagsLine(command, specs.filter((s) => !s.planned)),
       ]);
     }
+    if (spec.value === "optional") {
+      // The value only rides with `=`: `--json-out out.json` would make out.json a positional.
+      const nextArg = args[i + 1];
+      if (inline === undefined && nextArg !== undefined && !nextArg.startsWith("-") && /\.json$/i.test(nextArg)) {
+        throw new AxiError(`--${name} takes its path after =: write --${name}=${nextArg}`, "USAGE", [usageLine(command), `--${name}=${nextArg} writes there; a bare --${name} writes an owner-only temp file`]);
+      }
+      flags.set(name, inline ?? true);
+      continue;
+    }
     if (spec.value === "boolean") {
       if (inline !== undefined) throw new AxiError(`--${name} takes no value`, "USAGE", [usageLine(command)]);
       flags.set(name, true);

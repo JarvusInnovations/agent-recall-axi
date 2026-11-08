@@ -12,15 +12,15 @@ import { join, sep } from "node:path";
 import { newContext, type ClassifyContext } from "../adapters/adapter.js";
 import { claudeCode } from "../adapters/claude-code/index.js";
 import { formatId, parseId } from "../ids.js";
-import { KINDS, type Event, type EventId, type Kind, type Session } from "../model.js";
+import { KINDS, type Entry, type Event, type EventId, type Kind, type Session } from "../model.js";
 import { readLines } from "../reader.js";
 import { WindowCounter } from "../window-state.js";
 import { VERSION as PACKAGE_VERSION } from "../../version.js";
-import { cacheDir, ownedRecord, readSlice, recordName, safeDir, sha, tablePath, writeRecord, type CacheOpts } from "./store.js";
+import { cacheDir, DERIVED_DIRS, ownedRecord, readSlice, recordName, safeDir, sha, tablePath, writeRecord, type CacheOpts } from "./store.js";
 
 export const CHECKPOINT_EVERY = 256;
 /** The table format; bumped whenever what a table records changes. */
-const VERSION = 4;
+const VERSION = 5;
 
 /** A call still waiting for its result at a checkpoint: what linking a later result needs. */
 export interface PendingCall {
@@ -65,6 +65,38 @@ export interface Bound {
   cum: number[];
 }
 
+/** Where a line lives: what a title is read back from (the cache never holds its text). */
+export interface LineLoc {
+  seq: number;
+  offset: number;
+  /** Bytes, without the newline. */
+  length: number;
+}
+
+/**
+ * The session-stats state after the last indexed line (data-model.md#session,
+ * architecture.md#cache): timestamps, the model, and the lines a title can come from.
+ */
+export interface StatsState {
+  /** First entry timestamp in file order (ISO). */
+  first?: string;
+  /** Newest entry timestamp (ISO). */
+  max?: string;
+  /** `message.model` of the last assistant entry. */
+  model?: string;
+  /** The last `custom-title` entry. */
+  custom?: LineLoc;
+  /** The last `ai-title` entry. */
+  ai?: LineLoc;
+  /** The line of the first `human` event, and that event's id. */
+  human?: LineLoc & { id: string };
+}
+
+/** What a pass over lines may observe besides the table (the term index, recall's matcher). */
+export interface PassObserver {
+  event(ev: Event, entry: Entry): void;
+}
+
 export interface OffsetTable {
   v: number;
   /** The package version that built it: a classifier change discards every table. */
@@ -94,6 +126,8 @@ export interface OffsetTable {
   tools: string;
   /** Window boundaries in file order (bounds[k - 1] opens window k). */
   bounds: Bound[];
+  /** Session stats after the last indexed line. */
+  stats: StatsState;
 }
 
 /** A tool name inside the `tools` log: backslash, tab and newline escaped. */
@@ -214,7 +248,7 @@ function isTable(v: unknown, path: string): v is OffsetTable {
   return (
     typeof t === "object" && t !== null && t.v === VERSION && t.path === path && typeof t.seq === "number" && typeof t.end === "number" &&
     Array.isArray(t.checkpoints) && t.checkpoints.length > 0 && typeof t.tail === "object" && Array.isArray(t.tail?.cum) &&
-    t.pkg === PACKAGE_VERSION && typeof t.tools === "string" && Array.isArray(t.bounds)
+    t.pkg === PACKAGE_VERSION && typeof t.tools === "string" && Array.isArray(t.bounds) && typeof t.stats === "object" && t.stats !== null
   );
 }
 
@@ -232,7 +266,7 @@ export async function loadTable(path: string, opts: CacheOpts = {}): Promise<Off
   return (await tableMatches(parsed, path)) ? parsed : undefined;
 }
 
-async function saveTable(table: OffsetTable, opts: CacheOpts): Promise<void> {
+export async function saveTable(table: OffsetTable, opts: CacheOpts): Promise<void> {
   await writeRecord(cacheDir(opts), "index", recordName(table.path), JSON.stringify(table));
 }
 
@@ -265,11 +299,12 @@ function snapshot(seq: number, offset: number, st: Running, ctx: ClassifyContext
  * Index the complete lines after the table's end (or the whole file for no table), stopping once
  * `upTo` is covered when given. A trailing line still being written is left for the next run.
  */
-export async function extendTable(session: Session, table: OffsetTable | undefined, upTo?: number): Promise<OffsetTable> {
+export async function extendTable(session: Session, table: OffsetTable | undefined, upTo?: number, observer?: PassObserver): Promise<OffsetTable> {
   const start = table?.tail ?? emptyState();
   const t: OffsetTable = table
-    ? { ...table, checkpoints: [...table.checkpoints], bounds: table.bounds.map((b) => ({ ...b })) }
-    : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "", bounds: [] };
+    ? { ...table, checkpoints: [...table.checkpoints], bounds: table.bounds.map((b) => ({ ...b })), stats: { ...table.stats } }
+    : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "", bounds: [], stats: {} };
+  const stats = t.stats;
   const windows = new WindowCounter(start.window, start.cum.some((n) => n > 0));
   const ctx = seedContext(session, start, table);
   const tools: string[] = [];
@@ -287,9 +322,13 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
       t.checkpoints.push(snapshot(line.seq, line.offset, st, ctx));
     }
     const entry = claudeCode.parse(line);
+    const next = line.end ?? line.offset + Buffer.byteLength(line.text) + 1;
     if (entry) {
       if (entry.malformed) st.malformed++;
+      noteEntry(stats, entry, line.seq, line.offset, next - line.offset - 1);
       for (const ev of claudeCode.classify(entry, ctx)) {
+        if (ev.kind === "human" && !stats.human) stats.human = { seq: line.seq, offset: line.offset, length: next - line.offset - 1, id: formatId(ev.id) };
+        observer?.event(ev, entry);
         if (windows.opens(ev)) t.bounds.push({ summary: formatId(ev.id), start: formatId(ev.id), cum: [...st.cum] });
         windows.place(ev);
         st.window = windows.index;
@@ -309,7 +348,6 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
         if (ev.kind === "call" && ev.toolUseId && ev.tool) tools.push(`${line.seq}\t${ev.toolUseId}\t${escapeTool(ev.tool)}\n`);
       }
     }
-    const next = line.end ?? line.offset + Buffer.byteLength(line.text) + 1;
     if (line.seq === 1) {
       t.head = sha(line.text);
       t.headLength = next - line.offset - 1;
@@ -328,6 +366,37 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
   t.end = offset;
   t.tail = snapshot(seq, offset, st, ctx);
   return t;
+}
+
+/** The canonical ISO form Claude Code writes: such strings order chronologically as text. */
+const CANONICAL_TS = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+
+/** An entry timestamp as canonical ISO, or undefined when it does not parse. */
+function isoOf(t: string): string | undefined {
+  if (CANONICAL_TS.test(t)) return t;
+  const ms = Date.parse(t);
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+}
+
+/** Timestamps, the model and the title lines an entry contributes to the stats (one per line, so kept cheap). */
+function noteEntry(stats: StatsState, entry: Entry, seq: number, offset: number, length: number): void {
+  if (entry.t !== undefined) {
+    const iso = isoOf(entry.t);
+    if (iso !== undefined) {
+      stats.first ??= iso;
+      if (stats.max === undefined || iso > stats.max) stats.max = iso;
+    }
+  }
+  const type = entry.type;
+  if (type === "assistant") {
+    const model = (entry.raw?.message as { model?: unknown } | undefined)?.model;
+    if (typeof model === "string" && model) stats.model = model;
+  } else if (type === "custom-title") {
+    // The last entry wins even when empty (a cleared title): reading it back then falls through.
+    if (typeof entry.raw?.customTitle === "string") stats.custom = { seq, offset, length };
+  } else if (type === "ai-title") {
+    if (typeof entry.raw?.aiTitle === "string") stats.ai = { seq, offset, length };
+  }
 }
 
 export interface EnsureOpts extends CacheOpts {
@@ -423,7 +492,7 @@ async function treeSize(dir: string): Promise<number> {
 }
 
 /** Is there a newline in `[from, to)`? (Read in 1 MB blocks.) */
-async function hasNewline(path: string, from: number, to: number): Promise<boolean> {
+export async function hasNewline(path: string, from: number, to: number): Promise<boolean> {
   const fh = await open(path, "r");
   try {
     const buf = Buffer.allocUnsafe(1 << 20);
@@ -501,7 +570,7 @@ export async function clearCache(opts: CacheOpts & { paths?: string[] } = {}): P
   const roots = opts.paths;
   const matches = (path: string) => roots.some((r) => path === r || path.startsWith(r.endsWith(sep) ? r : `${r}${sep}`));
   let removed = 0;
-  for (const sub of ["files", "index"]) {
+  for (const sub of ["files", ...DERIVED_DIRS]) {
     if (!(await safeDir(join(dir, sub)))) continue;
     for (const name of await dirFiles(join(dir, sub))) {
       const p = join(dir, sub, name);

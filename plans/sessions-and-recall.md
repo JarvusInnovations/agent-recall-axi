@@ -1,5 +1,6 @@
 ---
-status: planned
+status: done
+pr: 16
 depends: [find, views]
 specs:
   - specs/cli.md
@@ -64,36 +65,36 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
 
 ## Validation
 
-- [ ] `sessions` on a fixture project prints `{id,started,last,turns,title}`; titles follow the
+- [x] `sessions` on a fixture project prints `{id,started,last,turns,title}`; titles follow the
       precedence (three fixtures: custom title, ai-title only, neither); `--fields calls,
       compactions,humans,live,bytes,lines` all populate.
-- [ ] A stale `sessions-index.json` (wrong `messageCount`, missing a session) never changes
+- [x] A stale `sessions-index.json` (wrong `messageCount`, missing a session) never changes
       `turns` or omits a session; a listed-but-deleted session is not shown.
-- [ ] `--subagents` adds subagent rows with `kind`/`parent`; without it they are absent but still
+- [x] `--subagents` adds subagent rows with `kind`/`parent`; without it they are absent but still
       resolvable by id.
-- [ ] Home view on the fixture project prints `project:`, five sessions, `latest`, `last_human`
+- [x] Home view on the fixture project prints `project:`, five sessions, `latest`, `last_human`
       with id and time, and five `help[]` lines; with no matching project prints `project: none`
       and five cross-project sessions. Timing test: 100 generated sessions < 300 ms.
-- [ ] `find "phrase" --project <fixture-project>` returns hits from two sessions with distinct
+- [x] `find "phrase" --project <fixture-project>` returns hits from two sessions with distinct
       `<s8>` prefixes and `scanned: 2 sessions`; `--all` spans both fixture projects; `--since`
       excludes the old one.
-- [ ] `recall "phrase"` groups by session with `hits` and `first`, newest first; `scanned:` and
+- [x] `recall "phrase"` groups by session with `hits` and `first`, newest first; `scanned:` and
       `index: none` on first run, `index: fresh` on the second with identical results; results
       also identical with the cache deleted.
 - [ ] Measured: `recall` over 20 copies of the 200 MB fixture completes cold (no index) and warm
       (indexed); both timings recorded in Notes with the verdict on whether an indexed store is
       needed.
-- [ ] `recall` with no matches prints the definitive empty line with the scanned count and a
+- [x] `recall` with no matches prints the definitive empty line with the scanned count and a
       `--since 1y` hint.
-- [ ] Cache directory and files are created `0700`/`0600`; `cache clear --project` removes only
+- [x] Cache directory and files are created `0700`/`0600`; `cache clear --project` removes only
       that project's entries; `cache status` reports sizes.
-- [ ] A fixture whose newest timestamp lies more than 256 KB before the end of the file lists
+- [x] A fixture whose newest timestamp lies more than 256 KB before the end of the file lists
       that timestamp as `last` (from `reader-and-event-model`).
-- [ ] `find <s8> "phrase"` prints a `find "phrase" --all` hint that runs, and `find "phrase"`
+- [x] `find <s8> "phrase"` prints a `find "phrase" --all` hint that runs, and `find "phrase"`
       with no session searches the current project (from `find`).
-- [ ] An ambiguous prefix's `AMBIGUOUS_SESSION` `details.candidates` show each session's real
+- [x] An ambiguous prefix's `AMBIGUOUS_SESSION` `details.candidates` show each session's real
       title (from `ids-and-show`).
-- [ ] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
+- [x] Relative times appear only in `sessions` and home; a test with a frozen clock asserts
       every other command's output is clock-independent.
 
 ## Risks / unknowns
@@ -108,8 +109,115 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
 
 ## Notes
 
-(at closeout)
+Spec readings settled, in the leading `docs(specs): session stats, home sources, cross-session
+find, recall and --json-out readings` commit, then `docs(specs): the span grammar takes years`
+and `docs(specs): the resume pack carries the session title`:
+
+- **recall searches H and C events only.** A call matches on its text and input, never on its
+  result's text, and `--kind` with a D kind is `VALIDATION_ERROR` pointing at `find --all`. The
+  term index covers exactly H, C and call text (architecture.md already said so), and the plan
+  requires an indexed recall to equal a scanned one. Both hold only if recall tests what the
+  index holds. Tool output stays `find`'s.
+- **The term index skips only what cannot match.** Tokens are lower-cased runs of letters,
+  digits and `_`. Every word run of a phrase lies inside a word run of any text that contains
+  the phrase, so a line becomes a candidate when every phrase run is a substring of one of its
+  tokens. Candidates are verified by classifying from their checkpoint. A `--regex` phrase, or one
+  with no word characters, scans (`index: none`). An appended file is indexed from the index's
+  last seq, in the same pass that extends the table (`partial`).
+- **Stats ride on the table** (format 4 → 5). The tail record carries the first and newest
+  timestamps, the model, and the line positions of the last `custom-title` entry, the last
+  `ai-title` entry and the first `human` event. A `stats/` mirror carries the table's identity, so
+  a listing reads about 600 bytes per session. The title is read back from its line, never
+  cached as text. The real logs checked locally (key names only) carry `custom-title` entries next
+  to `custom-title.json`, so the entry joined the precedence after the json file.
+- **`sessions` computes stats for every session in scope**, so order and `last` are exact. The
+  first touch is one streaming pass per session; after that, the mirror is read.
+  `sessions-index.json` accelerates the home view only: its `summary`/`modified` are used while
+  `fileMtime` matches, and never for counts.
+- **Home view**: main sessions ordered by mtime (as `latest` resolves). Each row comes from cached
+  stats (extensions share one 8 MB budget across the listing), else the mtime, with
+  `custom-title.json`, the matching index entry or a 1 MB head read for the title, and an empty
+  `turns` cell. `last_human` is a 4 MB backward read; its line is numbered from the nearest point
+  the cache knows (the mirror's end or a table checkpoint). With no such point it prints without
+  an id and the `tail` hint offers ids. (The first pass counted newlines from the file start;
+  the review withdrew that.) While `resume-pack` was planned, the first hint was
+  `human <latest> --window last`; since #14 merged it is `resume-pack <latest>`.
+- **Cross-session `find`/`recall`** read every main and subagent session in scope, newest mtime
+  first, and skip a file last modified before the window's start. An id bound without a session
+  is `VALIDATION_ERROR`. `find --all` defaults to 90 days and says so (`since:`). Paging continues
+  the last shown hit's session by id and offers `--limit 0`.
+- **`--json-out[=path]`**: the path is given only with `=`. Exports stream library objects with
+  ids as printed and ISO times. A given path is written `0600`; with no path, the export goes to
+  `<command>.json` in a fresh `0700` directory under `TMPDIR`. A missing directory is
+  `VALIDATION_ERROR` before any read. `resume-pack` carried the flag too, so it writes the pack.
+- **Spans take `y`** (365 days): recall's spec'd `--since 1y` hint did not parse.
+- **Performance work**: the per-entry stats step first cost about 0.7 s on the 200 MB table build.
+  A canonical-timestamp fast path and no per-line closures brought it back to noise (3.9–4.8 s
+  against 3.7–4.2 s without stats, at load average about 14). `listSessions` lists sidecar
+  directories once instead of a stat per session.
+- **Home budget test**: 300 ms (×2 on CI), or the floor plus 100 ms when the floor is slower. The
+  floor is `sessions --project <missing>`: it loads the same graph and makes the first Intl call
+  (about 38 ms here, which every command pays), then stops. Two cases are covered: 100 small
+  sessions cold, and a warm 64 MB latest session. On this host (load average about 14), the final
+  code passed 3 of 3 standalone runs and both full-suite runs. Before the `listSessions` change,
+  the cold case missed by up to 12 ms in 2 of 5 runs, so it sits close to the bound on a loaded
+  host.
+- **recall at scale, measured by hand** on 20 hard links of one generated 200 MB session (4.2 GB;
+  distinct paths, so 20 tables and indexes), load average about 14:
+  - cold: 101.9 s, peak RSS 269 MB;
+  - warm (`index: fresh`): 3.5 s, peak RSS 195 MB;
+  - cache: 117 MB for the 20 sessions (about 1.6 MB table and 4.4 MB terms each).
+
+  **Verdict: no indexed store (SQLite) is needed.** The warm path answers 4.2 GB in seconds, and
+  most of its time is loading the per-session table and terms JSON. The cold pass is a one-time
+  cost per session, honestly reported in `scanned:`. That Validation box stays unchecked: the
+  host had about 300 MB of free disk, so these were hard links, not copies, and they shared the
+  page cache.
+- One cold 200 MB session alone peaks at about 165 MB RSS (sessions: 128 MB). The live heap fits
+  in 60 MB (the run passes with `--max-old-space-size=60`); the excess is young-generation
+  garbage from token collection. Filed as #18.
+- Evidence on the final tree: `bun run check`, `bun run build` and `bun run check:types` are
+  clean. `bun run test` passed twice in full, 30 files and 329/329 each.
+- **Review round (PR #16).** The rulings went into `docs(specs): review rulings for sessions and
+  recall` and `docs(specs): which --json-out exports share the view's read`, ahead of the fixes.
+  `test/sessions-review.test.ts` has one test per finding a test can observe; all 11 failed
+  against the pre-fix code.
+  1. Term-index tokens are stored sorted, so the record keeps no word order.
+  2. `--json-out=path` is validated before any read and opened `O_NOFOLLOW`. The open handle must
+     be a regular file the user owns before it is truncated. A failed write removes the partial
+     file.
+  3. The cold home view never counts a file from its start, and a perf case covers a cold 64 MB
+     latest session.
+  4. The term index carries its own identity. It extends from its own seq through the table's
+     checkpoints after another command has extended the table.
+  5. The `turns`, `tools`, `find` and cross-session `find` exports stream during the view's read,
+     and `human` streams from `events()`.
+  6. Only the id fields become printed ids.
+  7. Single-session headers take a cheap, cache-free title, `(untitled)` when there is none. This
+     closes #17 by fix.
+  8. This plan's measurement note is below.
+  9. privacy.md lists what the cache holds, including what the term index exposes.
+  10. A cross-session search under `--all` widens with `--since 1y`.
+  11. The space form `--json-out out.json` gets a targeted error.
+  12. The home title order now matches the code.
+  13. An empty last title entry falls through to the next source, and a `--regex` recall rewrites
+      no record.
+  14. api.md lists the extra exports, and candidate titles use the `sessions` cut.
+
+  Not observable through a test: the 8 MB budget is shared across the listing (a library test
+  covers it), and a failed write removes the partial file (by inspection).
+- Evidence after the review round: `bun run check`, `bun run build` and `bun run check:types` are
+  clean, and the unit project passes 327/327. The full suite was not run locally (about 700 MB of
+  disk free); CI is the gate. `test/home-perf.test.ts` alone, three cases, ran twice: once all
+  green, once with one miss of 8 ms against a 347 ms floor-based bound, at load average about 14.
+- Rebased onto develop after #14 merged, keeping both sides of each conflict (exports, cli
+  wiring, fixture builder). Absorbed #14's deferrals: the real title in the `resume-pack` header
+  (`ResumePack.title`), and the new exports in `test/api.test.ts` and `test/consumer/consumer.ts`.
 
 ## Follow-ups
 
-(at closeout)
+- Issue [#18](https://github.com/JarvusInnovations/agent-session-axi/issues/18): a cold `recall`
+  of a 200 MB session peaks at about 165 MB RSS (young-generation churn in token collection).
+- Tracked as: the plan's 20-copy `recall` measurement on real copies (not hard links) needs a
+  host with about 5 GB free; the hard-link timings above stand in until then.
+- Tracked as: the home view's hook mode is owned by [`skill-and-hook`](skill-and-hook.md).

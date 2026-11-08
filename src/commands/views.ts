@@ -7,8 +7,8 @@ import { encode } from "@toon-format/toon";
 import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { formatId } from "../lib/ids.js";
-import type { Event, EventId, Session } from "../lib/model.js";
-import { readPointer, pointerAccess } from "../lib/events.js";
+import { AUTHORITY, KINDS, type Event, type EventId, type Session } from "../lib/model.js";
+import { events, readPointer, pointerAccess } from "../lib/events.js";
 import { turns, type Turn } from "../lib/turns.js";
 import { DEFAULT_HUMAN_BUDGET, humanMessages } from "../lib/human.js";
 import { toolCallsWithResults, toolFilter, type ToolCall, type ToolOpts } from "../lib/tools.js";
@@ -21,6 +21,8 @@ import { DEFAULT_HEAD, headCut, oneLine, renderBlockList, renderHelp, renderRows
 import { formatSize } from "../output/sizes.js";
 import { detail, DETAIL_CAP } from "../output/truncate.js";
 import { countNewlines } from "../lib/reader.js";
+import { headerName } from "./sessions.js";
+import { jsonOutTarget, openJsonOut, withJsonOutLine, writeJsonOut, type JsonOutTarget, type JsonSink, type JsonStream } from "./json-out.js";
 import { open as openFile, stat } from "node:fs/promises";
 
 /** Lines in a file: complete lines, plus a trailing line still being written. */
@@ -73,6 +75,8 @@ interface Opened {
   session: Session;
   hint: SessionHint;
   notice: string | undefined;
+  /** `<s8> <title>` (cli.md#conventions). */
+  title: string;
 }
 
 async function open(name: string, p: Parsed, io: Io, tz: string): Promise<Opened> {
@@ -80,13 +84,13 @@ async function open(name: string, p: Parsed, io: Io, tz: string): Promise<Opened
   const ref = p.positionals[0]!;
   const session = await sessionFromArg(name, ref, p, io);
   const notice = await rewriteNotice(session, io, tz);
-  return { session, hint: await sessionHint(name, ref, session, p, io), notice };
+  return { session, hint: await sessionHint(name, ref, session, p, io), notice, title: await headerName(session) };
 }
 
 function sessionHeader(o: Opened): Doc {
   const header: Doc = {};
   if (o.notice) header.notice = o.notice;
-  header.session = `${o.session.short} (title pending)`;
+  header.session = o.title;
   if (o.session.kind === "subagent") {
     header.kind = "subagent";
     if (o.session.parent) header.parent = o.session.parent.slice(0, 8);
@@ -117,6 +121,39 @@ function times(items: Array<{ t?: string }>, tz: string) {
   return timeColumn(items as Event[], tz);
 }
 
+/** The `H`-class kinds `human` prints (cli.md#human-session). */
+const H_KINDS = KINDS.filter((k) => AUTHORITY[k] === "H");
+
+/** An export opened before the view's read, its document begun; undefined when not asked for. */
+async function streamOpen(target: JsonOutTarget | undefined, meta: Record<string, unknown>, key: string): Promise<JsonSink | undefined> {
+  if (!target) return undefined;
+  const sink = await openJsonOut(target);
+  await sink.out.begin(meta, key);
+  return sink;
+}
+
+/** Run the view's read; a failure removes the partial export. */
+async function sinkGuard(sink: JsonSink | undefined, read: () => Promise<unknown>): Promise<void> {
+  try {
+    await read();
+    await sink?.out.end();
+  } catch (err) {
+    await sink?.abort();
+    throw err;
+  }
+}
+
+/** Close the export (when there is one) and name it in the output. */
+async function streamClose(sink: JsonSink | undefined, out: string): Promise<string> {
+  return sink ? withJsonOutLine(out, await sink.close()) : out;
+}
+
+/** The output, with the `--json-out` export written when asked (cli.md#conventions). */
+async function withJson(target: JsonOutTarget | undefined, out: string, fill: (j: JsonStream) => Promise<void>): Promise<string> {
+  if (!target) return out;
+  return withJsonOutLine(out, await writeJsonOut(target, fill));
+}
+
 function assemble(parts: string[], help: string[]): string {
   const h = renderHelp(help);
   return [...parts, ...(h ? [h] : [])].join("\n");
@@ -135,18 +172,25 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
   const full = getBool(p, "full");
   const limit = getNumber(p, "limit") ?? (full ? 0 : 30);
   const head = full ? 0 : DEFAULT_HEAD;
+  const jsonOut = await jsonOutTarget("turns", p, io);
   const o = await open("turns", p, io, tz);
   const stats = { lines: 0 };
   let kept: Turn[] = [];
   let matching = 0;
-  await withNotice(o.notice, async () => {
-    const opts = applyRange({ cache: { env: io.env }, ...(window !== undefined ? { window } : {}) }, range);
-    for await (const t of turns(o.session, opts, stats)) {
-      matching++;
-      kept.push(t);
-      if (limit > 0 && kept.length > limit * 2) kept = kept.slice(kept.length - limit);
-    }
-  });
+  // The export streams every turn during the read that builds the view (cli.md#conventions).
+  const sink = await streamOpen(jsonOut, { session: o.session.id }, "turns");
+  await sinkGuard(sink, () =>
+    withNotice(o.notice, async () => {
+      const opts = applyRange({ cache: { env: io.env }, ...(window !== undefined ? { window } : {}) }, range);
+      for await (const t of turns(o.session, opts, stats)) {
+        matching++;
+        kept.push(t);
+        await sink?.out.item(t);
+        if (limit > 0 && kept.length > limit * 2) kept = kept.slice(kept.length - limit);
+      }
+    }),
+  );
+  const assembleTurns = async (parts: string[], help: string[]) => streamClose(sink, assemble(parts, help));
   if (limit > 0 && kept.length > limit) kept = kept.slice(kept.length - limit);
 
   const header = sessionHeader(o);
@@ -158,7 +202,7 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
     header.tz = tz;
     header.turns = `0 turns in ${o.session.short} (${plural(await lineCount(o.session.path), "line")})`;
     if (range.from || range.to || window !== undefined) help.push(`Run \`${BIN} turns ${s}${tzc}\` for every turn of the session`);
-    return assemble([encode(header)], help);
+    return assembleTurns([encode(header)], help);
   }
   const time = times(kept, tz);
   Object.assign(header, time.header);
@@ -182,7 +226,7 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
   help.push(`Run \`${BIN} next ${formatId(last.id)}${o.hint.showCarry}${tzc}\` to read the last turn's rows`);
   help.push(`Run \`${BIN} human ${s}${rangeCarry(p)}${win}${tzc}\` for the prompts whole`);
   if (cut > 0) help.push(`Run \`${BIN} turns ${s}${rangeCarry(p)}${win} --full${tzc}\` for the whole prompt of the ${plural(cut, "turn")} cut to ${head} chars`);
-  return assemble([encode(header)], help);
+  return assembleTurns([encode(header)], help);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -198,10 +242,10 @@ export async function humanCommand(args: string[], io: Io): Promise<string> {
   const full = getBool(p, "full");
   const rows = getBool(p, "rows");
   const budget = full ? Infinity : (getNumber(p, "budget") ?? DEFAULT_HUMAN_BUDGET);
+  const jsonOut = await jsonOutTarget("human", p, io);
   const o = await open("human", p, io, tz);
-  const r = await withNotice(o.notice, () =>
-    humanMessages(o.session, applyRange({ budget, cache: { env: io.env }, ...(window !== undefined ? { window } : {}) }, range)),
-  );
+  const humanOpts = applyRange({ cache: { env: io.env }, ...(window !== undefined ? { window } : {}) }, range);
+  const r = await withNotice(o.notice, () => humanMessages(o.session, { ...humanOpts, budget }));
 
   const header = sessionHeader(o);
   const s = o.hint.ref;
@@ -250,7 +294,12 @@ export async function humanCommand(args: string[], io: Io): Promise<string> {
   }
   if (msgs.length === 0 && (range.from || range.to || window !== undefined)) help.push(`Run \`${BIN} human ${s}${tzc}\` for every human message of the session`);
   if (msgs.length > 0) help.push(`Run \`${BIN} turns ${s}${rangeCarry(p)}${win}${tzc}\` for one row per prompt with what followed`);
-  return assemble(parts, help);
+  return withJson(jsonOut, assemble(parts, help), async (j) => {
+    // Every message whole, no budget, streamed from a second read (cli.md#conventions).
+    await j.begin({ session: o.session.id, matching: r.matching }, "messages");
+    for await (const m of events(o.session, { ...humanOpts, kinds: H_KINDS })) await j.item(m);
+    await j.end(r.summary ? { summary: r.summary } : {});
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -297,17 +346,25 @@ export async function toolsCommand(args: string[], io: Io): Promise<string> {
     if (err instanceof AgentSessionError) throw new AxiError(err.message, err.code, err.suggestions);
     throw err;
   }
+  const jsonOut = await jsonOutTarget("tools", p, io);
   const o = await open("tools", p, io, tz);
   let kept: ToolCall[] = [];
   let matching = 0;
-  await withNotice(o.notice, async () => {
-    const opts = applyRange({ ...filters, cache: { env: io.env }, withResults: full, ...(window !== undefined ? { window } : {}) }, range);
-    for await (const c of toolCallsWithResults(o.session, opts)) {
-      matching++;
-      kept.push(c);
-      if (limit > 0 && kept.length > limit * 2) kept = kept.slice(kept.length - limit);
-    }
-  });
+  // The export streams every call, with its result, during the read that builds the view; only
+  // the export needs results without --full, and each is written and released as it is read.
+  const sink = await streamOpen(jsonOut, { session: o.session.id }, "tools");
+  await sinkGuard(sink, () =>
+    withNotice(o.notice, async () => {
+      const opts = applyRange({ ...filters, cache: { env: io.env }, withResults: full || sink !== undefined, ...(window !== undefined ? { window } : {}) }, range);
+      for await (const c of toolCallsWithResults(o.session, opts)) {
+        matching++;
+        await sink?.out.item(c);
+        kept.push(full ? c : { call: c.call });
+        if (limit > 0 && kept.length > limit * 2) kept = kept.slice(kept.length - limit);
+      }
+    }),
+  );
+  const assembleTools = async (parts: string[], help: string[]) => streamClose(sink, assemble(parts, help));
   if (limit > 0 && kept.length > limit) kept = kept.slice(kept.length - limit);
 
   const header = sessionHeader(o);
@@ -323,7 +380,7 @@ export async function toolsCommand(args: string[], io: Io): Promise<string> {
     header.tz = tz;
     header.tools = `0 tool calls match in ${o.session.short}`;
     if (filterFlags || range.from || range.to || window !== undefined) help.push(`Run \`${BIN} tools ${s}${tzc}\` for every tool call of the session`);
-    return assemble([encode(header)], help);
+    return assembleTools([encode(header)], help);
   }
   const calls = kept.map((c) => c.call);
   const time = times(calls, tz);
@@ -360,7 +417,7 @@ export async function toolsCommand(args: string[], io: Io): Promise<string> {
   const persisted = calls.filter((c) => c.status?.state === "persisted" && c.result).pop();
   if (persisted && !full) help.push(`Run \`${BIN} show ${formatId(persisted.result!)} --full${o.hint.showCarry}${tzc}\` to read a persisted output`);
   if (cut > 0) help.push(`Run \`${BIN} show ${formatId(firstCut!)}${o.hint.showCarry}${tzc}\` to see a target cut to ${TARGET_HEAD} chars whole, or add --full`);
-  return assemble(parts, help);
+  return assembleTools(parts, help);
 }
 
 async function toolBlock(c: ToolCall, session: Session, fmt: (ev: Event) => string, fields: readonly ToolsField[]): Promise<Doc> {

@@ -1,5 +1,6 @@
 /** `around <id>`, `next <id> [<n>]`, `prev <id> [<n>]` (specs/cli.md#around-id--next-id--prev-id). */
 import { AxiError } from "axi-sdk-js";
+import { headerName } from "./sessions.js";
 import { AgentSessionError } from "../lib/errors.js";
 import { formatId, resolveId } from "../lib/ids.js";
 import { around, next, prev, type PanOpts, type PanResult } from "../lib/events.js";
@@ -94,7 +95,7 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
   const rendered = renderRows(r.rows, tz, { head, fields });
   const header: Record<string, unknown> = {};
   if (notice) header.notice = notice;
-  header.session = `${session.short} (title pending)`;
+  header.session = await headerName(session);
   if (session.kind === "subagent") {
     header.kind = "subagent";
     if (session.parent) header.parent = session.parent.slice(0, 8);

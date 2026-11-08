@@ -20,7 +20,8 @@ Every command with `--from`, `--to`, `--since`, `--before`, `--after`, `--projec
 - `<when>` is an ISO-8601 instant (`2026-04-20T14:00`, optional zone), a date (`2026-04-20`), or a
   token: `now`, `today`, `yesterday`, `+Nd`/`-Nd`, `+Nw`/`-Nw` (day precision), `+Nh`/`-Nh`,
   `+Nm`/`-Nm` (instant precision).
-- `--since <span>` is shorthand for `--from now-<span>`: spans are `90m`, `24h`, `7d`, `2w`.
+- `--since <span>` is shorthand for `--from now-<span>`: spans are `90m`, `24h`, `7d`, `2w`, `1y`
+  (a year is 365 days; `recall`'s empty-state hint is `--since 1y`).
 - `--tz <iana>` is the one global flag, accepted on every command, and sets the zone for parsing
   and rendering; default `TZ`, else the system zone. The header echoes the resolved zone.
 - An event id is also accepted where a `<when>` is: it means that event's timestamp. The resolver

@@ -175,6 +175,29 @@ for a boundary-less summary), its summary's id once read, the position where the
 starts, and the cumulative per-kind counts there, so `--window` resolves to a position range and
 an exact count without a scan, and `compactions` reads only the boundary entries.
 
+**Session stats** (`data-model.md#session`) ride on the table: its tail record also carries the
+first and newest entry timestamps, the last model name, and the positions (seq, byte offset,
+length) of the lines the title can come from (the last `custom-title` and `ai-title` entries, the
+first `human` event), so the counts come from the tail's per-kind counts and boundaries and the
+title is read back from its line. A small stats record (`stats/`) mirrors them with the table's
+identity, so a listing reads a few hundred bytes per session instead of the table; it is used only
+while that identity matches the file (a trailing line still being written aside), and otherwise
+the table is extended (or built) and the mirror rewritten.
+
+The **term index** (`terms/`) is built by `recall`, in the same pass as the table, and carries its
+own identity (its last indexed seq, the byte offset past it, the first line's hash and the last
+indexed line's offset, length and hash): lower-cased word tokens (runs of letters, digits and
+`_`) of exactly the text `find` tests on an `H` or `C` event (its `text` and, for a `call`, its
+input stringified and each string value), each mapped to the seqs of the entries that hold it,
+stored sorted by token so the record keeps no trace of the order words were written in. Nothing
+else is stored: no phrase, no position inside a line. A substring of a text has each of its word runs inside a word
+run of that text, so a line none of whose tokens contains some word run of the phrase cannot
+match it: the index only ever skips lines that cannot hold a hit, and the lines it cannot rule out
+are verified by classifying them from their checkpoint. An appended file is indexed from the
+index's own last seq, reading from the table checkpoint at or before it, whether or not another
+command has extended the table since; only an index whose identity no longer matches the file (a
+rewrite) is rebuilt. `recall` never rewrites a record it did not change.
+
 The table records the format version of the table and the package version that built it; a
 mismatch on either discards it, so a classifier change never serves counts or kinds computed by
 the old one. Records are written via a temp file and rename (the temp file is removed when the

@@ -6,7 +6,7 @@ import { AgentSessionError } from "./errors.js";
 
 export const WHEN_GRAMMAR =
   "<when> is an ISO instant (2026-04-20T14:00, optional zone), a date (2026-04-20), now, today, yesterday, ±Nd, ±Nw, ±Nh or ±Nm";
-export const SPAN_GRAMMAR = "<span> is a count and a unit: 90m, 24h, 7d, 2w";
+export const SPAN_GRAMMAR = "<span> is a count and a unit: 90m, 24h, 7d, 2w, 1y";
 
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
@@ -154,11 +154,11 @@ export function formatAgo(date: Date, now: Date): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 } as const;
+const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000, y: 31_536_000_000 } as const;
 
-/** `90m`, `24h`, `7d`, `2w` → milliseconds. */
+/** `90m`, `24h`, `7d`, `2w`, `1y` (365 days) → milliseconds. */
 export function parseSpan(text: string): number {
-  const m = /^(\d+)([mhdw])$/.exec(text.trim());
+  const m = /^(\d+)([mhdwy])$/.exec(text.trim());
   if (!m) throw new AgentSessionError(`not a span: ${text}`, "VALIDATION_ERROR", [SPAN_GRAMMAR]);
   return Number(m[1]) * UNIT_MS[m[2] as keyof typeof UNIT_MS];
 }

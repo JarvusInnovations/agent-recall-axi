@@ -7,7 +7,7 @@ import { encode } from "@toon-format/toon";
 import { formatId } from "../lib/ids.js";
 import type { Event } from "../lib/model.js";
 import type { ResumePack } from "../lib/resume.js";
-import { renderBlockList, renderHelp, renderStatus, targetCut, TARGET_HEAD, timeColumn } from "./render.js";
+import { DEFAULT_HEAD, headCut, oneLine, renderBlockList, renderHelp, renderStatus, targetCut, TARGET_HEAD, timeColumn } from "./render.js";
 import { formatSize } from "./sizes.js";
 import { summaryText } from "./resume-layout.js";
 
@@ -41,7 +41,8 @@ export function renderResumePack(pack: ResumePack, opts: RenderResumeOpts): stri
   const carry = opts.carry ?? "";
   const header: Record<string, unknown> = {};
   if (opts.notice) header.notice = opts.notice;
-  header.session = `${s.short} (title pending)`;
+  // The title as a row cell: one line, cut to the row head (data-model.md#session).
+  header.session = pack.title !== undefined ? `${s.short} ${headCut(oneLine(pack.title).trim(), DEFAULT_HEAD).text}` : s.short;
   if (s.kind === "subagent") {
     header.kind = "subagent";
     if (s.parent) header.parent = s.parent.slice(0, 8);
