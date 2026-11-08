@@ -41,7 +41,11 @@ jobs:
       - name: Test
         run: bun run test
 
-      # check:skill and check:bundle join this list with plans/skill-and-hook.md.
+      - name: SKILL.md is current
+        run: bun run check:skill
+
+      - name: The committed skill bundle is current
+        run: bun run check:bundle
 
       - name: Smoke test the built bin
         run: |
@@ -57,3 +61,55 @@ jobs:
           test "$code" -eq 1
           echo "$out" | grep -q '^code: NO_SESSIONS$'
           if echo "$out" | grep -Eq '^\s+at '; then echo "stack trace leaked"; exit 1; fi
+
+  # The skill channel: the committed bundle runs from a fresh checkout with node alone (no
+  # bun install, no node_modules), copied out of the repository the way `npx skills add`
+  # installs it, and prints what dist/ prints (specs/architecture.md#ci).
+  skill-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .tool-versions
+          package-manager-cache: false
+
+      - name: Run the committed bundle with node only
+        run: |
+          set -euo pipefail
+          test ! -e node_modules
+          skill="$RUNNER_TEMP/installed/skills/agent-session-axi"
+          mkdir -p "$(dirname "$skill")" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/out"
+          cp -R skills/agent-session-axi "$skill"
+          # on PATH through a symlink, so hints name it as dist/ does
+          ln -s "$skill/scripts/agent-session-axi" "$RUNNER_TEMP/bin/agent-session-axi"
+          "$skill/scripts/agent-session-axi" --version | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'
+          export CLAUDE_CONFIG_DIR="$PWD/test/fixtures/claude" TZ=UTC PATH="$RUNNER_TEMP/bin:$PATH"
+          s=$(ls test/fixtures/claude/projects/-src-widget/a6000006-*.jsonl)
+          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi tail "$s" > "$RUNNER_TEMP/out/tail.bundle"
+          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi find "$s" flange > "$RUNNER_TEMP/out/find.bundle"
+          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi resume-pack "$s" > "$RUNNER_TEMP/out/resume-pack.bundle"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .tool-versions
+
+      - name: Build dist/
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: The bundle's output matches dist/ byte for byte
+        run: |
+          set -euo pipefail
+          export CLAUDE_CONFIG_DIR="$PWD/test/fixtures/claude" TZ=UTC
+          bin="$PWD/dist/bin/agent-session-axi.js"
+          s=$(ls test/fixtures/claude/projects/-src-widget/a6000006-*.jsonl)
+          XDG_CACHE_HOME=$(mktemp -d) node "$bin" tail "$s" > "$RUNNER_TEMP/out/tail.dist"
+          XDG_CACHE_HOME=$(mktemp -d) node "$bin" find "$s" flange > "$RUNNER_TEMP/out/find.dist"
+          XDG_CACHE_HOME=$(mktemp -d) node "$bin" resume-pack "$s" > "$RUNNER_TEMP/out/resume-pack.dist"
+          for c in tail find resume-pack; do
+            test -s "$RUNNER_TEMP/out/$c.dist"
+            cmp "$RUNNER_TEMP/out/$c.bundle" "$RUNNER_TEMP/out/$c.dist"
+          done
