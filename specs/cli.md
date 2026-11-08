@@ -114,9 +114,14 @@ Default schema: `turns[N]{id,t,prompt,events,calls,ended}` (`data-model.md#turn`
 the head of the opening human text; `ended` is `stop`, `compaction` or `open`.
 
 - Default `--limit 30`, newest last; when more exist the footer says `Showing the last 30 of 112
-  turns; raise --limit or narrow with --from`.
+  turns; raise --limit or narrow with --from`, followed by the runnable `turns <session> --to <first-shown-id>`
+  continuation for the earlier ones.
 - Turn 0 (events before the first prompt) is listed only when non-empty, with `prompt` `(session
-  start)`.
+  start)` and its first event's id.
+- `--from`/`--to`/`--since`/`--window` select turns by their opening prompt (turn 0 by its first
+  event); a selected turn is counted whole, past the bound if it runs on. `--full` lifts the
+  prompt head cap and the row cap.
+- Empty: `turns: 0 turns in 7a2f1c3e (4,120 lines)`, exit 0.
 - Footer hints: `next <turn-id>` to read a turn's rows, `human <session>` for the prompts whole.
 
 ## `events <session>`
@@ -174,8 +179,16 @@ messages[9]:
   `hook`, `notice`. The opening `summary` of a window is printed after the messages, under its own
   `summary:` key with `authority: C`, when `--window` selects a window that begins with one.
 - Default `--budget 12000` chars, newest kept; `omitted: 7 earlier messages; continue with human
-  7a2f1c3e --to 7a2f1c3e:388` when it bites. `--full` lifts the budget.
-- `--rows` switches to the standard row table for a dense overview.
+  7a2f1c3e --to 7a2f1c3e:388` when it bites. `--full` lifts the budget. The budget is 12,000
+  chars of text in total, the window's opening summary included: the summary is `C` text, capped
+  at 4,000 chars with the house marker and a `show <summary-id> --full` hint, and its printed
+  length counts first; the newest message is always printed, whole, even when it alone exceeds
+  the budget (`H` text is never cut), and older ones are kept newest first while they fit, so the
+  omitted messages are always the oldest. `omitted:` is the last header line, before the
+  messages. The continuation carries the caller's
+  `--from`/`--since`/`--window`, `--budget`, `--rows`, scope and `--tz`.
+- `--rows` switches to the standard row table for a dense overview (the same messages, the same
+  budget; row heads are cut as in any listing).
 - Empty: `messages: 0 human messages in 7a2f1c3e` (a pure subagent run, for example), exit 0.
 
 ## `tools <session>`
@@ -194,8 +207,12 @@ Default schema: `tools[N]{id,t,tool,target,result}` — `result` is the status (
 - `--name` is a case-insensitive substring of the tool name (`--name bash`, `--name mcp__`).
 - `--file` filters by `files` touched (`data-model.md#files-touched`).
 - `--errors` keeps only calls whose result `is_error`.
+- `--fields <a,b>` adds columns after `result`: `result_id` (the linked result's id), `error`,
+  `files` (joined with `, `; `show <id>` has the exact list).
 - Default `--limit 30`, newest last. `--full` adds the full input JSON and the result text to each
-  row as a block (switches to block form like `human`).
+  row as a block (switches to block form like `human`), lifts the row cap, and prints a
+  persisted output's file in place of its preview when it may be followed
+  (`data-model.md#pointer`).
 - Footer: `show <id>` for a call, `show <result-id> --full` to read a persisted output.
 - Empty: `tools: 0 tool calls match in 7a2f1c3e`.
 
@@ -292,11 +309,11 @@ help[3]:
 
 ```
 agent-session-axi around <id> [--before <n>] [--after <n>] [--context <n>] [--kind …] [--head <n>] [--full]
-                         [--fields <a,b>] [--session <ref>] [--project <p> | --all]
+                         [--fields <a,b>] [--window <k|last>] [--session <ref>] [--project <p> | --all]
 agent-session-axi next <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
-                       [--session <ref>] [--project <p> | --all]
+                       [--window <k|last>] [--session <ref>] [--project <p> | --all]
 agent-session-axi prev <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
-                       [--session <ref>] [--project <p> | --all]
+                       [--window <k|last>] [--session <ref>] [--project <p> | --all]
 ```
 
 The pan verbs. Same rows as `events`; the difference is where they start.
@@ -333,14 +350,15 @@ The pan verbs. Same rows as `events`; the difference is where they start.
 
 ```
 agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
-                       [--project <p> | --all]
+                       [--window <k|last>] [--project <p> | --all]
 ```
 
 The last `n` visible rows (default 20): "what was I doing". Equivalent to `events <session>` with
 the default limit, kept as a verb because it is the most common call. Footer: `prev <first-id>`,
 `resume-pack <session>`.
 
-`tail` and the default `events` never create the offset table. When one already exists (a pan
+`tail` and the default `events` never create the offset table (a `--window` selection is a seek
+and does, `behaviors/context-windows.md`). When one already exists (a pan
 command or `show` built it), they extend it over an append of up to 8 MB and read their rows
 forwards from the checkpoint before the window, the same engine as `prev` from the end, so the
 rows and the exact count `count: 20 of 4120` always agree. Without a table (or when more than
@@ -410,8 +428,12 @@ Where the context window closed, and what stood in for the lost history.
 
 Default schema: `compactions[N]{id,t,trigger,pre,post,summary,window}` — `pre`/`post` are token
 counts (`998.6k`, `25.1k`), `summary` the summary event id, `window` the index of the window the
-boundary opens. `--full` appends each summary's text as a block. Empty: `compactions: 0 in
+boundary opens. `--full` switches to block form: each boundary with `dropped`, the event counts
+of the windows before and after it, and its summary's text. A boundary-less summary is listed
+with `trigger` `unknown` (`behaviors/context-windows.md`). Empty: `compactions: 0 in
 7a2f1c3e (one window, 4,120 lines)`.
+Footer: `show <compaction-id>` for the preserved events, `human <session> --window <k>` for what
+the human said after the last boundary.
 
 ## `recall <phrase>`
 

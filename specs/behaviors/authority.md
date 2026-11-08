@@ -41,6 +41,10 @@ Listing rows cut a head and mark the cut; they never rewrite. `show` never cuts 
 4,000-char cap applies to `C`/`D` text only, `behaviors/truncation.md#caps`). No command
 paraphrases, merges, deduplicates or reorders `H` events.
 
+`human.slash` is the one `H` kind whose text is reconstructed, not stored as typed: the adapter
+rebuilds `/<name> <args>` from the `<command-name>` and `<command-args>` tags, keeping the args
+exactly as stored (`data-model.md#kinds`).
+
 "Byte-identical" is about content, not the output encoding: a text printed as a TOON quoted
 string (`"line one\nline two"`) decodes to exactly the stored bytes. Encoding is not rewriting.
 

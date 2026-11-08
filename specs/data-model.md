@@ -164,7 +164,7 @@ opt-in columns (`--fields`).
 | --- | --- | --- | --- |
 | `human` | H | `user` entry, string or text-block content, not `isMeta`, not `isCompactSummary`, no `tool_result`; or `origin.kind == "human"` | verbatim |
 | `human.queued` | H | `attachment` with `attachment.type == "queued_command"` and a human origin (the message sent while the agent was working); also `user` with `promptSource == "queued"` | `attachment.prompt` verbatim, never the `<system-reminder>` wrapper the model saw |
-| `human.slash` | H | `user` text matching `<command-name>…</command-name>` | `/<name> <args>` reconstructed from `<command-name>` and `<command-args>`; `<command-message>` and `<local-command-stdout>` go to `meta` |
+| `human.slash` | H | `user` text matching `<command-name>…</command-name>` | `/<name> <args>` reconstructed from `<command-name>` (a `/` prefixed when absent) and `<command-args>` kept as stored (not trimmed), joined by one space (just `/<name>` when the args are empty); the one `H` kind whose text is reconstructed rather than stored as typed; `<command-message>` and `<local-command-stdout>` go to `meta` |
 | `human.answer` | H | `tool_result` whose call was a question tool (`AskUserQuestion` and MCP variants) | the answer text |
 | `assistant` | C | `text` blocks of an `assistant` entry (contiguous text blocks of one entry merge into one event) | verbatim |
 | `thinking` | C | `thinking` blocks; hidden unless `--kind thinking` | verbatim |
@@ -193,7 +193,10 @@ Rules:
   main file, `user` text without `origin.kind == "human"` is the parent agent's prompt: it is
   `notice` with `meta.source: parent`, never `human.*`. The human-bias rule above does not apply,
   because the adapter can prove no human typed it: a pure subagent run has 0 human messages
-  (`cli.md#human-session`).
+  (`cli.md#human-session`). For the same reason a compaction boundary or summary on a sidechain
+  entry of a main file is `notice` (`meta.source: parent`), and in a subagent session text without
+  a human origin opening with the summary sentence is the parent's prompt
+  (`behaviors/context-windows.md`).
 
 ### Derived target (`call.target`)
 
@@ -239,17 +242,20 @@ path is still printed with its preview, marked `followed: false` with the reason
 | `events` | count of events in the turn (all kinds, hidden included) |
 | `calls` | count of `call` events |
 | `queued` | count of `human.queued` events that arrived during the turn |
-| `ended` | `stop` (next human prompt or end of file after an assistant text), `compaction` (a boundary fell inside), `open` (last turn of a live session) |
+| `ended` | `compaction` (a boundary fell inside: a compaction, or a boundary-less summary that is a boundary; a summary that opens the file is none); otherwise `stop` (a next human prompt follows, or the file ends after an assistant text) or `open` (the last turn, when the last of its `assistant`, `thinking`, `call`, `result`, `human.answer` and `human.queued` events is not an assistant text: the agent was still working when the file ends, whether the session is live or was cut off). Decided from the file alone, never the clock |
 | `duration` | last event time − first event time |
 
 A session's first events before any human prompt (hooks, skills, reminders) form turn 0 with no
-`prompt`; it is listed only when non-empty.
+`prompt`; it is listed only when non-empty, and its `id` is its first event's id.
 
 ## Window
 
-Window `k` is the events after the `k`-th `compaction` and before the `(k+1)`-th; window 0 begins
-at the file start. `last` names the highest window. The `summary` event that follows a boundary
-belongs to the new window (it is what the agent saw first).
+An event's window is the number of boundaries before it in file order: a `compaction` counts after
+itself (it is the last event of the window it closes), a `summary` no compaction was waiting for
+counts before itself when at least one event precedes it (it opens the next window). Window 0
+begins at the file start; `last` names the highest window. The `summary` that is the next event
+after a compaction belongs to the new window (it is what the agent saw first). Boundaries on
+sidechain entries of a main file are not boundaries (`behaviors/context-windows.md`).
 
 ## Resume pack
 

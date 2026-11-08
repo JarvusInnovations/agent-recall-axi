@@ -53,6 +53,10 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
    cross-session scope runs, and `find` without `<session>` stops failing with the
    not-yet-available USAGE error (deferred from [`find`](find.md), which omitted the hint
    rather than print one that fails).
+9. `--json-out[=path]` (cli.md#conventions): the flag has been registered as `planned:
+   sessions-and-recall` on every listing since `reader-and-event-model`, including the views
+   `turns`, `human` and `tools`. Write the complete, uncapped result as JSON (owner-only temp file
+   when no path is given) while stdout keeps the TOON view (deferred from [`views`](views.md)).
 
 ## Validation
 

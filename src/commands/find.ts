@@ -9,7 +9,7 @@ import { getBool, getNumber, getString, parseFlags, usageLine, type Parsed } fro
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { VERSION } from "../version.js";
-import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeCarry, scopeOf, sessionFromArg, sessionHint, shellArg, withNotice, zoneOf, type Io } from "./common.js";
+import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeCarry, scopeOf, sessionFromArg, sessionHint, shellArg, windowFlag, withNotice, zoneOf, type Io } from "./common.js";
 import { parseRowFields } from "./events.js";
 
 /**
@@ -78,9 +78,7 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     ]);
   }
   const window = getString(p, "window");
-  if (window !== undefined && window !== "all") {
-    throw new AxiError(`--window ${window} is not available yet in ${VERSION} (planned: views); only --window all is accepted`, "USAGE", [usage]);
-  }
+  const windowSel = windowFlag(p);
   const range = parseRange("find", p, tz, io.now, true);
   const full = getBool(p, "full");
   const context = getNumber(p, "context") ?? 1;
@@ -104,6 +102,8 @@ export async function runFind(args: string[], io: Io): Promise<string> {
   if (kinds) q.kinds = kinds as Kind[];
   if (range.from) q.from = range.from;
   if (range.to) q.to = range.to;
+  if (windowSel !== undefined) q.window = windowSel;
+  q.cache = { env: io.env };
   try {
     compileQuery(q); // regex and pattern validation, before any file is opened
   } catch (err) {
@@ -177,7 +177,7 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     if (full) cmd += " --full";
     if (fields.length) cmd += ` --fields ${fields.join(",")}`;
     if (deep) cmd += " --deep";
-    if (window !== undefined) cmd += ` --window ${window}`;
+    if (window !== undefined) cmd += ` --window ${shellArg(window)}`;
     return `${cmd}${opts.extra ?? ""}${tzc}${trailing}`;
   };
 

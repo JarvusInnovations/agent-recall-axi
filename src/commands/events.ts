@@ -8,7 +8,7 @@ import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { formatSize } from "../output/sizes.js";
-import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, withNotice, sessionFromArg, sessionHint, shellArg, zoneOf, type Io, type SessionHint } from "./common.js";
+import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeOf, withNotice, sessionFromArg, sessionHint, shellArg, windowCarry, windowFlag, zoneOf, type Io, type SessionHint } from "./common.js";
 
 function flagsOf(name: string) {
   return findCommand(name)?.flags ?? [];
@@ -66,12 +66,13 @@ function render(a: RenderArgs): string {
   const limitFlag = a.explicitLimit !== undefined ? ` --limit ${a.explicitLimit}` : "";
   // Paging keeps the caller's view: kinds, row cap, head, --full, zone, and the far bound.
   const fieldsFlag = a.fields.length ? ` --fields ${a.fields.join(",")}` : "";
-  const view = `${kind}${limitFlag}${head}${fullFlag}${fieldsFlag}${tz}`;
+  const win = windowCarry(p);
+  const view = `${kind}${limitFlag}${head}${fullFlag}${fieldsFlag}${win}${tz}`;
   const toBound = getString(p, "to") !== undefined ? ` --to ${shellArg(getString(p, "to")!)}` : "";
   const help: string[] = [];
   if (shown === 0) {
     header[a.label] = `0 events in ${short} (${listing.lines} line${listing.lines === 1 ? "" : "s"})`;
-    if (a.defaultKinds) help.push(`Run \`${BIN} events ${s} --kind all${tz}\` to include thinking and result rows`);
+    if (a.defaultKinds) help.push(`Run \`${BIN} events ${s} --kind all${win}${tz}\` to include thinking and result rows`);
     return renderDocument(header, help);
   }
   header[a.label] = rendered.rows;
@@ -88,7 +89,7 @@ function render(a: RenderArgs): string {
   if (!listing.atEnd) help.push(`Run \`${BIN} events ${s} --from ${after(last)}${toBound}${view}\` for later rows`);
   if (rendered.cut > 0) {
     const rows = `${rendered.cut} row${rendered.cut === 1 ? "" : "s"}`;
-    help.push(`Run \`${BIN} events ${s} --from ${formatId(first)} --to ${after(last)}${kind}${fieldsFlag} --full${tz}\` for the whole text of the ${rows} cut to ${a.head} chars`);
+    help.push(`Run \`${BIN} events ${s} --from ${formatId(first)} --to ${after(last)}${kind}${fieldsFlag} --full${win}${tz}\` for the whole text of the ${rows} cut to ${a.head} chars`);
     help.push(`Run \`${BIN} show ${formatId(rendered.firstCut!)}${scopeOnly(a)}${tz}\` to see one cut row whole`);
   } else {
     help.push(`Run \`${BIN} show ${formatId(last)}${scopeOnly(a)}${tz}\` to zoom into a row`);
@@ -131,11 +132,13 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   const limit = getNumber(p, "limit") ?? (full ? 0 : 40);
   const head = headOf(p, full);
   const fields = parseRowFields(getString(p, "fields"));
+  const window = windowFlag(p);
   scopeOf("events", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("events", ref, p, io);
   const opts: ListOpts = { limit, cache: { env: io.env } };
   if (kinds) opts.kinds = kinds;
+  if (window !== undefined) opts.window = window;
   if (range.from) opts.from = range.from;
   if (range.to) opts.to = range.to;
   const notice = await rewriteNotice(session, io, tz);
@@ -163,11 +166,13 @@ export async function tailCommand(args: string[], io: Io): Promise<string> {
   const limit = n ?? (full ? 0 : 20);
   const head = headOf(p, full);
   const fields = parseRowFields(getString(p, "fields"));
+  const window = windowFlag(p);
   scopeOf("tail", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("tail", ref, p, io);
   const opts: ListOpts = { limit, cache: { env: io.env } };
   if (kinds) opts.kinds = kinds;
+  if (window !== undefined) opts.window = window;
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => listEvents(session, opts));
   return render({ label: "tail", parsed: p, explicitLimit: n, listing, session, hint: await sessionHint("tail", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });

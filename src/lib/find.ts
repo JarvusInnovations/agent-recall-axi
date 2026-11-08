@@ -8,7 +8,10 @@ import { AgentSessionError } from "./errors.js";
 import { comparePosition, formatId } from "./ids.js";
 import { open } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
-import { kindSet, pointerAccess } from "./events.js";
+import { boundSeq, kindSet, pointerAccess, windowStart } from "./events.js";
+import { inSpan } from "./hold.js";
+import { resolveWindow, type WindowRange, type WindowSel } from "./windows.js";
+import type { CacheOpts } from "./cache/store.js";
 import type { Event, EventId, Kind, Session } from "./model.js";
 import { readLines } from "./reader.js";
 import { newContext } from "./adapters/adapter.js";
@@ -30,14 +33,16 @@ export interface FindQuery {
   from?: Date | EventId;
   /** Exclusive end: a time or a position. */
   to?: Date | EventId;
-  /** Window selection lands with the views plan; only `all` (or undefined) is accepted here. */
-  window?: number | "last" | "all";
+  /** One compaction window (`k`, `last`, `k..`); default `all` (behaviors/context-windows.md). */
+  window?: WindowSel;
   /** Visible rows on each side of a hit (default 1), or each side separately. */
   context?: number | { before: number; after: number };
   /** Hits to yield; 0 or undefined = all. */
   limit?: number;
   /** Also search persisted-output files (only those the containment rule lets us follow). */
   deep?: boolean;
+  /** Where the derived cache lives (a window selection reads the offset table). */
+  cache?: CacheOpts;
 }
 
 export interface Hit {
@@ -263,9 +268,6 @@ export function compileQuery(q: FindQuery): CompiledQuery {
       'e.g. find(session, { phrase: "redirect" }) or { tool: "bash" }',
     ]);
   }
-  if (q.window !== undefined && q.window !== "all") {
-    throw new AgentSessionError(`window ${q.window} cannot be selected yet; only all`, "USAGE", ["search every window (the default)"]);
-  }
   const why: Why[] = [];
   const out: CompiledQuery = { query: q, why, visible: kindSet(q.kinds), foldResults: false, ...contextOf(q.context) };
   out.foldResults = !out.visible.has("result");
@@ -436,10 +438,12 @@ const HOLD_CAP = 1000;
  * A call waits (with the events after it, keeping file order) until its result is read, at most
  * HOLD_CAP events; with an id bound `to`, the scan reads past it only to link waiting calls.
  */
-async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindStats): AsyncGenerator<{ event: Event; result?: Event }> {
+async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindStats, range?: WindowRange): AsyncGenerator<{ event: Event; result?: Event }> {
   const { from, to } = cq.query;
-  const ctx = newContext(session);
-  const toSeq = isEventId(to) ? to.seq : undefined;
+  const start = windowStart(session, range);
+  const ctx = start.ctx;
+  stats.malformed += start.malformed;
+  const toSeq = boundSeq(to, range);
   const queue: Array<{ event: Event; result?: Event }> = [];
   /** tool-use id → the queued call waiting for its result. */
   const byToolUse = new Map<string, { event: Event; result?: Event }>();
@@ -453,7 +457,7 @@ async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindSt
     return item;
   };
   let pastLines = 0;
-  for await (const line of readLines(session.path)) {
+  for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
     stats.lines = line.seq;
     const entry = claudeCode.parse(line);
     if (!entry) continue;
@@ -464,7 +468,7 @@ async function* visibleEvents(session: Session, cq: CompiledQuery, stats: FindSt
         const call = byToolUse.get(ev.toolUseId);
         if (call && call.event.result && comparePosition(call.event.result, ev.id) === 0) call.result = ev;
       }
-      if (pastBound || !cq.visible.has(ev.kind) || !inRange(ev, from, to)) continue;
+      if (pastBound || !cq.visible.has(ev.kind) || !inRange(ev, from, to) || !inSpan(ev, range)) continue;
       const item: { event: Event; result?: Event } = { event: ev };
       queue.push(item);
       if (ev.kind === "call" && ev.toolUseId && cq.foldResults) byToolUse.set(ev.toolUseId, item);
@@ -492,7 +496,8 @@ export async function* find(session: Session, q: FindQuery, stats?: FindStats): 
   const recent: Event[] = [];
   const pending: Array<{ hit: Hit; need: number }> = [];
   let yielded = 0;
-  for await (const { event, result } of visibleEvents(session, cq, st)) {
+  const range = await resolveWindow(session, q.window, q.cache ? { cache: q.cache } : {});
+  for await (const { event, result } of visibleEvents(session, cq, st, range)) {
     for (const p of pending) {
       if (p.need > 0) {
         p.hit.context.push(event);

@@ -858,6 +858,117 @@ export function longHoldSession(s8 = "e3000023"): string {
   return s.render();
 }
 
+// ---------------------------------------------------------------------------------------------
+// views (plan views): shapes the committed fixtures do not cover, generated at test time
+
+/** A call whose result is only an image block: status `image`. */
+export function imageResultSession(s8 = "e4000024"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("look at the widget screenshot");
+  s.assistant([s.toolUse(TOOL(s8, 1), "Read", { file_path: "docs/widget.png" })]);
+  s.toolResult(TOOL(s8, 1), [{ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } }]);
+  s.say("The screenshot shows the widget table.");
+  return s.render();
+}
+
+/** A structured compaction boundary line (the shape Claude Code writes). */
+function boundaryLine(s: SessionBuilder, n: number, extra: Json = {}): Json {
+  return {
+    parentUuid: null,
+    isSidechain: false,
+    type: "system",
+    subtype: "compact_boundary",
+    content: "Conversation compacted",
+    level: "info",
+    compactMetadata: { trigger: "auto", preTokens: 500_000, postTokens: 20_000 },
+    uuid: fixtureUuid(s.s8, 60_000 + n),
+    timestamp: s.tick(),
+    cwd: PROJECTS[s.project].cwd,
+    sessionId: s.id,
+    version: VERSION,
+    ...extra,
+  };
+}
+
+const CONTINUED = "This session is being continued from a previous conversation that ran out of context.";
+
+/** Long messages around a compaction whose summary is longer than the 4,000-char detail cap. */
+export function longSummarySession(s8 = "e5000025"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  for (let i = 1; i <= 3; i++) {
+    s.human(`before ${i}: ${deterministicText(VOCAB, 3000)}`);
+    s.say(`Noted ${i}.`);
+  }
+  s.push(boundaryLine(s, 1));
+  s.user(`${CONTINUED} Summary:\n${deterministicText(VOCAB, 10_000)}`, { isCompactSummary: true });
+  for (let i = 1; i <= 5; i++) {
+    s.human(`after ${i}: ${deterministicText(VOCAB, 2000)}`);
+    s.say(`Done ${i}.`);
+  }
+  return s.render();
+}
+
+/** A main session whose sidechain entries carry a boundary, a summary and the summary sentence. */
+export function sidechainBoundarySession(s8 = "e6000026"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("survey the gadgets with a helper");
+  s.say("Starting a helper.");
+  s.push(boundaryLine(s, 1, { isSidechain: true }));
+  s.user(`${CONTINUED} Summary: the helper's own context.`, { isCompactSummary: true, isSidechain: true });
+  s.user(`${CONTINUED} The helper was surveying gadgets.`, { isSidechain: true });
+  s.human("and the sprockets too");
+  s.say("Both surveyed.");
+  return s.render();
+}
+
+/** A subagent transcript whose parent prompt opens with the summary sentence. */
+export function subagentContinuedSession(agentId = "e7a0b1c2d3e4f5a6b", parent = fixtureUuid("e6000026", 0)): string {
+  const s = new SessionBuilder("widget", agentId.slice(0, 8), START, { agentId, parent });
+  s.user(`${CONTINUED} Pick up the gadget survey.`);
+  s.say("Picking it up.");
+  return s.render();
+}
+
+/**
+ * A compaction whose wait is ended by a human prompt (no summary), then a summary-looking line
+ * much later, which is a boundary of its own; and a call touching two files.
+ */
+export function farSummarySession(s8 = "e8000028"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("start the flange work");
+  s.say("Starting.");
+  s.push(boundaryLine(s, 1));
+  s.silent("file-history-snapshot", { n: 1 });
+  s.human("keep going");
+  s.assistant([s.toolUse(TOOL(s8, 1), "Bash", { command: "cp src/flange/a.ts src/flange/b.ts" })]);
+  s.toolResult(TOOL(s8, 1), "copied");
+  s.say("Copied.");
+  s.user(`${CONTINUED} The flange work was copied.`);
+  s.human("now the second half");
+  s.say("Second half done.");
+  return s.render();
+}
+
+/** Two sessions sharing an <s8>, each with several messages long enough for a small budget to bite. */
+export function sharedS8Sessions(): Array<{ name: string; text: string }> {
+  return ["c4d6e8fa-0000-4000-8000-000000000000", "c4d6e8fa-ffff-4000-8000-000000000000"].map((id, k) => {
+    const s = new SessionBuilder("gadget", "c4d6e8fa", k === 0 ? "2026-11-06T09:00:00.000Z" : "2026-11-06T10:00:00.000Z", { id });
+    for (let i = 1; i <= 4; i++) {
+      s.human(`gadget step ${i} for ${id.slice(9, 13)}: ${deterministicText(VOCAB, 60)}`);
+      s.say(`Step ${i} done.`);
+    }
+    return { name: `${id}.jsonl`, text: s.render() };
+  });
+}
+
+/** A slash command whose args carry leading, inner and trailing spaces. */
+export function spacedSlashSession(s8 = "e9000029"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.user("<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args> src/a.ts  --strict </command-args>", { origin: { kind: "human" }, promptSource: "typed" });
+  s.say("Reviewing.");
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 

@@ -69,7 +69,7 @@ export function classify(entry: Entry, ctx: ClassifyContext): Event[] {
       drafts = classifyAttachment(raw);
       break;
     case "system":
-      drafts = classifySystem(raw);
+      drafts = classifySystem(raw, ctx);
       break;
     default:
       drafts = [];
@@ -103,6 +103,8 @@ function classifyUser(raw: Json, ctx: ClassifyContext): Draft[] {
   const message = isObj(raw.message) ? raw.message : {};
   const content = message.content;
   if (raw.isCompactSummary === true) {
+    // A sidechain's compaction is a subagent's context, never the main session's (context-windows.md).
+    if (mainSidechain(raw, ctx)) return [notice(joinText(content), { source: "parent" })];
     return [{ kind: "summary", text: joinText(content) }];
   }
   if (typeof content === "string") {
@@ -151,6 +153,11 @@ const SLASH_ONLY = /^(?:\s*<(command-[\w-]+|local-command-(?:stdout|stderr|cavea
 /** Text that is nothing but image placeholders (`[Image #1]`, `[Image: source: …]`). */
 const IMAGE_ONLY = /^\s*(?:\[Image(?:[:\s#][^\]]*)?\]\s*)+$/;
 
+/** A sidechain entry inside a main session file. */
+function mainSidechain(raw: Json, ctx: ClassifyContext): boolean {
+  return raw.isSidechain === true && ctx.session.kind === "main";
+}
+
 function originKind(raw: Json): string | undefined {
   return isObj(raw.origin) ? str(raw.origin.kind) : undefined;
 }
@@ -164,7 +171,11 @@ function userText(text: string, raw: Json, ctx: ClassifyContext): Draft[] {
   const trimmed = text.trimStart();
   // The legacy compaction summary (no isCompactSummary flag) is recognized by its opening
   // sentence, unless the entry says a human typed it.
-  if (origin !== "human" && trimmed.startsWith(CONTINUED_PREFIX)) return [{ kind: "summary", text }];
+  if (origin !== "human" && trimmed.startsWith(CONTINUED_PREFIX)) {
+    // Driven by a parent agent (a subagent run, a sidechain): the parent's prompt, not a summary.
+    if (ctx.session.kind === "subagent" || raw.isSidechain === true) return [notice(text, { source: "parent" })];
+    return [{ kind: "summary", text }];
+  }
   if (raw.isMeta === true) {
     if (trimmed.startsWith(SKILL_PREFIX)) return [skillDraft(text)];
     if (trimmed.includes("<task-notification>")) return [taskNotice(text)];
@@ -241,7 +252,8 @@ function taskNotice(text: string): Draft {
 function slash(text: string, raw: Json): Draft {
   const rawName = (tag(text, "command-name") ?? "").trim();
   const name = rawName.startsWith("/") ? rawName : `/${rawName}`;
-  const args = (tag(text, "command-args") ?? "").trim();
+  // Kept as stored (authority.md#verbatim-guarantee): only the tags are dropped.
+  const args = tag(text, "command-args") ?? "";
   const meta: Json = { command: name };
   const message = tag(text, "command-message");
   if (message !== undefined) meta.message = message.trim();
@@ -505,8 +517,11 @@ function classifyAttachment(raw: Json): Draft[] {
 // ---------------------------------------------------------------------------------------------
 // system
 
-function classifySystem(raw: Json): Draft[] {
+function classifySystem(raw: Json, ctx: ClassifyContext): Draft[] {
   const subtype = str(raw.subtype);
+  if (subtype === "compact_boundary" && mainSidechain(raw, ctx)) {
+    return [notice(str(raw.content) ?? "Conversation compacted", { source: "parent", subtype })];
+  }
   if (subtype === "compact_boundary") {
     const cm = isObj(raw.compactMetadata) ? raw.compactMetadata : {};
     const meta: Json = {};
@@ -550,6 +565,8 @@ function classifySystem(raw: Json): Draft[] {
 // linkage
 
 function link(ev: Event, ctx: ClassifyContext): void {
+  // A compaction's summary is the next event after it: any other event ends the wait.
+  if (ctx.compaction && ev.kind !== "summary" && ev.kind !== "compaction") ctx.compaction = undefined;
   if (ev.kind === "call" && ev.toolUseId) {
     ctx.pending.set(ev.toolUseId, ev);
     if (ev.tool) ctx.tools.set(ev.toolUseId, ev.tool);

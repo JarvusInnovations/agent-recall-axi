@@ -20,7 +20,7 @@ Every command.
 | row `call` target | 120 chars | `--head <n>` (same flag; target gets min(n, 120)) |
 | `show` text of `C`/`D` events, input JSON, result text, `meta` strings | 4,000 chars each | `--full` |
 | `show` text of `H` events | never cut | — |
-| `human` total output | 12,000 chars, newest kept | `--budget <chars>`, `--full` |
+| `human` total output | 12,000 chars including the window's opening summary (itself capped at 4,000 as `C` text); the newest human message always prints whole; older messages drop oldest-first | `--budget <chars>`, `--full` |
 | `resume-pack` total | 16,000 chars | `--budget <chars>` |
 | rows per listing | `--limit` default per command (`cli.md`) | `--limit <n>`; `--limit 0` = no cap |
 | `recall` sessions scanned | last 90 days | `--since`, `--from` |
@@ -33,8 +33,11 @@ Every command.
 - A result whose stored text is a persisted-output preview prints `pointer: <path> (42.8k, exists)`
   and the preview; `--full` prints the file's contents instead of the preview. A missing file prints
   `pointer: <path> (42.8k, missing)` and the preview, with no error.
-- A `human` or `resume-pack` output that dropped older messages to meet its budget opens with
-  `omitted: 7 earlier messages; continue with human <session> --to <id>`.
+- A `human` or `resume-pack` output that dropped older messages to meet its budget carries
+  `omitted: 7 earlier messages; continue with human <session> --to <id>` as the last line of its
+  header block, before the messages.
+- `human`'s opening summary over 4,000 chars ends with the house marker, and a
+  `show <summary-id> --full` hint follows; `--full` prints it whole.
 
 ### Cuts never land inside
 

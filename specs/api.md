@@ -53,7 +53,7 @@ resolveId(text: string, scope?: Scope, opts?: { session?: string }): Promise<{ s
 ```ts
 interface ListOpts {
   kinds?: Kind[] | "all";          // default: all but thinking, result
-  window?: number | "last" | "all";
+  window?: number | "last" | "all" | `${number}..`;   // k.. runs to the end (behaviors/context-windows.md)
   from?: Date | EventId; to?: Date | EventId;   // half-open; ids select by position
   limit?: number;                  // 0 = unbounded
   newestLast?: boolean;            // default true when no `from`
@@ -68,7 +68,7 @@ show(session: Session, id: EventId): Promise<Shown>           // the entry, its 
 turns(session: Session, opts?: ListOpts): AsyncIterable<Turn>
 windows(session: Session): Promise<Window[]>
 compactions(session: Session): Promise<Event[]>               // kind "compaction", with meta + summary id
-humanMessages(session: Session, opts?: ListOpts & { budget?: number }): Promise<{ messages: Event[]; omitted: number; continueTo?: EventId; summary?: Event }>
+humanMessages(session: Session, opts?: ListOpts & { budget?: number }): Promise<{ messages: Event[]; matching: number; omitted: number; continueTo?: EventId; summary?: Event }>
 toolCalls(session: Session, opts?: ListOpts & { name?: string; file?: string; errors?: boolean }): AsyncIterable<Event>
 readPointer(pointer: Pointer, session: Session): Promise<{ text: string; exists: boolean; followed: boolean; reason?: string }>
 linkedResult(session: Session, event: Event): Promise<Event | undefined>   // a call's result, a result's call
@@ -106,7 +106,7 @@ interface FindQuery {
   file?: string;            // substring or glob
   tool?: string;            // substring
   kinds?: Kind[];
-  from?: Date | EventId; to?: Date | EventId; window?: number | "last";
+  from?: Date | EventId; to?: Date | EventId; window?: number | "last" | "all" | `${number}..`;
   context?: number | { before: number; after: number };
   limit?: number;
   deep?: boolean;           // search persisted-output files

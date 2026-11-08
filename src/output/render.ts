@@ -198,3 +198,18 @@ export function renderRows(events: Event[], tz: string, opts: RowOpts & { fields
   if (firstCut) out.firstCut = firstCut;
   return out;
 }
+
+/**
+ * A list of objects in TOON's expanded list form (`label[N]:` then `- key: value` items), never a
+ * table: block form for views where the text is the point (cli.md#human-session). Each item is
+ * encoded on its own, so it decodes to the same object.
+ */
+export function renderBlockList(label: string, items: Array<Record<string, unknown>>): string {
+  const lines = [`${label}[${items.length}]:`];
+  for (const item of items) {
+    const body = encode(item).split("\n");
+    lines.push(`  - ${body[0]}`);
+    for (const l of body.slice(1)) lines.push(`    ${l}`);
+  }
+  return lines.join("\n");
+}

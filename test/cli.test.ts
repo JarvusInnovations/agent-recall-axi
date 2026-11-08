@@ -255,8 +255,8 @@ describe("help, planned commands, update", () => {
   it("--help lists commands, marks planned ones, and shows no SDK built-in block", async () => {
     const { stdout } = await run(["--help"]);
     expect(stdout).toContain("events <session>");
-    expect(stdout).toContain("(planned: views)");
-    expect(stdout).not.toContain("(planned: pan)");
+    expect(stdout).toContain("(planned: resume-pack-library)");
+    expect(stdout).not.toContain("(planned: views)");
     expect(stdout).not.toContain("built-in");
     const cmd = await run(["events", "--help"]);
     expect(cmd.stdout).toMatch(/^command: events$/m);
@@ -271,9 +271,9 @@ describe("help, planned commands, update", () => {
     expect(stdout).toContain("planned: sessions-and-recall");
     // errors.md#codes: a USAGE error's help is the command's usage line.
     expect(stdout).toContain("usage: agent-session-axi recall <phrase>");
-    const flag = await run(["events", fx("thinking"), "--window", "last"]);
+    const flag = await run(["events", fx("thinking"), "--json-out"]);
     expect(flag.exitCode).toBe(2);
-    expect(flag.stdout).toContain("planned: views");
+    expect(flag.stdout).toContain("planned: sessions-and-recall");
     expect(flag.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");
     const missing = await run(["events", fx("thinking"), "--limit"]);
     expect(missing.exitCode).toBe(2);
