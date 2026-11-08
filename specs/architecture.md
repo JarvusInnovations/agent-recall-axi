@@ -238,7 +238,11 @@ Two channels from one source, both committed to the same tag:
    `files: [dist, skills/agent-session-axi, LICENSE, README.md]`, `engines.node >= 22`. Install
    with `npm i -g agent-session-axi` or run with `npx -y agent-session-axi`. Publishing follows the
    house develop→main Release-PR flow (`release-prepare`/`release-validate`/`release-publish`
-   workflows) with trusted publishing after a manual first publish (`plans/first-publish.md`).
+   workflows) with trusted publishing after a manual first publish (`RELEASING.md`).
+   `package.json` stays `0.0.0` in git; `publish-npm.yml`, on the GitHub release that
+   `release-publish` creates, sets it from the tag, runs the full CI gate, checks that the
+   committed bundle at the tag reports the tag's version, and runs
+   `npm publish --provenance --access public` on Node 24 with `id-token: write` and no token.
 2. **Skill** `skills/agent-session-axi/`: `SKILL.md` (prose + generated command reference) and a
    **committed, self-contained bundle** `scripts/agent-session-axi.mjs` built by esbuild with every
    dependency inlined, plus an executable bash shim, so `npx skills add JarvusInnovations/agent-session-axi`
@@ -256,11 +260,21 @@ Two channels from one source, both committed to the same tag:
   `// <module path>` comments are stripped, so the bytes do not depend on the dependency
   layout under `node_modules`. esbuild is pinned to
   an exact version so the bytes are reproducible.
-- The version is stamped at build time: `git describe --tags --match 'v[0-9]*'` without its
-  leading `v`, else `<package.json version>-g<short sha>`. `src/version.ts` returns the stamp
+- The version is stamped at build time: `--stamp <version>` when given (a release version,
+  `X.Y.Z` or `X.Y.Z-rc.N`, no `v`; anything else exits 2), else
+  `git describe --tags --match 'v[0-9]*'` without its leading `v`, else
+  `<package.json version>-g<short sha>`. `src/version.ts` returns the stamp
   when it is defined and reads `package.json` otherwise (the npm channel). `--check` replaces the
   one stamped literal on both sides with a placeholder before comparing, so a commit that only
   moves the sha passes and any other byte change fails.
+- **Release stamp.** `release-publish` tags `main`'s merge commit, which `develop` never
+  reaches, so `git describe` on `develop` cannot name a release. The release version is
+  therefore stamped explicitly: before the Release PR merges, a commit on `develop` rebuilds the
+  bundle with `--stamp <version>`, so the tree at the tag (and `develop`, which `npx skills add`
+  installs from) reports the release version. `release-validate.yml` fails a `Release: vX.Y.Z`
+  PR whose committed bundle does not print `X.Y.Z`, and `publish-npm.yml` repeats the check at the
+  tag before publishing. Between releases a rebuilt bundle reports `<package.json version>-g<sha>`
+  (a development build). The order is in `RELEASING.md`.
 - The bundle reads nothing at run time but the logs and its cache: no `package.json`, no
   `node_modules`, no file beside it except, for hints, the existence of the shim.
 - The shim `scripts/agent-session-axi` is bash: it resolves its own symlinks (so a link to it on
@@ -326,6 +340,15 @@ repository fresh and, before anything is installed (`node` only: no `bun install
 its shim: `--version`, then `tail`, `find` and `resume-pack` against the committed fixtures, each
 with a fresh cache. It then installs and builds, runs the same commands through `dist/`, and
 fails unless the outputs match byte for byte.
+
+A scrub gate (`scripts/scrub-check.sh`, `bun run check:scrub`, run in CI before install) scans
+every tracked and untracked-but-not-ignored file except `node_modules/`, `dist/` and `.git/` and
+fails on a marker of the real world: a home path with a user name other than the synthetic
+`user` (`/home/<name>`, `/Users/<name>`; Homebrew's `linuxbrew` prefix is allowed only in the
+committed bundle, where a dependency names it), an email address outside the documentation
+domains (`example.com|net|org`, `*.example`, `*.test`, `*.invalid`, `*.localhost`), and a uuid
+literal outside `test/fixtures/` unless it has the synthetic `xxxxxxxx-xxxx-4000-8000-xxxxxxxxxxxx`
+shape. `test/scrub.test.ts` plants each marker in a throwaway repository and asserts the failure.
 
 ## Principles
 
