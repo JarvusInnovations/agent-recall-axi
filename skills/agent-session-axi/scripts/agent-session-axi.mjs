@@ -15,16 +15,14 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/version.ts
 var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.0.0-g7d4fd4d" : readVersion();
+    VERSION = true ? "0.0.0-g60e4af4" : readVersion();
   }
 });
 
-// node_modules/@toon-format/toon/dist/index.mjs
 function escapeString(value) {
   return value.replace(/\\/g, `\\\\`).replace(/"/g, `\\"`).replace(/\n/g, `\\n`).replace(/\r/g, `\\r`).replace(/\t/g, `\\t`).replace(/[\u0000-\u001F]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
@@ -472,7 +470,6 @@ var init_dist = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/errors.js
 function exitCodeForError(error) {
   if (error instanceof AxiError && error.code === "VALIDATION_ERROR") {
     return 2;
@@ -495,7 +492,6 @@ var init_errors = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/node_modules/@toon-format/toon/dist/index.mjs
 function escapeString2(value) {
   return value.replace(/\\/g, `\\\\`).replace(/"/g, `\\"`).replace(/\n/g, `\\n`).replace(/\r/g, `\\r`).replace(/\t/g, `\\t`).replace(/[\u0000-\u001F]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
@@ -905,7 +901,6 @@ var init_dist2 = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/output.js
 import { homedir } from "node:os";
 function collapseHomeDirectory(path, homeDir = homedir()) {
   if (!path.startsWith(homeDir)) {
@@ -944,7 +939,6 @@ var init_output = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/update.js
 import { spawn } from "node:child_process";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -1472,7 +1466,6 @@ var init_update = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/cli.js
 import { basename as basename2 } from "node:path";
 function defaultFormatError(error) {
   if (error instanceof AxiError) {
@@ -1669,7 +1662,6 @@ var init_cli = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/hooks.js
 import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, realpathSync as realpathSync2, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { basename as basename3, delimiter, dirname as dirname2, join as join2, resolve } from "node:path";
@@ -1741,59 +1733,6 @@ function computeSessionStartHookUpdate(settings, spec) {
     ]
   });
   return [updated, true];
-}
-function computeSessionStartHookRemoval(settings, marker) {
-  if (!settings.hooks) {
-    return [settings, false];
-  }
-  const updated = structuredClone(settings);
-  const hooks = updated.hooks;
-  if (!hooks) {
-    return [settings, false];
-  }
-  let changed = false;
-  if (Array.isArray(hooks.session_start)) {
-    const remaining = hooks.session_start.filter((hook) => !isManagedHook(hook, marker));
-    if (remaining.length !== hooks.session_start.length) {
-      changed = true;
-      if (remaining.length === 0) {
-        delete hooks.session_start;
-      } else {
-        hooks.session_start = remaining;
-      }
-    }
-  }
-  if (Array.isArray(hooks.SessionStart)) {
-    const remainingGroups = [];
-    let sessionStartChanged = false;
-    for (const group of hooks.SessionStart) {
-      if (!Array.isArray(group.hooks)) {
-        remainingGroups.push(group);
-        continue;
-      }
-      const remainingHooks = group.hooks.filter((hook) => !isManagedHook(hook, marker));
-      if (remainingHooks.length === group.hooks.length) {
-        remainingGroups.push(group);
-        continue;
-      }
-      sessionStartChanged = true;
-      if (remainingHooks.length > 0) {
-        remainingGroups.push({ ...group, hooks: remainingHooks });
-      }
-    }
-    if (sessionStartChanged) {
-      changed = true;
-      if (remainingGroups.length > 0) {
-        hooks.SessionStart = remainingGroups;
-      } else {
-        delete hooks.SessionStart;
-      }
-    }
-  }
-  if (Object.keys(hooks).length === 0) {
-    delete updated.hooks;
-  }
-  return changed ? [updated, true] : [settings, false];
 }
 function computeCodexConfigUpdate(content) {
   const newline = content.includes("\r\n") ? "\r\n" : "\n";
@@ -2164,109 +2103,6 @@ function installSessionStartHooks(options = {}) {
     options.onError?.(`${codexConfigPath}: ${message}`);
   }
 }
-function resolveStatusMarker(options, callerName) {
-  const inferred = inferHookOptions(options.execPath ?? process.argv[1]);
-  const marker = options.marker ?? inferred?.marker;
-  if (!marker) {
-    throw new Error(`${callerName}: unable to infer a hook marker from the current process; pass { marker } explicitly`);
-  }
-  return marker;
-}
-function hasManagedJsonHookEntry(path, marker) {
-  if (!existsSync2(path)) {
-    return false;
-  }
-  try {
-    const settings = JSON.parse(readFileSync2(path, "utf-8"));
-    const groups = settings.hooks?.SessionStart ?? [];
-    const inGroups = groups.some((group) => (group.hooks ?? []).some((hook) => isManagedHook(hook, marker)));
-    const legacy = settings.hooks?.session_start ?? [];
-    return inGroups || legacy.some((hook) => isManagedHook(hook, marker));
-  } catch {
-    return false;
-  }
-}
-function hasManagedOpenCodePlugin(path, marker) {
-  if (!existsSync2(path)) {
-    return false;
-  }
-  try {
-    return readFileSync2(path, "utf-8").includes(`${OPENCODE_PLUGIN_MANAGED_PREFIX} ${marker}`);
-  } catch {
-    return false;
-  }
-}
-function isCodexHooksFeatureEnabled(path) {
-  if (!existsSync2(path)) {
-    return false;
-  }
-  try {
-    const [, changed] = computeCodexConfigUpdate(readFileSync2(path, "utf-8"));
-    return !changed;
-  } catch {
-    return false;
-  }
-}
-function sessionStartHookStatus(options = {}) {
-  const marker = resolveStatusMarker(options, "sessionStartHookStatus");
-  const targets = resolveHookScopeTargets(marker, options);
-  return {
-    marker,
-    scope: targets.scope,
-    claude: {
-      installed: hasManagedJsonHookEntry(targets.claudeSettingsPath, marker),
-      path: targets.claudeSettingsPath
-    },
-    codex: {
-      installed: hasManagedJsonHookEntry(targets.codexHooksPath, marker),
-      path: targets.codexHooksPath,
-      userFeatureEnabled: isCodexHooksFeatureEnabled(targets.codexConfigPath),
-      userFeaturePath: targets.codexConfigPath
-    },
-    opencode: {
-      installed: hasManagedOpenCodePlugin(targets.openCodePluginPath, marker),
-      path: targets.openCodePluginPath
-    }
-  };
-}
-function uninstallSessionStartHooks(options = {}) {
-  const inferred = inferHookOptions(options.execPath ?? process.argv[1]);
-  const marker = options.marker ?? inferred?.marker;
-  if (!marker) {
-    return;
-  }
-  const targets = resolveHookScopeTargets(marker, options);
-  for (const target of [targets.claudeSettingsPath, targets.codexHooksPath]) {
-    try {
-      if (!existsSync2(target)) {
-        continue;
-      }
-      const current = JSON.parse(readFileSync2(target, "utf-8"));
-      const [updated, changed] = computeSessionStartHookRemoval(current, marker);
-      if (changed) {
-        writeFileSync(target, `${JSON.stringify(updated, null, 2)}
-`, "utf-8");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      options.onError?.(`${target}: ${message}`);
-    }
-  }
-  const pluginPath = targets.openCodePluginPath;
-  try {
-    if (existsSync2(pluginPath)) {
-      const managedMarker = `${OPENCODE_PLUGIN_MANAGED_PREFIX} ${marker}`;
-      if (readFileSync2(pluginPath, "utf-8").includes(managedMarker)) {
-        rmSync(pluginPath, { force: true });
-      } else {
-        options.onError?.(`${pluginPath}: refusing to remove unmanaged OpenCode plugin`);
-      }
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    options.onError?.(`${pluginPath}: ${message}`);
-  }
-}
 var OPENCODE_PLUGIN_MANAGED_PREFIX, NPM_SHIM_SCRIPT_PATTERNS;
 var init_hooks = __esm({
   "node_modules/axi-sdk-js/dist/hooks.js"() {
@@ -2280,7 +2116,6 @@ var init_hooks = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/index.js
 var init_dist3 = __esm({
   "node_modules/axi-sdk-js/dist/index.js"() {
     init_cli();
@@ -2290,7 +2125,6 @@ var init_dist3 = __esm({
   }
 });
 
-// src/lib/errors.ts
 var AgentSessionError;
 var init_errors2 = __esm({
   "src/lib/errors.ts"() {
@@ -2310,7 +2144,6 @@ var init_errors2 = __esm({
   }
 });
 
-// src/reference.ts
 function findCommand(name) {
   for (const g of COMMAND_GROUPS) for (const c of g.commands) if (c.name === name) return c;
   return void 0;
@@ -2704,7 +2537,6 @@ var init_reference = __esm({
   }
 });
 
-// src/invocation.ts
 import { accessSync, constants, realpathSync as realpathSync3, statSync as statSync2 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { basename as basename4, delimiter as delimiter2, dirname as dirname3, join as join3 } from "node:path";
@@ -2736,19 +2568,21 @@ function onPath(targets, pathVar) {
   }
   return false;
 }
-function collapse(path) {
-  const home = homedir3();
-  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+function shellWord(text) {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
 }
-function quoted(text) {
-  return /^[\w@%+=:,./~-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
+function pathWord(path) {
+  const home = homedir3();
+  if (path === home) return "~";
+  if (path.startsWith(`${home}/`)) return `~/${shellWord(path.slice(home.length + 1))}`;
+  return shellWord(path);
 }
 function cliInvocation(entrypoint = process.argv[1], pathVar = process.env.PATH) {
   const b = bundleShim(entrypoint);
   if (!b) return NAME;
   const targets = b.shim ? [b.shim, b.bundle] : [b.bundle];
   if (onPath(targets, pathVar)) return NAME;
-  return b.shim ? quoted(collapse(b.shim)) : `node ${quoted(collapse(b.bundle))}`;
+  return b.shim ? pathWord(b.shim) : `node ${pathWord(b.bundle)}`;
 }
 var NAME, BUNDLE_FILE, BIN;
 var init_invocation = __esm({
@@ -2760,7 +2594,6 @@ var init_invocation = __esm({
   }
 });
 
-// src/output/help.ts
 function statusNote(c) {
   return c.status === "available" ? "" : ` (planned: ${c.status.planned})`;
 }
@@ -2812,7 +2645,6 @@ var init_help = __esm({
   }
 });
 
-// src/output/truncate.ts
 function spans(text, opts) {
   const out = [];
   const res = [URL_RE, ID_RE, ...opts.paths ? [PATH_RE] : []];
@@ -2884,7 +2716,6 @@ var init_truncate = __esm({
   }
 });
 
-// src/lib/reader.ts
 import { open } from "node:fs/promises";
 async function* readLines(path, opts = {}) {
   const blockSize = opts.blockSize ?? BLOCK_SIZE;
@@ -2930,7 +2761,7 @@ async function* readLinesBackward(path, blockSize = BLOCK_SIZE) {
     if (size === 0) return;
     let end = size;
     let carry2 = [];
-    const join14 = (head2) => carry2.length === 0 ? head2 : Buffer.concat([head2, ...carry2.reverse()]);
+    const join15 = (head2) => carry2.length === 0 ? head2 : Buffer.concat([head2, ...carry2.reverse()]);
     let first = true;
     const emit = (offset, bytes) => {
       if (first) {
@@ -2947,7 +2778,7 @@ async function* readLinesBackward(path, blockSize = BLOCK_SIZE) {
       while (stop > 0) {
         const nl = buf.lastIndexOf(NL, stop - 1);
         if (nl === -1) break;
-        const line2 = emit(start + nl + 1, join14(buf.subarray(nl + 1, stop)));
+        const line2 = emit(start + nl + 1, join15(buf.subarray(nl + 1, stop)));
         carry2 = [];
         if (line2) yield line2;
         stop = nl;
@@ -2955,7 +2786,7 @@ async function* readLinesBackward(path, blockSize = BLOCK_SIZE) {
       if (stop > 0) carry2.push(buf.subarray(0, stop));
       end = start;
     }
-    const line = emit(0, join14(Buffer.alloc(0)));
+    const line = emit(0, join15(Buffer.alloc(0)));
     if (line) yield line;
   } finally {
     await fh.close();
@@ -3007,7 +2838,6 @@ var init_reader = __esm({
   }
 });
 
-// src/lib/model.ts
 function isKind(value) {
   return KINDS.includes(value);
 }
@@ -3052,7 +2882,6 @@ var init_model = __esm({
   }
 });
 
-// src/lib/adapters/claude-code/classify.ts
 import { basename as basename5, join as join4 } from "node:path";
 import { existsSync as existsSync3 } from "node:fs";
 function isSilentType(type) {
@@ -3549,7 +3378,6 @@ var init_classify = __esm({
   }
 });
 
-// src/lib/adapters/claude-code/detect.ts
 async function detect(path) {
   if (!path.endsWith(".jsonl")) return false;
   let n = 0;
@@ -3573,7 +3401,6 @@ var init_detect = __esm({
   }
 });
 
-// src/lib/adapters/claude-code/sessions.ts
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import { basename as basename6, dirname as dirname4, join as join5 } from "node:path";
@@ -3737,7 +3564,6 @@ var init_sessions = __esm({
   }
 });
 
-// src/lib/adapters/claude-code/index.ts
 function parseLine(line) {
   const entry = { seq: line.seq, offset: line.offset };
   if (!line.text.trim()) return line.partial ? null : entry;
@@ -3794,7 +3620,6 @@ var init_claude_code = __esm({
   }
 });
 
-// src/lib/scope.ts
 import { stat as stat2 } from "node:fs/promises";
 import { homedir as homedir5 } from "node:os";
 import { dirname as dirname5, join as join6, resolve as resolve2 } from "node:path";
@@ -3885,7 +3710,6 @@ var init_scope = __esm({
   }
 });
 
-// src/lib/adapters/adapter.ts
 function newContext(session) {
   return { session, pending: /* @__PURE__ */ new Map(), tools: /* @__PURE__ */ new Map() };
 }
@@ -3895,7 +3719,6 @@ var init_adapter = __esm({
   }
 });
 
-// src/lib/window-state.ts
 function unlinkedSummary(ev) {
   return ev.kind === "summary" && !(ev.meta !== void 0 && "compaction" in ev.meta);
 }
@@ -3934,7 +3757,6 @@ var init_window_state = __esm({
   }
 });
 
-// src/lib/cache/store.ts
 import { createHash as createHash2 } from "node:crypto";
 import { lstat, mkdir, open as open2, readFile, rename, rm, stat as stat3, writeFile } from "node:fs/promises";
 import { homedir as homedir6 } from "node:os";
@@ -4074,7 +3896,6 @@ var init_store = __esm({
   }
 });
 
-// src/lib/cache/index.ts
 import { open as open3, readFile as readFile2, readdir as readdir2, rm as rm2, stat as stat4 } from "node:fs/promises";
 import { join as join8, sep } from "node:path";
 function emptyState() {
@@ -4437,7 +4258,6 @@ var init_cache = __esm({
   }
 });
 
-// src/lib/stats.ts
 var stats_exports = {};
 __export(stats_exports, {
   HEAD_TITLE_BYTES: () => HEAD_TITLE_BYTES,
@@ -4671,7 +4491,6 @@ var init_stats = __esm({
   }
 });
 
-// src/lib/session.ts
 import { stat as stat6 } from "node:fs/promises";
 import { resolve as resolve3 } from "node:path";
 async function openSession(path) {
@@ -4738,7 +4557,6 @@ var init_session = __esm({
   }
 });
 
-// src/lib/ids.ts
 import { constants as constants2 } from "node:fs";
 import { access, stat as stat7 } from "node:fs/promises";
 import { homedir as homedir7 } from "node:os";
@@ -4959,7 +4777,6 @@ var init_ids = __esm({
   }
 });
 
-// src/lib/time.ts
 function formatter(tz) {
   let f = formatterCache.get(tz);
   if (!f) {
@@ -5143,7 +4960,6 @@ var init_time = __esm({
   }
 });
 
-// src/output/sizes.ts
 function formatSize(n) {
   if (n < 1e3) return String(n);
   if (n < 999950) return `${(n / 1e3).toFixed(1)}k`;
@@ -5161,7 +4977,6 @@ var init_sizes = __esm({
   }
 });
 
-// src/output/render.ts
 function renderHelp(lines) {
   if (lines.length === 0) return "";
   return `help[${lines.length}]:
@@ -5316,7 +5131,6 @@ var init_render = __esm({
   }
 });
 
-// src/lib/hold.ts
 function kindSet(kinds) {
   if (kinds === "all") return new Set(KINDS);
   return new Set(kinds ?? DEFAULT_KINDS);
@@ -5384,7 +5198,6 @@ var init_hold = __esm({
   }
 });
 
-// src/lib/windows.ts
 function grammarFor(count2) {
   const k = count2 - 1;
   return `--window takes a 0-based window index (0..${k}), last, k.. (${k}.. runs to the end) or all`;
@@ -5557,7 +5370,6 @@ var init_windows = __esm({
   }
 });
 
-// src/flags.ts
 function parseFlags(command, args, specs) {
   const all = [...specs, ...GLOBAL_FLAGS];
   const byName = new Map(all.map((s) => [s.name, s]));
@@ -5662,7 +5474,6 @@ var init_flags = __esm({
   }
 });
 
-// src/commands/common.ts
 import { homedir as homedir8 } from "node:os";
 import { resolve as resolve5 } from "node:path";
 function zoneOf(p, io) {
@@ -5708,7 +5519,7 @@ function shellArg(value) {
   return /^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 function shellPath(path) {
-  return shellArg(collapseHome(path));
+  return pathWord(path);
 }
 function scopeOf(command, p, io) {
   const project2 = getString(p, "project");
@@ -5796,7 +5607,6 @@ var init_common = __esm({
   }
 });
 
-// src/lib/events.ts
 import { readFile as readFile4, realpath, stat as stat8 } from "node:fs/promises";
 import { join as join11, sep as sep2 } from "node:path";
 function windowStart(session, range) {
@@ -6237,7 +6047,6 @@ var init_events = __esm({
   }
 });
 
-// src/commands/json-out.ts
 import { constants as constants3 } from "node:fs";
 import { chmod, lstat as lstat2, mkdtemp, open as open4, rm as rm3, stat as stat9 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6400,7 +6209,6 @@ var init_json_out = __esm({
   }
 });
 
-// src/commands/sessions.ts
 function titleCell(title) {
   return title === void 0 ? "" : headCut(oneLine(title).trim(), DEFAULT_HEAD).text;
 }
@@ -6546,7 +6354,6 @@ var init_sessions2 = __esm({
   }
 });
 
-// src/commands/events.ts
 function flagsOf(name) {
   return findCommand(name)?.flags ?? [];
 }
@@ -6716,7 +6523,6 @@ var init_events2 = __esm({
   }
 });
 
-// src/lib/home.ts
 import { constants as constants4 } from "node:fs";
 import { access as access2, stat as stat10 } from "node:fs/promises";
 async function lastHumanOf(session, opts = {}) {
@@ -6805,7 +6611,6 @@ var init_home = __esm({
   }
 });
 
-// src/hook.ts
 function parseHookPayload(text) {
   if (!text || !text.trim()) return void 0;
   let value;
@@ -6882,7 +6687,6 @@ var init_hook = __esm({
   }
 });
 
-// src/output/resume-layout.ts
 function textCost(text) {
   return Buffer.byteLength(JSON.stringify(text), "utf8");
 }
@@ -6917,7 +6721,6 @@ var init_resume_layout = __esm({
   }
 });
 
-// src/lib/resume.ts
 function invalid2(what, value, grammar) {
   return new AgentSessionError(`resume-pack ${what} ${String(value)} is not valid`, "VALIDATION_ERROR", [grammar]);
 }
@@ -7018,7 +6821,6 @@ var init_resume = __esm({
   }
 });
 
-// src/output/resume.ts
 function windowLine(w) {
   const range = w.count === 1 ? "only window 0" : `windows 0..${w.count - 1}`;
   return w.index === w.count - 1 ? `${w.index} (last; ${range})` : `${w.index} (${range})`;
@@ -7093,7 +6895,6 @@ var init_resume2 = __esm({
   }
 });
 
-// src/commands/resume-pack.ts
 function windowArg(text) {
   if (text === void 0) return void 0;
   const v = text.trim();
@@ -7155,7 +6956,6 @@ var init_resume_pack = __esm({
   }
 });
 
-// src/commands/home.ts
 async function homeView(io, stdin) {
   const payload = parseHookPayload(await readHookStdin(stdin));
   if (payload && RESUME_SOURCES.has(payload.source)) {
@@ -7242,18 +7042,309 @@ var init_home2 = __esm({
   }
 });
 
-// src/commands/hook.ts
-import { mkdirSync as mkdirSync2, mkdtempSync, readFileSync as readFileSync3, realpathSync as realpathSync4, rmSync as rmSync2, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync as mkdirSync2, readFileSync as readFileSync3, realpathSync as realpathSync4, renameSync, rmSync as rmSync2, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { basename as basename7, dirname as dirname8, join as join13 } from "node:path";
+function shellWords(command) {
+  const words = [];
+  let word = "";
+  let inWord = false;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (c === " " || c === "	") {
+      if (inWord) words.push(word);
+      word = "";
+      inWord = false;
+      continue;
+    }
+    inWord = true;
+    if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end === -1) return void 0;
+      word += command.slice(i + 1, end);
+      i = end;
+    } else if (c === '"') {
+      let j = i + 1;
+      for (; j < command.length && command[j] !== '"'; j++) {
+        const d = command[j];
+        if (d === "$" || d === "`") return void 0;
+        if (d === "\\" && j + 1 < command.length && '"\\$`'.includes(command[j + 1])) word += command[++j];
+        else word += d;
+      }
+      if (j >= command.length) return void 0;
+      i = j;
+    } else if (c === "\\") {
+      if (i + 1 >= command.length) return void 0;
+      word += command[++i];
+    } else if ("|&;<>()$`*?[]{}#~\n\r".includes(c)) {
+      return void 0;
+    } else word += c;
+  }
+  if (inWord) words.push(word);
+  return words;
+}
+function isOurCommand(command) {
+  if (typeof command !== "string") return false;
+  const words = shellWords(command);
+  if (!words || words.length !== 1) return false;
+  const w = words[0];
+  return w === NAME || w.startsWith("/") && OUR_FILES.has(basename7(w));
+}
+function shellQuote(word) {
+  return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
+}
+function read(path) {
+  try {
+    return readFileSync3(path, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return void 0;
+    throw new SettingsError(`cannot read: ${err.message}`);
+  }
+}
+function readHooksJson(path) {
+  const text = read(path);
+  if (text === void 0) return { exists: false, text: "", doc: {}, indent: "  ", eol: "\n", trailing: true };
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (err) {
+    throw new SettingsError(`not valid JSON (${err.message})`);
+  }
+  if (!isObject(doc)) throw new SettingsError("the file is not a JSON object");
+  if (doc.hooks !== void 0) {
+    if (!isObject(doc.hooks)) throw new SettingsError("hooks is not an object");
+    if (doc.hooks.SessionStart !== void 0 && !Array.isArray(doc.hooks.SessionStart)) throw new SettingsError("hooks.SessionStart is not an array");
+  }
+  const indent = /^\{\r?\n([ \t]+)\S/.exec(text)?.[1] ?? "  ";
+  return { exists: true, text, doc, indent, eol: text.includes("\r\n") ? "\r\n" : "\n", trailing: /\n$/.test(text) };
+}
+function serializeJson(file, doc) {
+  const body = JSON.stringify(doc, null, file.indent).replace(/\n/g, file.eol);
+  return file.trailing ? `${body}${file.eol}` : body;
+}
+function groupsOf(doc) {
+  return isObject(doc.hooks) && Array.isArray(doc.hooks.SessionStart) ? doc.hooks.SessionStart : [];
+}
+function ourCommands(doc) {
+  const out = [];
+  for (const g of groupsOf(doc)) {
+    if (!isObject(g) || !Array.isArray(g.hooks)) continue;
+    for (const h of g.hooks) if (isObject(h) && isOurCommand(h.command)) out.push(h.command);
+  }
+  return out;
+}
+function withOurEntry(doc, command) {
+  const next2 = structuredClone(doc);
+  let changed = false;
+  if (!isObject(next2.hooks)) {
+    next2.hooks = {};
+    changed = true;
+  }
+  const hooks = next2.hooks;
+  if (!Array.isArray(hooks.SessionStart)) {
+    hooks.SessionStart = [];
+    changed = true;
+  }
+  const groups = hooks.SessionStart;
+  let found = false;
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    if (!isObject(g) || !Array.isArray(g.hooks)) continue;
+    const before = g.hooks.length;
+    g.hooks = g.hooks.filter((h) => {
+      if (!isObject(h) || !isOurCommand(h.command)) return true;
+      if (found) return false;
+      found = true;
+      const e = h;
+      if (e.command !== command || e.type !== "command" || e.timeout !== TIMEOUT_SECONDS) {
+        e.command = command;
+        e.type = "command";
+        e.timeout = TIMEOUT_SECONDS;
+        changed = true;
+      }
+      return true;
+    });
+    if (g.hooks.length !== before) {
+      changed = true;
+      if (g.hooks.length === 0) groups.splice(gi--, 1);
+    }
+  }
+  if (!found) {
+    groups.push({ matcher: "", hooks: [{ type: "command", command, timeout: TIMEOUT_SECONDS }] });
+    changed = true;
+  }
+  return { doc: next2, changed };
+}
+function withoutOurEntries(doc) {
+  const next2 = structuredClone(doc);
+  if (!isObject(next2.hooks) || !Array.isArray(next2.hooks.SessionStart)) return { doc, changed: false };
+  const hooks = next2.hooks;
+  let changed = false;
+  const kept = [];
+  for (const g of hooks.SessionStart) {
+    if (!isObject(g) || !Array.isArray(g.hooks)) {
+      kept.push(g);
+      continue;
+    }
+    const rest = g.hooks.filter((h) => !(isObject(h) && isOurCommand(h.command)));
+    if (rest.length === g.hooks.length) {
+      kept.push(g);
+      continue;
+    }
+    changed = true;
+    if (rest.length) kept.push({ ...g, hooks: rest });
+  }
+  if (!changed) return { doc, changed: false };
+  if (kept.length) hooks.SessionStart = kept;
+  else {
+    delete hooks.SessionStart;
+    if (Object.keys(hooks).length === 0) delete next2.hooks;
+  }
+  return { doc: next2, changed: true };
+}
+function atomicWrite(path, text) {
+  let target = path;
+  let mode;
+  try {
+    if (lstatSync(path).isSymbolicLink()) target = realpathSync4(path);
+    mode = statSync3(target).mode & 4095;
+  } catch {
+  }
+  mkdirSync2(dirname8(target), { recursive: true });
+  const tmp = join13(dirname8(target), `.${basename7(target)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+  try {
+    writeFileSync2(tmp, text, { flag: "wx", mode: mode ?? 420 });
+    if (mode !== void 0) chmodSync(tmp, mode);
+    renameSync(tmp, target);
+  } catch (err) {
+    rmSync2(tmp, { force: true });
+    throw new SettingsError(`cannot write: ${err.message}`);
+  }
+}
+function readText(path) {
+  return read(path);
+}
+function keyPath(raw) {
+  const out = [];
+  let cur = "";
+  let quote;
+  for (const c of raw) {
+    if (quote) {
+      if (c === quote) quote = void 0;
+      else cur += c;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === ".") {
+      out.push(cur.trim());
+      cur = "";
+    } else cur += c;
+  }
+  out.push(cur.trim());
+  return out;
+}
+function featuresState(text) {
+  const lines = text.split(/\r?\n/);
+  let table = null;
+  let state = { kind: "absent" };
+  const bad = (reason) => ({ kind: "bad", reason });
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim() || /^\s*#/.test(line)) continue;
+    const h = HEADER.exec(line);
+    if (h) {
+      const path2 = keyPath(h[2]);
+      if (path2[0] === "features") {
+        if (h[1] === "[[") return bad("features is declared as an array of tables ([[features]])");
+        if (path2.length > 1) return bad(`features has a sub-table ([${h[2]}])`);
+        if (state.kind === "plain") return bad("[features] is declared twice");
+        state = { kind: "plain", header: i, end: i };
+      }
+      table = path2;
+      continue;
+    }
+    const k = KEY.exec(line);
+    if (!k) continue;
+    const path = keyPath(k[1]);
+    if (table === null && path[0] === "features") return bad("features is declared as a top-level key (a dotted key or an inline table)");
+    if (table !== null && table.length === 1 && table[0] === "features") {
+      state.end = i;
+      if (path[0] === "hooks") {
+        if (path.length > 1) return bad("features.hooks is not a boolean");
+        const v = /^\s*(true|false)\s*(?:#.*)?$/.exec(k[2]);
+        if (!v) return bad("features.hooks is not true or false");
+        if (state.hooksLine !== void 0) return bad("features.hooks is set twice");
+        state.hooksLine = i;
+        state.hooks = v[1] === "true";
+      }
+    }
+  }
+  return state;
+}
+function withCodexHooksFeature(text) {
+  const st = featuresState(text);
+  if (st.kind === "bad") throw new SettingsError(st.reason);
+  if (st.kind === "plain" && st.hooks === true) return { text, changed: false };
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  let next2;
+  if (st.kind === "absent") {
+    if (!text.trim()) next2 = `[features]${eol}hooks = true${eol}`;
+    else next2 = `${text}${/\n$/.test(text) ? "" : eol}${eol}[features]${eol}hooks = true${eol}`;
+  } else {
+    const lines = text.split(/\r?\n/);
+    if (st.hooksLine !== void 0) lines[st.hooksLine] = lines[st.hooksLine].replace(/=(\s*)false/, "=$1true");
+    else lines.splice(st.end + 1, 0, "hooks = true");
+    next2 = lines.join(eol);
+  }
+  const check = featuresState(next2);
+  if (check.kind !== "plain" || check.hooks !== true) throw new SettingsError("the updated config did not validate");
+  return { text: next2, changed: true };
+}
+function codexHooksEnabled(text) {
+  if (text === void 0) return false;
+  const st = featuresState(text);
+  return st.kind === "plain" && st.hooks === true;
+}
+var OUR_FILES, TIMEOUT_SECONDS, SettingsError, isObject, HEADER, KEY;
+var init_hook_settings = __esm({
+  "src/commands/hook-settings.ts"() {
+    "use strict";
+    init_invocation();
+    OUR_FILES = /* @__PURE__ */ new Set([NAME, `${NAME}.js`, `${NAME}.mjs`]);
+    TIMEOUT_SECONDS = 10;
+    SettingsError = class extends Error {
+    };
+    isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+    HEADER = /^\s*(\[\[?)\s*([^\]]*?)\s*(\]\]?)\s*(?:#.*)?$/;
+    KEY = /^\s*((?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*'))*)\s*=(.*)$/;
+  }
+});
+
+import { mkdtempSync, realpathSync as realpathSync5, rmSync as rmSync3, statSync as statSync4 } from "node:fs";
 import { homedir as homedir9, tmpdir as tmpdir2 } from "node:os";
-import { delimiter as delimiter3, dirname as dirname8, join as join13, resolve as resolve7 } from "node:path";
-function hookTargets(scope, home, projectDir) {
-  const root = scope === "project" ? resolve7(projectDir) : home;
+import { basename as basename8, delimiter as delimiter3, join as join14, resolve as resolve7 } from "node:path";
+function hookTargets(scope, env, home, projectDir) {
+  const codexHome = env.CODEX_HOME || join14(home, ".codex");
+  const codexConfig = join14(codexHome, "config.toml");
+  if (scope === "project") {
+    const root = resolve7(projectDir);
+    return {
+      claude: join14(root, ".claude", "settings.json"),
+      codex: join14(root, ".codex", "hooks.json"),
+      codexConfig,
+      opencode: join14(root, ".opencode", "plugins", OPENCODE_FILE)
+    };
+  }
   return {
-    claude: join13(root, ".claude", "settings.json"),
-    codex: join13(root, ".codex", "hooks.json"),
-    codexConfig: join13(home, ".codex", "config.toml"),
-    opencode: scope === "project" ? join13(root, ".opencode", "plugins", OPENCODE_FILE) : join13(home, ".config", "opencode", "plugins", OPENCODE_FILE)
+    claude: join14(env.CLAUDE_CONFIG_DIR || join14(home, ".claude"), "settings.json"),
+    codex: join14(codexHome, "hooks.json"),
+    codexConfig,
+    opencode: join14(env.XDG_CONFIG_HOME || join14(home, ".config"), "opencode", "plugins", OPENCODE_FILE)
   };
+}
+function installFromBuildHints() {
+  return [
+    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
+    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`
+  ];
 }
 function hookExecPath(entrypoint) {
   if (!entrypoint) throw new AxiError("cannot tell which binary is running", "VALIDATION_ERROR", installFromBuildHints());
@@ -7263,20 +7354,14 @@ function hookExecPath(entrypoint) {
     throw new AxiError(`a hook cannot run the TypeScript source (${entrypoint})`, "VALIDATION_ERROR", installFromBuildHints());
   }
   const path = resolve7(entrypoint);
-  if (!path.includes(NAME)) {
-    throw new AxiError(`the running binary's path does not name ${NAME} (${path}), so its hook could not be found again`, "VALIDATION_ERROR", installFromBuildHints());
+  if (!OUR_FILES.has(basename8(path))) {
+    throw new AxiError(`the running binary (${path}) is not one ${NAME} installs as a hook (${[...OUR_FILES].join(", ")})`, "VALIDATION_ERROR", installFromBuildHints());
   }
   return path;
 }
-function installFromBuildHints() {
-  return [
-    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
-    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`
-  ];
-}
 function realFile(path) {
   try {
-    return statSync3(path).isFile() ? realpathSync4(path) : void 0;
+    return statSync4(path).isFile() ? realpathSync5(path) : void 0;
   } catch {
     return void 0;
   }
@@ -7288,108 +7373,39 @@ function hookCommandString(execPath, pathVar) {
     resolveRealPath: realFile
   });
 }
-function read(path) {
+function collapseUnder(path, home) {
+  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+function readOrUndefined(path) {
   try {
-    return readFileSync3(path, "utf8");
+    return readText(path);
   } catch {
     return void 0;
   }
 }
-function jsonHookCommand(text) {
-  if (text === void 0) return void 0;
-  try {
-    const settings = JSON.parse(text);
-    for (const group of settings.hooks?.SessionStart ?? []) {
-      for (const h of group.hooks ?? []) if (typeof h.command === "string" && h.command.includes(MARKER)) return h.command;
-    }
-    for (const h of settings.hooks?.session_start ?? []) if (typeof h.command === "string" && h.command.includes(MARKER)) return h.command;
-  } catch {
-    return void 0;
-  }
-  return void 0;
+function isOurPlugin(text) {
+  return text !== void 0 && text.split(/\r?\n/, 1)[0] === OPENCODE_MANAGED;
 }
 function pluginCommand(text) {
-  if (text === void 0 || !text.includes(OPENCODE_MANAGED)) return void 0;
-  const m = /^const command = (".*");$/m.exec(text);
+  if (!isOurPlugin(text)) return void 0;
+  const m = COMMAND_LINE.exec(text);
   try {
     return m ? JSON.parse(m[1]) : void 0;
   } catch {
     return void 0;
   }
 }
-function installedCommand(agent, text) {
-  return agent === "opencode" ? pluginCommand(text) : jsonHookCommand(text);
-}
-function hasManaged(agent, text) {
-  return agent === "opencode" ? text?.includes(OPENCODE_MANAGED) === true : jsonHookCommand(text) !== void 0;
-}
-function collapseUnder(path, home) {
-  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-}
-function writeJson(path, settings) {
-  mkdirSync2(dirname8(path), { recursive: true });
-  writeFileSync2(path, `${JSON.stringify(settings, null, 2)}
-`, "utf8");
-}
-function installJson(path, command, errors) {
+function pluginSource(execPath, raw) {
+  const scratch = mkdtempSync(join14(tmpdir2(), `${NAME}-hook-`));
   try {
-    const text = read(path);
-    const current = text === void 0 ? {} : JSON.parse(text);
-    const [updated, changed] = computeSessionStartHookUpdate(current, { marker: MARKER, command, timeoutSeconds: TIMEOUT_SECONDS });
-    if (changed) writeJson(path, updated);
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
-  }
-}
-function installCodexFeature(path, errors) {
-  try {
-    const [updated, changed] = computeCodexConfigUpdate(read(path) ?? "");
-    if (changed) {
-      mkdirSync2(dirname8(path), { recursive: true });
-      writeFileSync2(path, updated, "utf8");
-    }
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
-  }
-}
-function installOpenCode(path, execPath, errors) {
-  const scratch = mkdtempSync(join13(tmpdir2(), `${NAME}-hook-`));
-  try {
-    installSessionStartHooks({
-      marker: MARKER,
-      execPath,
-      binaryNames: [NAME],
-      shouldInstall: () => true,
-      timeoutSeconds: TIMEOUT_SECONDS,
-      homeDir: scratch,
-      scope: "user"
-    });
-    const next2 = read(join13(scratch, ".config", "opencode", "plugins", OPENCODE_FILE));
-    if (next2 === void 0) throw new Error("the plugin source could not be generated");
-    const current = read(path);
-    if (current !== void 0 && !current.includes(OPENCODE_MANAGED)) {
-      errors.set(path, "refusing to overwrite unmanaged OpenCode plugin");
-      return;
-    }
-    if (current !== next2) {
-      mkdirSync2(dirname8(path), { recursive: true });
-      writeFileSync2(path, next2, "utf8");
-    }
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
+    installSessionStartHooks({ marker: MARKER, execPath, binaryNames: [], shouldInstall: () => true, timeoutSeconds: TIMEOUT_SECONDS, homeDir: scratch, scope: "user" });
+    const text = readText(join14(scratch, ".config", "opencode", "plugins", OPENCODE_FILE));
+    if (text === void 0 || !isOurPlugin(text)) throw new SettingsError("the plugin source could not be generated");
+    if ((text.match(new RegExp(COMMAND_LINE.source, "gm")) ?? []).length !== 1) throw new SettingsError("the generated plugin has no single command line");
+    return text.replace(COMMAND_LINE, () => `const command = ${JSON.stringify(raw)};`);
   } finally {
-    rmSync2(scratch, { recursive: true, force: true });
+    rmSync3(scratch, { recursive: true, force: true });
   }
-}
-function collect(errors, paths) {
-  return (message) => {
-    const path = paths.find((p) => message.startsWith(`${p}: `));
-    if (path) errors.set(path, message.slice(path.length + 2));
-    else errors.set("", message);
-  };
-}
-function isUnmanaged(message) {
-  return message !== void 0 && /unmanaged OpenCode plugin/.test(message);
 }
 function parseScope(p) {
   const v = getString(p, "scope");
@@ -7406,13 +7422,9 @@ function parseAgent(p) {
 async function hookCommand(args, io) {
   const doc = findCommand("hook");
   const sub = args[0];
-  if (sub === void 0 || sub === "--help" || sub === "-h") {
-    if (sub === void 0) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
-    return renderCommandHelp("hook") ?? "";
-  }
-  if (!SUBCOMMANDS.includes(sub)) {
-    throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
-  }
+  if (sub === void 0) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
+  if (sub === "--help" || sub === "-h") return renderCommandHelp("hook") ?? "";
+  if (!SUBCOMMANDS.includes(sub)) throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
   const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => sub === "install" || f.name !== "agent");
   const p = parseFlags(`hook ${sub}`, args.slice(1), specs);
   if (p.help) return renderCommandHelp("hook") ?? "";
@@ -7420,12 +7432,15 @@ async function hookCommand(args, io) {
   const scope = parseScope(p);
   const agent = sub === "install" ? parseAgent(p) : void 0;
   const home = io.env.HOME || homedir9();
-  const targets = hookTargets(scope, home, io.cwd);
-  const scopeFlag = getString(p, "scope") !== void 0 ? ` --scope ${scope}` : "";
-  const show2 = (path) => collapseUnder(path, home);
-  if (sub === "status") return status(scope, home, io, targets, scopeFlag, show2);
-  if (sub === "uninstall") return uninstall(scope, home, io, targets, show2);
-  return install(scope, agent, home, io, targets, scopeFlag, show2);
+  const ctx = {
+    scope,
+    targets: hookTargets(scope, io.env, home, io.cwd),
+    scopeFlag: getString(p, "scope") !== void 0 ? ` --scope ${scope}` : "",
+    show: (path) => collapseUnder(path, home)
+  };
+  if (sub === "status") return status(ctx, io);
+  if (sub === "uninstall") return uninstall(ctx);
+  return install(ctx, agent, io);
 }
 function rowsFor(targets) {
   return [
@@ -7434,114 +7449,142 @@ function rowsFor(targets) {
     { agent: "opencode", path: targets.opencode }
   ];
 }
+function codexFeatures(ctx) {
+  const path = ctx.show(ctx.targets.codexConfig);
+  if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
+  return ctx.scope === "project" ? `not set (needs [features] hooks = true in ${path}; run hook install --scope user or set it yourself)` : `${path} (not set)`;
+}
 function finish(body, help, failed) {
   if (failed) process.exitCode = 1;
   return renderDocument(body, help);
 }
-function install(scope, agent, home, io, targets, scopeFlag, show2) {
-  if (io.env[DISABLE_ENV] === "1") {
-    return renderDocument({ hook: `disabled by ${DISABLE_ENV}=1 (no changes)` });
-  }
-  const execPath = hookExecPath(io.entrypoint ?? process.argv[1]);
-  const command = hookCommandString(execPath, io.env.PATH ?? process.env.PATH);
-  const chosen = rowsFor(targets).filter((r) => agent === void 0 || r.agent === agent);
-  const watched = [...chosen.map((r) => r.path), ...chosen.some((r) => r.agent === "codex") ? [targets.codexConfig] : []];
-  const before = new Map(watched.map((p) => [p, read(p)]));
-  const errors = /* @__PURE__ */ new Map();
-  if (agent === void 0) {
-    installSessionStartHooks({
-      marker: MARKER,
-      execPath,
-      binaryNames: [NAME],
-      shouldInstall: () => true,
-      timeoutSeconds: TIMEOUT_SECONDS,
-      homeDir: home,
-      scope,
-      projectDir: io.cwd,
-      onError: collect(errors, watched)
-    });
-  } else if (agent === "claude") installJson(targets.claude, command, errors);
-  else if (agent === "codex") {
-    installJson(targets.codex, command, errors);
-    installCodexFeature(targets.codexConfig, errors);
-  } else installOpenCode(targets.opencode, execPath, errors);
-  const rows = chosen.map(({ agent: a, path }) => {
-    const err = errors.get(path);
-    if (isUnmanaged(err)) return { agent: a, path: show2(path), state: "unmanaged (left in place)" };
-    if (err !== void 0) return { agent: a, path: show2(path), state: `error: ${err}` };
-    const was = before.get(path);
-    const now = read(path);
-    const state = was === now ? "unchanged" : hasManaged(a, was) ? "updated" : "added";
-    return { agent: a, path: show2(path), state };
-  });
-  const body = {};
-  const changed = rows.some((r) => r.state === "added" || r.state === "updated") || watched.some((p) => before.get(p) !== read(p));
-  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope; no changes)`;
-  const written = chosen.map((r) => installedCommand(r.agent, read(r.path))).find((c) => c !== void 0);
-  body.command = written ?? command;
-  body.targets = rows;
-  if (chosen.some((r) => r.agent === "codex")) {
-    const err = errors.get(targets.codexConfig);
-    body.codex_features = `${show2(targets.codexConfig)} (${err === void 0 ? "hooks = true" : `error: ${err}`})`;
-  }
-  const other = errors.get("");
-  if (other !== void 0) body.error = other;
-  const failed = errors.size > [...errors.values()].filter(isUnmanaged).length;
-  return finish(body, [`Run \`${BIN} hook status${scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${scopeFlag}\` to remove it`], failed);
+function installJson(path, command, before) {
+  const file = readHooksJson(path);
+  const had = ourCommands(file.doc).length > 0;
+  const { doc, changed } = withOurEntry(file.doc, command);
+  before?.();
+  if (!changed) return "unchanged";
+  atomicWrite(path, serializeJson(file, doc));
+  if (!ourCommands(readHooksJson(path).doc).includes(command)) throw new SettingsError("the hook was not in the file after writing");
+  return had ? "updated" : "added";
 }
-function status(scope, home, io, targets, scopeFlag, show2) {
-  const st = sessionStartHookStatus({ marker: MARKER, homeDir: home, scope, projectDir: io.cwd });
+function install(ctx, agent, io) {
+  if (io.env[DISABLE_ENV] === "1") return renderDocument({ hook: `disabled by ${DISABLE_ENV}=1 (no changes)` });
+  const execPath = hookExecPath(io.entrypoint ?? process.argv[1]);
+  const raw = hookCommandString(execPath, io.env.PATH ?? process.env.PATH);
+  const command = shellQuote(raw);
+  const chosen = rowsFor(ctx.targets).filter((r) => agent === void 0 || r.agent === agent);
+  let failed = false;
+  const rows = chosen.map(({ agent: a, path }) => {
+    const row = (state) => ({ agent: a, path: ctx.show(path), state });
+    try {
+      if (a === "claude" || a === "codex" && ctx.scope === "project") return row(installJson(path, command));
+      if (a === "codex") {
+        const cfg = withCodexHooksFeature(readText(ctx.targets.codexConfig) ?? "");
+        readHooksJson(path);
+        const state = installJson(path, command, () => {
+          if (!cfg.changed) return;
+          atomicWrite(ctx.targets.codexConfig, cfg.text);
+          if (!codexHooksEnabled(readText(ctx.targets.codexConfig))) throw new SettingsError("the feature flag was not set after writing");
+        });
+        return row(state === "unchanged" && cfg.changed ? "updated" : state);
+      }
+      const current = readText(path);
+      if (current !== void 0 && !isOurPlugin(current)) return row("unmanaged (left in place)");
+      const next2 = pluginSource(execPath, raw);
+      if (current === next2) return row("unchanged");
+      atomicWrite(path, next2);
+      if (pluginCommand(readText(path)) !== raw) throw new SettingsError("the plugin was not in place after writing");
+      return row(current === void 0 ? "added" : "updated");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
+  });
+  const changed = rows.some((r) => r.state === "added" || r.state === "updated");
+  const body = {
+    hook: changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`,
+    command,
+    targets: rows
+  };
+  if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
+  return finish(body, [`Run \`${BIN} hook status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`], failed);
+}
+function status(ctx, io) {
   let expected;
   try {
     expected = hookCommandString(hookExecPath(io.entrypoint ?? process.argv[1]), io.env.PATH ?? process.env.PATH);
   } catch {
     expected = void 0;
   }
-  const installed = { claude: st.claude.installed, codex: st.codex.installed, opencode: st.opencode.installed };
-  const rows = rowsFor(targets).map(({ agent, path }) => {
-    if (!installed[agent]) return { agent, path: show2(path), state: "absent" };
-    const cmd = installedCommand(agent, read(path));
-    return { agent, path: show2(path), state: expected !== void 0 && cmd !== void 0 && cmd !== expected ? "stale" : "installed" };
+  const seen = /* @__PURE__ */ new Set();
+  let failed = false;
+  const rows = rowsFor(ctx.targets).map(({ agent, path }) => {
+    const row = (state) => ({ agent, path: ctx.show(path), state });
+    try {
+      if (agent === "opencode") {
+        const cmd = pluginCommand(readText(path));
+        if (cmd === void 0) return row("absent");
+        seen.add(shellQuote(cmd));
+        return row(expected !== void 0 && cmd !== expected ? "stale" : "installed");
+      }
+      const cmds = ourCommands(readHooksJson(path).doc);
+      if (!cmds.length) return row("absent");
+      for (const c of cmds) seen.add(c);
+      const stale = expected !== void 0 && (cmds.length > 1 || cmds[0] !== shellQuote(expected));
+      return row(stale ? "stale" : "installed");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
   });
-  const n = rows.filter((r) => r.state !== "absent").length;
-  const stale = rows.some((r) => r.state === "stale");
-  const word = n === 0 ? "not installed" : stale ? "stale" : n < rows.length ? "partly installed" : "installed";
-  const body = { hook: `${word} (${scope} scope)` };
-  const commands = [
-    ...new Set(
-      rowsFor(targets).filter(({ agent }) => installed[agent]).map(({ agent, path }) => installedCommand(agent, read(path))).filter((c) => c !== void 0)
-    )
-  ];
-  if (commands.length === 1) body.command = commands[0];
-  else if (commands.length > 1) body.commands = commands;
+  const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
+  const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
+  const body = { hook: `${word} (${ctx.scope} scope)` };
+  if (seen.size === 1) body.command = [...seen][0];
+  else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
-  body.codex_features = `${show2(st.codex.userFeaturePath)} (${st.codex.userFeatureEnabled ? "hooks = true" : "not set"})`;
-  const help = rows.every((r) => r.state === "installed") ? [`Run \`${BIN} hook uninstall${scopeFlag}\` to remove it`] : [`Run \`${BIN} hook install${scopeFlag}\` to ${n === 0 ? "install" : "repair"} it`];
-  return renderDocument(body, help);
+  body.codex_features = codexFeatures(ctx);
+  const help = rows.every((r) => r.state === "installed") ? [`Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`] : [`Run \`${BIN} hook install${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+  return finish(body, help, failed);
 }
-function uninstall(scope, home, io, targets, show2) {
-  const all = rowsFor(targets);
-  const before = new Map(all.map((r) => [r.path, hasManaged(r.agent, read(r.path))]));
-  const errors = /* @__PURE__ */ new Map();
-  uninstallSessionStartHooks({ marker: MARKER, homeDir: home, scope, projectDir: io.cwd, onError: collect(errors, all.map((r) => r.path)) });
-  const rows = all.map(({ agent, path }) => {
-    const err = errors.get(path);
-    if (isUnmanaged(err)) return { agent, path: show2(path), state: "unmanaged (left in place)" };
-    if (err !== void 0) return { agent, path: show2(path), state: `error: ${err}` };
-    return { agent, path: show2(path), state: before.get(path) && !hasManaged(agent, read(path)) ? "removed" : "absent" };
+function uninstall(ctx) {
+  let failed = false;
+  const rows = rowsFor(ctx.targets).map(({ agent, path }) => {
+    const row = (state) => ({ agent, path: ctx.show(path), state });
+    try {
+      if (agent === "opencode") {
+        const text = readText(path);
+        if (text === void 0) return row("absent");
+        if (!isOurPlugin(text)) return row("unmanaged (left in place)");
+        try {
+          rmSync3(path);
+        } catch (err) {
+          throw new SettingsError(`cannot remove: ${err.message}`);
+        }
+        return row("removed");
+      }
+      const file = readHooksJson(path);
+      const { doc, changed } = withoutOurEntries(file.doc);
+      if (!changed) return row("absent");
+      atomicWrite(path, serializeJson(file, doc));
+      if (ourCommands(readHooksJson(path).doc).length) throw new SettingsError("the hook was still in the file after writing");
+      return row("removed");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
   });
   const removed = rows.some((r) => r.state === "removed");
-  const body = { hook: removed ? `removed (${scope} scope)` : `nothing to remove (${scope} scope)`, targets: rows };
-  const other = errors.get("");
-  if (other !== void 0) body.error = other;
-  const failed = errors.size > [...errors.values()].filter(isUnmanaged).length;
-  return finish(body, [], failed);
+  return finish({ hook: removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`, targets: rows }, [], failed);
 }
-var MARKER, DISABLE_ENV, TIMEOUT_SECONDS, OPENCODE_FILE, OPENCODE_MANAGED, SUBCOMMANDS;
+var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, SUBCOMMANDS;
 var init_hook2 = __esm({
   "src/commands/hook.ts"() {
     "use strict";
-    init_dist3();
     init_dist3();
     init_reference();
     init_flags();
@@ -7549,16 +7592,16 @@ var init_hook2 = __esm({
     init_render();
     init_invocation();
     init_common();
+    init_hook_settings();
     MARKER = NAME;
     DISABLE_ENV = "AGENT_SESSION_AXI_DISABLE_HOOKS";
-    TIMEOUT_SECONDS = 10;
     OPENCODE_FILE = "axi-agent-session-axi.js";
-    OPENCODE_MANAGED = `axi-sdk-js managed opencode plugin: ${MARKER}`;
+    OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
+    COMMAND_LINE = /^const command = (".*");$/m;
     SUBCOMMANDS = ["install", "status", "uninstall"];
   }
 });
 
-// src/lib/find.ts
 import { open as open5 } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
 import { stat as stat11 } from "node:fs/promises";
@@ -8070,7 +8113,6 @@ var init_find = __esm({
   }
 });
 
-// src/commands/find-across.ts
 function timeFlag(p, name) {
   const v = getString(p, name);
   if (v === void 0 || parseId(v.toLowerCase())) return "";
@@ -8213,7 +8255,6 @@ var init_find_across = __esm({
   }
 });
 
-// src/commands/find.ts
 function looksLikeSessionRef(text) {
   if (text === "latest") return true;
   if (text.includes("/") || text.startsWith(".") || text.startsWith("~") || text.endsWith(".jsonl")) return true;
@@ -8446,7 +8487,6 @@ var init_find2 = __esm({
   }
 });
 
-// src/commands/show.ts
 function localTime(iso, tz) {
   const d = new Date(iso);
   return `${formatDay(d, tz)} ${formatClock(d, tz)} ${tz}`;
@@ -8698,16 +8738,8 @@ var init_show = __esm({
   }
 });
 
-// src/commands/update.ts
-import { realpathSync as realpathSync5 } from "node:fs";
 function installChannel(entrypoint) {
-  if (!entrypoint) return "npm";
-  let path = entrypoint;
-  try {
-    path = realpathSync5(entrypoint);
-  } catch {
-  }
-  return /(^|[\\/])skills[\\/]/.test(path) ? "skill" : "npm";
+  return bundleShim(entrypoint) ? "skill" : "npm";
 }
 async function updateCommand(args, entrypoint) {
   const p = parseFlags("update", args, findCommand("update")?.flags ?? []);
@@ -8734,7 +8766,6 @@ var init_update2 = __esm({
   }
 });
 
-// src/commands/pan.ts
 function countArg(verb, p) {
   const usage = usageLine(verb);
   let n = getNumber(p, "limit");
@@ -8856,7 +8887,6 @@ var init_pan = __esm({
   }
 });
 
-// src/commands/cache.ts
 async function cacheCommand(args, io) {
   const sub = args[0];
   if (sub === void 0 || sub === "--help" || sub === "-h") {
@@ -8927,7 +8957,6 @@ var init_cache2 = __esm({
   }
 });
 
-// src/lib/turns.ts
 function close(o, next2) {
   const t = o.turn;
   t.ended = o.boundary ? "compaction" : next2 || o.lastWork === "assistant" ? "stop" : "open";
@@ -8993,7 +9022,6 @@ var init_turns = __esm({
   }
 });
 
-// src/lib/human.ts
 function budgetCut(all, budget) {
   if (budget === Infinity || all.length === 0) return { kept: all, omitted: 0 };
   let used = all[all.length - 1].size;
@@ -9042,7 +9070,6 @@ var init_human = __esm({
   }
 });
 
-// src/lib/tools.ts
 function toolFilter(opts) {
   const name = opts.name?.toLowerCase();
   const file = opts.file !== void 0 ? compileQuery({ file: opts.file }).file : void 0;
@@ -9105,7 +9132,6 @@ var init_tools = __esm({
   }
 });
 
-// src/commands/views.ts
 import { open as openFile, stat as stat12 } from "node:fs/promises";
 async function lineCount(path) {
   const [newlines, st] = await Promise.all([countNewlines(path), stat12(path)]);
@@ -9551,7 +9577,6 @@ var init_views = __esm({
   }
 });
 
-// src/lib/recall.ts
 import { readFile as readFile5 } from "node:fs/promises";
 function tokens2(text) {
   return text.toLowerCase().match(WORD) ?? [];
@@ -9779,7 +9804,6 @@ var init_recall = __esm({
   }
 });
 
-// src/commands/recall.ts
 async function recallCommand(args, io) {
   const p = parseFlags("recall", args, findCommand("recall")?.flags ?? []);
   if (p.help) return renderCommandHelp("recall") ?? "";
@@ -9889,7 +9913,6 @@ var init_recall2 = __esm({
   }
 });
 
-// src/cli.ts
 var cli_exports = {};
 __export(cli_exports, {
   formatError: () => formatError,
@@ -9999,7 +10022,6 @@ var init_cli2 = __esm({
   }
 });
 
-// node_modules/axi-sdk-js/dist/fast-path.js
 function tryFastPath(argv, options) {
   if (argv.length !== 1) {
     return false;
@@ -10013,7 +10035,6 @@ function tryFastPath(argv, options) {
   return true;
 }
 
-// bin/agent-session-axi.ts
 init_version();
 import { fstatSync } from "node:fs";
 function payloadStdin() {
