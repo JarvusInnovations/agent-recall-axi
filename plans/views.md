@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 depends: [pan]
 specs:
   - specs/cli.md
