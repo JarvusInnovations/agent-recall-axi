@@ -13,6 +13,10 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
+/** A cache directory no other test has written: for outputs that depend on the cache being absent. */
+let caches = 0;
+const freshCache = () => join(tmp, `cache-${++caches}`);
+
 const rowLines = (out: string, label: string) => {
   const lines = out.split("\n");
   const i = lines.findIndex((l) => l.startsWith(`${label}[`));
@@ -99,7 +103,7 @@ describe("events", () => {
     const fwd = await run(["events", fx("parallel-tools"), "--from", "a3000003:2", "--to", "a3000003:9", "--limit", "1"]);
     expect(fwd.stdout).toContain(`Run \`agent-session-axi events ${path} --from a3000003:3 --to a3000003:9 --limit 1\` for later rows`);
     const tail = await run(["tail", fx("parallel-tools"), "2", "--kind", "call"]);
-    expect(tail.stdout).toContain(`Run \`agent-session-axi events ${path} --to a3000003:4 --kind call --limit 2\` for earlier rows`);
+    expect(tail.stdout).toContain(`Run \`agent-session-axi prev a3000003:4 --session ${path} --kind call --limit 2\` for earlier rows`);
   });
 
   it("the cut note is a complete command that shows those rows whole", async () => {
@@ -169,11 +173,12 @@ describe("events", () => {
 
 describe("tail", () => {
   it("prints the last 20 visible rows by default", async () => {
-    const { stdout, exitCode } = await run(["tail", long]);
+    // A fresh cache: no offset table, so the count is the honest fallback.
+    const { stdout, exitCode } = await run(["tail", long], { env: { XDG_CACHE_HOME: freshCache() } });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("tail[20]{id,t,kind,text}:");
     expect(stdout).toMatch(/^count: 20 \(newest; earlier rows exist\)$/m);
-    expect(stdout).toMatch(/Run `agent-session-axi events .* --to f0000099:\d+` for earlier rows/);
+    expect(stdout).toMatch(/Run `agent-session-axi prev f0000099:\d+ --session .*` for earlier rows/);
   });
 
   it("`tail <s> 5` and `--limit 5` agree", async () => {
@@ -193,10 +198,11 @@ describe("tail", () => {
 
   it("an exact count when only silent lines precede the n-th row", async () => {
     // string-content opens with a silent permission-mode line, then exactly 4 visible rows.
-    const { stdout } = await run(["tail", fx("string-content"), "4"]);
+    const env = { XDG_CACHE_HOME: freshCache() };
+    const { stdout } = await run(["tail", fx("string-content"), "4"], { env });
     expect(stdout).toMatch(/^count: 4 of 4$/m);
     expect(stdout).not.toContain("for earlier rows");
-    const three = await run(["tail", fx("string-content"), "3"]);
+    const three = await run(["tail", fx("string-content"), "3"], { env });
     expect(three.stdout).toMatch(/^count: 3 \(newest; earlier rows exist\)$/m);
   });
 
@@ -249,7 +255,8 @@ describe("help, planned commands, update", () => {
   it("--help lists commands, marks planned ones, and shows no SDK built-in block", async () => {
     const { stdout } = await run(["--help"]);
     expect(stdout).toContain("events <session>");
-    expect(stdout).toContain("(planned: pan)");
+    expect(stdout).toContain("(planned: views)");
+    expect(stdout).not.toContain("(planned: pan)");
     expect(stdout).not.toContain("built-in");
     const cmd = await run(["events", "--help"]);
     expect(cmd.stdout).toMatch(/^command: events$/m);

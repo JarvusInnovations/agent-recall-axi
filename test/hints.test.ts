@@ -15,7 +15,7 @@ describe("hints when an <s8> is shared in scope", () => {
     expect(tail.exitCode).toBe(0);
     const hs = hints(tail.stdout);
     expect(hs.length).toBeGreaterThan(0);
-    expect(tail.stdout).toContain(`events ${FULL} --to c3b5d7e9:2`);
+    expect(tail.stdout).toContain(`prev c3b5d7e9:2 --session ${FULL}`);
     expect(tail.stdout).toContain(`show c3b5d7e9:2 --session ${FULL}`);
     for (const h of hs) {
       const r = await run(h, { cwd });
@@ -42,6 +42,6 @@ describe("hints when an <s8> is shared in scope", () => {
 
   it("a unique <s8> stays short", async () => {
     const r = await run(["tail", "c2a4e6f1", "1"], { cwd });
-    expect(r.stdout).toContain("events c2a4e6f1 --to c2a4e6f1:2");
+    expect(r.stdout).toContain("prev c2a4e6f1:2 --limit 1`");
   });
 });

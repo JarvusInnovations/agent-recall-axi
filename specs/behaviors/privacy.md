@@ -22,8 +22,10 @@ Every command, the library, the skill and the session hook.
   caller how to update by hand (`cli.md#update`). There is no exception.
 - **No writes next to the logs.** The tool never creates, modifies, or deletes anything under the
   log directory, including the session sidecar directories. Session files are opened read-only.
-- **Cache** (`architecture.md#cache`): derived indexes only (offsets, hashes, per-session stats,
-  and, for `recall`, a term index). It lives under `$XDG_CACHE_HOME/agent-session-axi/` (default
+- **Cache** (`architecture.md#cache`): derived indexes only. The cache may hold ids, seqs,
+  offsets, hashes, kinds, counts, tool names and the file paths a call targeted; it never holds
+  message text, tool input text or result text (the one planned exception is `recall`'s term
+  index, word tokens → seqs). It lives under `$XDG_CACHE_HOME/agent-session-axi/` (default
   `~/.cache/agent-session-axi/`), is created with owner-only permissions, is keyed by file identity
   so it can never attribute one file's content to another, and is fully removable with
   `cache clear`. Deleting it loses nothing; everything is rebuilt from the logs.

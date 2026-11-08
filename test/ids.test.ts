@@ -171,7 +171,7 @@ describe("latest", () => {
     expect(latest.stdout).toMatch(/^session: b2000012 /m);
     const prefix = await run(["tail", "aa00000a", "2"], { env: tenv });
     expect(prefix.stdout).toMatch(/^session: aa00000a /m);
-    expect(prefix.stdout).toContain("Run `agent-session-axi events aa00000a --to aa00000a:");
+    expect(prefix.stdout).toContain("Run `agent-session-axi prev aa00000a:");
     const uuid = await run(["events", "a3000003-0000-4000-8000-000000000000"], { env: tenv });
     expect(uuid.stdout).toMatch(/^session: a3000003 /m);
     const both = await run(["tail", "latest", "--all", "--project", "/src/widget"], { env: tenv });

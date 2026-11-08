@@ -16,6 +16,8 @@ export interface Line {
   text: string;
   /** The last line of a file that does not end in a newline (a live file mid-append). */
   partial: boolean;
+  /** Byte offset just past the line (and its newline): where the next line starts. */
+  end?: number;
 }
 
 export interface ForwardOpts {
@@ -50,7 +52,7 @@ export async function* readLines(path: string, opts: ForwardOpts = {}): AsyncGen
         const text = pieces.length ? Buffer.concat([...pieces, part]).toString("utf8") : part.toString("utf8");
         pieces = [];
         if (opts.endSeq !== undefined && seq >= opts.endSeq) return;
-        yield { seq, offset: lineStart, text, partial: false };
+        yield { seq, offset: lineStart, text, partial: false, end: position + nl + 1 };
         seq++;
         lineStart = position + nl + 1;
         from = nl + 1;
@@ -60,7 +62,7 @@ export async function* readLines(path: string, opts: ForwardOpts = {}): AsyncGen
     }
     if (pieces.length) {
       if (opts.endSeq !== undefined && seq >= opts.endSeq) return;
-      yield { seq, offset: lineStart, text: Buffer.concat(pieces).toString("utf8"), partial: true };
+      yield { seq, offset: lineStart, text: Buffer.concat(pieces).toString("utf8"), partial: true, end: position };
     }
   } finally {
     await fh.close();

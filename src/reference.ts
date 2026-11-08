@@ -69,6 +69,17 @@ const ALL: FlagSpec = { name: "all", value: "boolean", describe: "every project 
 const REF_PROJECT: FlagSpec = { ...PROJECT, describe: "resolve <session>/<id> in this project (a path, encoded dir name, or unique cwd substring)" };
 const REF_ALL: FlagSpec = { ...ALL, describe: "resolve <session>/<id> across every project" };
 
+/** Flags the pan verbs share (cli.md#around-id--next-id--prev-id). */
+const PAN_FLAGS: FlagSpec[] = [
+  KIND,
+  HEAD,
+  { name: "full", value: "boolean", describe: "lift the head cap (and, on next/prev without <n>, the row cap)" },
+  FIELDS,
+  { name: "session", value: "string", arg: "<ref>", describe: "the session a bare <seq> belongs to" },
+  REF_PROJECT,
+  REF_ALL,
+];
+
 export const SHOW_FIELDS = [
   "t",
   "kind",
@@ -191,9 +202,38 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         flags: [LIMIT("20"), KIND, HEAD, FULL, FIELDS, REF_PROJECT, REF_ALL],
         examples: ["tail latest", "tail 7a2f1c3e 5 --kind all", "tail ./7a2f1c3e-0000-4000-8000-000000000001.jsonl"],
       },
-      { name: "around", usage: "around <id> [--before <n>] [--after <n>]", summary: "rows on both sides of an id", status: { planned: "pan" } },
-      { name: "next", usage: "next <id> [<n>]", summary: "the n visible rows after an id", status: { planned: "pan" } },
-      { name: "prev", usage: "prev <id> [<n>]", summary: "the n visible rows before an id", status: { planned: "pan" } },
+      {
+        name: "around",
+        usage: "around <id> [--before <n>] [--after <n>] [--context <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        summary: "rows on both sides of an id, the anchor included",
+        status: "available",
+        args: [ID_ARG],
+        flags: [
+          { name: "before", value: "number", arg: "<n>", describe: "visible rows before the anchor", default: "5" },
+          { name: "after", value: "number", arg: "<n>", describe: "visible rows after the anchor", default: "5" },
+          { name: "context", value: "number", arg: "<n>", describe: "sets --before and --after; an explicit side overrides it" },
+          ...PAN_FLAGS,
+        ],
+        examples: ["around 7a2f1c3e:418", "around 7a2f1c3e:418 --before 2 --after 0", "around 418 --session latest --context 3 --kind all"],
+      },
+      {
+        name: "next",
+        usage: "next <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        summary: "the n visible rows after an id (default 20)",
+        status: "available",
+        args: [ID_ARG, "<n>: same as --limit"],
+        flags: [LIMIT("20"), ...PAN_FLAGS],
+        examples: ["next 7a2f1c3e:418", "next 7a2f1c3e:418 7", "next 7a2f1c3e:418 --kind human,call"],
+      },
+      {
+        name: "prev",
+        usage: "prev <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        summary: "the n visible rows before an id (default 20), in file order",
+        status: "available",
+        args: [ID_ARG, "<n>: same as --limit"],
+        flags: [LIMIT("20"), ...PAN_FLAGS],
+        examples: ["prev 7a2f1c3e:418", "prev 7a2f1c3e:418 7", "prev 7a2f1c3e:418 --kind all"],
+      },
     ],
   },
   {
@@ -252,7 +292,18 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     group: "setup",
     commands: [
       { name: "hook", usage: "hook install|status|uninstall [--scope user|project]", summary: "opt-in SessionStart hook", status: { planned: "skill-and-hook" } },
-      { name: "cache", usage: "cache status | cache clear", summary: "the disposable derived cache", status: { planned: "pan" } },
+      {
+        name: "cache",
+        usage: "cache status | cache clear [--project <p> | --all]",
+        summary: "the disposable derived cache: where it is, what is indexed, how to clear it",
+        status: "available",
+        args: ["status: the directory, its size, every indexed session and its state", "clear: delete the cache (with --project, only that project's records)"],
+        flags: [
+          { name: "project", value: "string", arg: "<p>", describe: "clear only this project's session records (clear only)" },
+          { name: "all", value: "boolean", describe: "clear the whole cache, the default (clear only)" },
+        ],
+        examples: ["cache status", "cache clear", "cache clear --project ~/src/widget"],
+      },
       {
         name: "update",
         usage: "update [--check]",

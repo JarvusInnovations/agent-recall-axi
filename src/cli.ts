@@ -13,6 +13,8 @@ import { runFind } from "./commands/find.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { showCommand } from "./commands/show.js";
 import { updateCommand } from "./commands/update.js";
+import { panCommand } from "./commands/pan.js";
+import { cacheCommand } from "./commands/cache.js";
 
 const USAGE_CODES = new Set(["USAGE", "UNKNOWN_FLAG", "VALIDATION_ERROR"]);
 
@@ -80,6 +82,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   commands.show = (a) => showCommand(a, ctx, "show");
   // The alias: the same handler, so the same arguments print the same bytes (only --help differs).
   commands.zoom = (a) => showCommand(a, ctx, "zoom");
+  // The pan verbs and the cache (plan pan).
+  commands.around = (a) => panCommand("around", a, ctx);
+  commands.next = (a) => panCommand("next", a, ctx);
+  commands.prev = (a) => panCommand("prev", a, ctx);
+  commands.cache = (a) => cacheCommand(a, ctx);
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
 
