@@ -7,7 +7,10 @@ import { formatId } from "../lib/ids.js";
 import type { CallStatus, Event, EventId } from "../lib/model.js";
 import { formatClock, formatDay, formatMonthDayClock } from "../lib/time.js";
 import { formatSize } from "./sizes.js";
-import { head } from "./truncate.js";
+import { head, oneLine, targetCut } from "./truncate.js";
+
+// Pure string cuts live in truncate.ts (no TOON), so the library can cost what a row prints.
+export { oneLine, targetCut };
 import type { RowField } from "../reference.js";
 
 export const DEFAULT_HEAD = 200;
@@ -27,25 +30,9 @@ export function renderDocument(body: Record<string, unknown>, help: string[] = [
   return parts.join("\n");
 }
 
-/** row-format.md#text-by-kind: newline runs collapse to one space; nothing else changes. */
-export function oneLine(text: string): string {
-  return text.replace(/(\r?\n)+/g, " ");
-}
-
 /** A row head cut (behaviors/truncation.md): URL/id-protected, marked with `…`. */
 export function headCut(text: string, n: number): { text: string; cut: boolean } {
   return head(text, n);
-}
-
-/**
- * A `call` target cut to min(head, 120): a target that is itself a path is kept whole; inside a
- * longer target (a shell command) path-like tokens are kept whole and the rest is cut.
- */
-export function targetCut(ev: Event, cap: number): { text: string; cut: boolean } {
-  const target = oneLine(ev.target ?? "");
-  // A path target is kept whole, within the same bound as any protected span (twice the cap).
-  if (ev.files?.includes(ev.target ?? "") && (cap <= 0 || target.length <= 2 * cap)) return { text: target, cut: false };
-  return head(target, cap, { paths: true });
 }
 
 export function renderStatus(s: CallStatus | undefined): string {
