@@ -145,10 +145,19 @@ export function sessionForPath(path: string, project?: Project): Session {
 
 export async function* listSessions(project: Project, opts: { subagents?: boolean } = {}): AsyncGenerator<Session> {
   const files = await jsonlFiles(project.dir);
+  // Sidecar directories from one listing, so a session without one costs no stat.
+  let sidecars: Set<string> | undefined;
+  if (opts.subagents) {
+    try {
+      sidecars = new Set((await readdir(project.dir, { withFileTypes: true })).filter((d) => !d.isFile()).map((d) => d.name));
+    } catch {
+      sidecars = new Set();
+    }
+  }
   for (const f of files) {
     const main = sessionForPath(join(project.dir, f), project);
     yield main;
-    if (!opts.subagents) continue;
+    if (!opts.subagents || !sidecars?.has(basename(main.sidecar))) continue;
     const subDir = join(main.sidecar, "subagents");
     if (!(await isDir(subDir))) continue;
     for (const sf of await jsonlFiles(subDir)) {
