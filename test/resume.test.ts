@@ -10,6 +10,7 @@ import { decode } from "@toon-format/toon";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { longSummarySession, RESUME_HUMAN, resumeSession, sharedS8Sessions, silentAgentSession } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
+import { LAYER_KEYS } from "../src/output/resume-layout.js";
 import { buildResumePack, humanMessages, openSession, packCost, toolCalls, type Event, type ResumePack } from "../src/lib/index.js";
 import { formatId } from "../src/lib/ids.js";
 
@@ -45,7 +46,7 @@ describe("layers", () => {
     const keys = [...r.stdout.matchAll(/^([a-z_]+)(\[\d+\])?(\{[^}]*\})?:/gm)].map((m) => m[1]);
     expect(keys).toEqual(["session", "window", "budget", "layers", "day", "tz", "summary", "human", "tools", "claims", "help"]);
     expect(r.stdout).toMatch(/^window: 1 \(last; windows 0\.\.1\)$/m);
-    expect(r.stdout).toMatch(/^layers: summary C; human H \(verbatim\); tools D; claims C$/m);
+    expect(r.stdout).toMatch(/^layers: summary C; human H \(verbatim\); tools C \(results D\); claims C$/m);
     expect(r.stdout).toMatch(/^budget: [\d.]+k of 16\.0k used$/m);
     expect(r.stdout).toContain("human[6]:");
     expect(r.stdout).toContain("tools[10]{id,t,tool,target,result}:");
@@ -72,7 +73,7 @@ describe("layers", () => {
     expect(pack.claims.map((e) => e.kind)).toEqual(["assistant", "assistant", "assistant"]);
     expect(pack.omitted).toEqual({ human: 0 });
     const all = [pack.summary!, ...pack.human, ...pack.tools, ...pack.claims];
-    expect(pack.budget).toEqual({ used: all.reduce((n, e) => n + packCost(e), 0), limit: 16_000 });
+    expect(pack.budget).toEqual({ used: LAYER_KEYS + all.reduce((n, e) => n + packCost(e), 0), limit: 16_000 });
   });
 
   it("agrees with human and tools over the same window", async () => {
@@ -92,7 +93,7 @@ describe("layers", () => {
     const r = await run(["resume-pack", files.resume, "--window", "0"]);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).not.toMatch(/^summary:/m);
-    expect(r.stdout).toMatch(/^layers: human H \(verbatim\); tools D; claims C$/m);
+    expect(r.stdout).toMatch(/^layers: human H \(verbatim\); tools C \(results D\); claims C$/m);
     expect(r.stdout).toMatch(/^window: 0 \(windows 0\.\.1\)$/m);
     const doc = body(r.stdout);
     expect(texts(doc.human)).toEqual(["start the flange split"]);
@@ -142,7 +143,7 @@ describe("budget", () => {
     const r = await run(["resume-pack", files.resume, "--budget", "2000"]);
     const doc = body(r.stdout);
     const n = pack.omitted.human;
-    const cont = `human ${files.resume} --window 1 --to ${formatId(pack.omitted.continueTo!)}`;
+    const cont = `human ${files.resume} --window 1 --to ${formatId(pack.omitted.continueTo!)} --budget 0`;
     expect(doc.omitted).toBe(`${n} earlier message${n === 1 ? "" : "s"}; continue with ${cont}`);
     // omitted: is the header's last line, before the layers.
     const lines = r.stdout.split("\n");
@@ -180,7 +181,6 @@ describe("validation", () => {
     for (const args of [
       ["--window", "all"],
       ["--window", "1.."],
-      ["--budget", "0"],
       ["--budget", "-5"],
       ["--tools", "x"],
     ]) {
@@ -192,7 +192,7 @@ describe("validation", () => {
     expect(past.exitCode).toBe(2);
     expect(past.stdout).toContain("windows 0..1");
     const s = await openSession(files.resume);
-    for (const opts of [{ window: "all" }, { budget: 0 }, { budget: 1.5 }, { tools: -1 }, { claims: Number.NaN }]) {
+    for (const opts of [{ window: "all" }, { budget: -1 }, { budget: 1.5 }, { tools: -1 }, { claims: Number.NaN }]) {
       await expect(buildResumePack(s, opts as never)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     }
     const missing = await run(["resume-pack"]);

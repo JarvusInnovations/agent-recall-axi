@@ -1040,6 +1040,38 @@ export function silentAgentSession(s8 = "eb00002b"): string {
   return s.render();
 }
 
+/** Many short human messages: per-event layout overhead dominates the rendered size. */
+export function manyShortSession(s8 = "ec00002c", n = 600): string {
+  const s = new SessionBuilder("widget", s8, START);
+  for (let i = 1; i <= n; i++) s.human(`ok ${i}`);
+  s.say("Done.");
+  return s.render();
+}
+
+/** Texts full of characters TOON escapes (control characters, quotes, backslashes, newlines). */
+export function escapeHeavySession(s8 = "ed00002d"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  const nasty = (i: number) => `step ${i}: \u0001\u0002\u001b[31m "quoted" back\\slash\ttab\nnew line ünï ${"\u0007".repeat(20)}`;
+  for (let i = 1; i <= 30; i++) {
+    s.human(nasty(i));
+    const id = TOOL(s8, i);
+    s.assistant([s.toolUse(id, "Bash", { command: `echo "${nasty(i)}" , and, commas` })]);
+    s.toolResult(id, "ok");
+    s.say(nasty(i));
+  }
+  return s.render();
+}
+
+/** Ten 3,000-char human messages: a small budget omits more than `human`'s own 12,000. */
+export function longHumansSession(s8 = "ee00002e"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  for (let i = 1; i <= 10; i++) {
+    s.human(`long ${i}: ${deterministicText(VOCAB, 3000)}`);
+    s.say(`Read ${i}.`);
+  }
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 

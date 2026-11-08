@@ -291,7 +291,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           TO,
           SINCE,
           { ...WINDOW, describe: "one compaction window (a 0-based index, last, k.. or all); a window that opens with a summary prints it after the messages" },
-          { name: "budget", value: "number", arg: "<chars>", describe: "characters of message text to print, newest kept (the newest is always printed whole)", default: "12000" },
+          { name: "budget", value: "number", arg: "<chars>", describe: "characters of message text to print, newest kept (the newest is always printed whole); 0 = no budget", default: "12000" },
           { name: "full", value: "boolean", describe: "lift the budget" },
           { name: "rows", value: "boolean", describe: "the standard row table instead of whole messages" },
           REF_PROJECT,
@@ -340,7 +340,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         args: [SESSION_ARG],
         flags: [
           { name: "window", value: "string", arg: "<k|last>", describe: "the one compaction window: a 0-based index or last", default: "last" },
-          { name: "budget", value: "number", arg: "<chars>", describe: "characters of content; claims drop first, then tool calls, then the oldest human messages (the newest always prints)", default: "16000" },
+          { name: "budget", value: "number", arg: "<chars>", describe: "bytes of rendered layers, 0 = no budget; claims drop first, then tool calls, then the oldest human messages, then the summary (the newest human message always prints)", default: "16000" },
           { name: "tools", value: "number", arg: "<n>", describe: "the window's last n tool calls", default: "10" },
           { name: "claims", value: "number", arg: "<n>", describe: "the window's last n assistant texts", default: "3" },
           REF_PROJECT,

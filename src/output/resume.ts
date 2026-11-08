@@ -9,7 +9,7 @@ import type { Event } from "../lib/model.js";
 import type { ResumePack } from "../lib/resume.js";
 import { renderBlockList, renderHelp, renderStatus, targetCut, TARGET_HEAD, timeColumn } from "./render.js";
 import { formatSize } from "./sizes.js";
-import { detail, DETAIL_CAP } from "./truncate.js";
+import { summaryText } from "./resume-layout.js";
 
 const BIN = "agent-session-axi";
 
@@ -47,15 +47,16 @@ export function renderResumePack(pack: ResumePack, opts: RenderResumeOpts): stri
     if (s.parent) header.parent = s.parent.slice(0, 8);
   }
   header.window = windowLine(pack.window);
-  header.budget = `${formatSize(pack.budget.used)} of ${formatSize(pack.budget.limit)} used`;
-  header.layers = `${pack.summary ? "summary C; " : ""}human H (verbatim); tools D; claims C`;
+  header.budget = pack.budget.limit > 0 ? `${formatSize(pack.budget.used)} of ${formatSize(pack.budget.limit)} used` : `${formatSize(pack.budget.used)} used (no limit)`;
+  header.layers = `${pack.summary || pack.omitted.summary ? "summary C; " : ""}human H (verbatim); tools C (results D); claims C`;
   const all: Event[] = [...(pack.summary ? [pack.summary] : []), ...pack.human, ...pack.tools, ...pack.claims];
   const time = timeColumn(all, opts.tz);
   Object.assign(header, time.header);
   header.tz = opts.tz;
   const help: string[] = [];
   if (pack.omitted.human > 0 && pack.omitted.continueTo) {
-    const cont = `human ${ref} --window ${pack.window.index} --to ${formatId(pack.omitted.continueTo)}${carry}`;
+    // --budget 0: every omitted message, not just as many as `human`'s own budget fits.
+    const cont = `human ${ref} --window ${pack.window.index} --to ${formatId(pack.omitted.continueTo)} --budget 0${carry}`;
     header.omitted = `${plural(pack.omitted.human, "earlier message")}; continue with ${cont}`;
     help.push(`Run \`${BIN} ${cont}\` for the ${plural(pack.omitted.human, "earlier message")}`);
   }
@@ -66,10 +67,14 @@ export function renderResumePack(pack: ResumePack, opts: RenderResumeOpts): stri
     const doc: Record<string, unknown> = { id: formatId(sm.id) };
     if (sm.t) doc.t = time.format(sm);
     // C text: the detail cap and house marker (truncation.md#caps), as in `human`.
-    const cut = detail(sm.text, DETAIL_CAP);
-    doc.text = cut.text;
+    doc.text = summaryText(sm);
     parts.push(encode({ summary: doc }));
-    if (cut.cut) help.push(`Run \`${BIN} show ${formatId(sm.id)} --full${showCarry}${carry}\` for the whole summary (${formatSize(sm.size)} chars)`);
+    if (doc.text !== sm.text) help.push(`Run \`${BIN} show ${formatId(sm.id)} --full${showCarry}${carry}\` for the whole summary (${formatSize(sm.size)} chars)`);
+  }
+  if (pack.omitted.summary) {
+    const id = formatId(pack.omitted.summary);
+    parts.push(encode({ summary: `dropped to meet the budget; show ${id} --full` }));
+    help.push(`Run \`${BIN} show ${id} --full${showCarry}${carry}\` for the window's opening summary, dropped to meet the budget`);
   }
   // H, whole and verbatim (authority.md#verbatim-guarantee).
   parts.push(renderBlockList("human", pack.human.map((m) => ({ id: formatId(m.id), t: time.format(m), kind: m.kind, text: m.text }))));
