@@ -61,6 +61,17 @@ export function tablePath(dir: string, path: string): string {
   return join(dir, "index", recordName(path));
 }
 
+/** Where a file's session-stats mirror and term index live (specs/architecture.md#cache). */
+export function statsPath(dir: string, path: string): string {
+  return join(dir, "stats", recordName(path));
+}
+export function termsPath(dir: string, path: string): string {
+  return join(dir, "terms", recordName(path));
+}
+
+/** Every per-file derived record directory (the identity records live in `files/`). */
+export const DERIVED_DIRS = ["index", "stats", "terms"] as const;
+
 export async function readSlice(path: string, offset: number, length: number): Promise<Buffer | undefined> {
   const fh = await open(path, "r");
   try {
@@ -192,7 +203,9 @@ export async function checkRewrite(path: string, opts: CacheOpts = {}): Promise<
     }
   }
   // A rewritten file's derived records are discarded (id-stability.md#append-only-is-assumed).
-  if (rewritten) await rm(tablePath(dir, path), { force: true }).catch(() => undefined);
+  if (rewritten) {
+    for (const p of [tablePath(dir, path), statsPath(dir, path), termsPath(dir, path)]) await rm(p, { force: true }).catch(() => undefined);
+  }
   await save(dir, now);
   return rewritten && before ? { rewritten: true, since: before.seen } : { rewritten: false };
 }

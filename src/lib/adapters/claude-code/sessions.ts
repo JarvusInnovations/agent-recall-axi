@@ -156,3 +156,41 @@ export async function* listSessions(project: Project, opts: { subagents?: boolea
     }
   }
 }
+
+/** One `sessions-index.json` entry, as far as the home view uses it (data-model.md#session). */
+export interface IndexEntry {
+  /** The file's modification time, in ms, when the entry was written. */
+  fileMtime?: number;
+  /** The title Claude Code gave the session. */
+  summary?: string;
+  /** ISO time of the session's last activity. */
+  modified?: string;
+}
+
+/**
+ * The project's optional `sessions-index.json`, by session id. Missing, unreadable or malformed
+ * is the same as empty: the index is an accelerator, never required.
+ */
+export async function readSessionsIndex(projectDir: string): Promise<Map<string, IndexEntry>> {
+  const out = new Map<string, IndexEntry>();
+  let parsed: unknown;
+  try {
+    const { readFile } = await import("node:fs/promises");
+    parsed = JSON.parse(await readFile(join(projectDir, "sessions-index.json"), "utf8"));
+  } catch {
+    return out;
+  }
+  const entries = (parsed as { entries?: unknown })?.entries;
+  if (!Array.isArray(entries)) return out;
+  for (const e of entries) {
+    if (typeof e !== "object" || e === null) continue;
+    const r = e as Record<string, unknown>;
+    if (typeof r.sessionId !== "string") continue;
+    const entry: IndexEntry = {};
+    if (typeof r.fileMtime === "number") entry.fileMtime = r.fileMtime;
+    if (typeof r.summary === "string" && r.summary.trim()) entry.summary = r.summary;
+    if (typeof r.modified === "string" && !Number.isNaN(Date.parse(r.modified))) entry.modified = new Date(Date.parse(r.modified)).toISOString();
+    out.set(r.sessionId, entry);
+  }
+  return out;
+}

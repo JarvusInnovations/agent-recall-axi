@@ -14,6 +14,8 @@ import { resolveWindow, type WindowRange, type WindowSel } from "./windows.js";
 import type { CacheOpts } from "./cache/store.js";
 import type { Event, EventId, Kind, Session } from "./model.js";
 import { readLines } from "./reader.js";
+import { stat } from "node:fs/promises";
+import { resolveScope, type ResolvedScope, type Scope } from "./scope.js";
 import { newContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
 
@@ -261,7 +263,7 @@ function contextOf(c: FindQuery["context"]): { before: number; after: number } {
 }
 
 /** Validate and compile a query; throws `VALIDATION_ERROR` before any file is opened. */
-export function compileQuery(q: FindQuery): CompiledQuery {
+export function compileQuery(q: FindQuery, opts: { fold?: boolean } = {}): CompiledQuery {
   const hasPhrase = q.phrase !== undefined && q.phrase !== "";
   if (!hasPhrase && q.file === undefined && q.tool === undefined && !q.kinds?.length) {
     throw new AgentSessionError("find needs at least one of a phrase, file, tool or kinds", "VALIDATION_ERROR", [
@@ -270,7 +272,7 @@ export function compileQuery(q: FindQuery): CompiledQuery {
   }
   const why: Why[] = [];
   const out: CompiledQuery = { query: q, why, visible: kindSet(q.kinds), foldResults: false, ...contextOf(q.context) };
-  out.foldResults = !out.visible.has("result");
+  out.foldResults = opts.fold !== false && !out.visible.has("result");
   if (hasPhrase) {
     why.push("phrase");
     const phrase = q.phrase!;
@@ -406,6 +408,33 @@ async function matches(cq: CompiledQuery, ev: Event, result: Event | undefined, 
   if (cq.file && !(carriesTool(ev) && ev.files?.some(cq.file))) return false;
   if (cq.phrase && !(await phraseMatches(cq, ev, result, session))) return false;
   return true;
+}
+
+/**
+ * The match test without tool output (no folded result, no `--deep`): what `recall` tests, and
+ * exactly the text the term index covers (architecture.md#cache). Synchronous.
+ */
+export function matchesOwnText(cq: CompiledQuery, ev: Event): boolean {
+  if (cq.tool !== undefined && !(carriesTool(ev) && ev.tool?.toLowerCase().includes(cq.tool))) return false;
+  if (cq.file && !(carriesTool(ev) && ev.files?.some(cq.file))) return false;
+  if (cq.phrase) {
+    const test = cq.phrase;
+    if (!test(ev.text)) {
+      if (ev.kind !== "call" || ev.input === undefined) return false;
+      if (!test(JSON.stringify(ev.input) ?? "") && !stringValues(ev.input, []).some(test)) return false;
+    }
+  }
+  return true;
+}
+
+/** The strings `matchesOwnText` tests a phrase against, for the term index. */
+export function ownTexts(ev: Event): string[] {
+  const out = [ev.text];
+  if (ev.kind === "call" && ev.input !== undefined) {
+    out.push(JSON.stringify(ev.input) ?? "");
+    stringValues(ev.input, out);
+  }
+  return out;
 }
 
 function inRange(ev: Event, from: FindQuery["from"], to: FindQuery["to"]): boolean {
@@ -558,4 +587,156 @@ export async function findListing(session: Session, q: FindQuery): Promise<FindL
     if (shownRows.has(formatId(hit.event.id))) inContext.push(hit);
   }
   return { hits, inContext, matching: stats.hits, lines: stats.lines, malformed: stats.malformed };
+}
+
+// ---------------------------------------------------------------------------------------------
+// across sessions (cli.md#find, cross-session; api.md#searching)
+
+export interface ScopedHit extends Hit {
+  session: Session;
+}
+
+export interface ScopedSession {
+  session: Session;
+  bytes: number;
+  mtime: number;
+}
+
+export interface ScopeSessions {
+  scope: ResolvedScope;
+  /** Sessions to read, newest file modification time first (ties: the greater id). */
+  sessions: ScopedSession[];
+  /** Sessions in scope whose file was last modified before the window (not read). */
+  skipped: number;
+  unreadable: number;
+  firstUnreadable?: string;
+}
+
+/**
+ * Every main and subagent session in scope, newest mtime first. A file last modified before
+ * `from` is left out: no entry can be newer than the write that stored it.
+ */
+export async function scopeSessions(scope: Scope, from?: Date, opts: { subagents?: boolean } = {}): Promise<ScopeSessions> {
+  const resolved = await resolveScope(scope);
+  const out: ScopeSessions = { scope: resolved, sessions: [], skipped: 0, unreadable: 0 };
+  for (const project of resolved.projects) {
+    for await (const session of claudeCode.listSessions(project, { subagents: opts.subagents !== false })) {
+      try {
+        const st = await stat(session.path);
+        if (from && st.mtimeMs < from.getTime()) {
+          out.skipped++;
+          continue;
+        }
+        out.sessions.push({ session, bytes: st.size, mtime: st.mtimeMs });
+      } catch {
+        out.unreadable++;
+        out.firstUnreadable ??= session.path;
+      }
+    }
+  }
+  out.sessions.sort((a, b) => (a.mtime === b.mtime ? (a.session.id < b.session.id ? 1 : a.session.id > b.session.id ? -1 : 0) : b.mtime - a.mtime));
+  return out;
+}
+
+export interface AcrossQuery extends FindQuery {
+  /** Shorthand for `from: now - span`, as a Date. */
+  since?: Date;
+}
+
+function acrossFrom(q: AcrossQuery): Date | undefined {
+  if (isEventId(q.from) || isEventId(q.to)) {
+    throw new AgentSessionError("an id is a position in one session: --from/--to ids need a <session>", "VALIDATION_ERROR", [
+      "name the id's session first (find <s8> \"<phrase>\" --from <id>), or bound a cross-session search by time",
+    ]);
+  }
+  return q.since ?? (q.from as Date | undefined);
+}
+
+/** Whether a read failure means the file could not be read (skipped and counted), not a bug. */
+function unreadableError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === "ENOENT" || code === "EACCES" || code === "EPERM" || code === "EISDIR";
+}
+
+/** One session's hits, or undefined when its file could not be read; a window it lacks has none. */
+async function sessionHits(session: Session, q: FindQuery, stats: FindStats): Promise<Hit[] | undefined> {
+  const hits: Hit[] = [];
+  try {
+    for await (const hit of find(session, q, stats)) hits.push(hit);
+  } catch (err) {
+    if (unreadableError(err)) return undefined;
+    // A window past this session's last is no hits here, not an error for the whole scope.
+    if (q.window !== undefined && err instanceof AgentSessionError && err.code === "VALIDATION_ERROR") return [];
+    throw err;
+  }
+  return hits;
+}
+
+/**
+ * The hits of a query across a scope (specs/api.md#searching): sessions newest file mtime first,
+ * each session's hits in file order, every one labeled with its session.
+ */
+export async function* findAcross(scope: Scope, q: AcrossQuery): AsyncGenerator<ScopedHit> {
+  compileQuery(q);
+  const from = acrossFrom(q);
+  const { since: _since, limit, ...rest } = q;
+  const query: FindQuery = { ...rest };
+  if (from) query.from = from;
+  let yielded = 0;
+  for (const { session } of (await scopeSessions(scope, from)).sessions) {
+    const hits = await sessionHits(session, query, { lines: 0, malformed: 0, hits: 0 });
+    for (const hit of hits ?? []) {
+      yield { ...hit, session };
+      if (limit && ++yielded >= limit) return;
+    }
+  }
+}
+
+export interface AcrossListing {
+  scope: ResolvedScope;
+  hits: ScopedHit[];
+  /** Hits past the limit printed as context rows of a shown hit (they keep their why). */
+  inContext: ScopedHit[];
+  matching: number;
+  /** Sessions read and their bytes. */
+  scanned: { sessions: number; bytes: number };
+  /** Every session read, in the order read. */
+  sessions: Session[];
+  unreadable: number;
+  firstUnreadable?: string;
+}
+
+/** A bounded cross-session result for a renderer: the first `limit` hits (default 20) and the totals. */
+export async function findAcrossListing(scope: Scope, q: AcrossQuery): Promise<AcrossListing> {
+  compileQuery(q);
+  const from = acrossFrom(q);
+  const limit = q.limit ?? 20;
+  const { since: _since, limit: _limit, ...rest } = q;
+  const query: FindQuery = { ...rest };
+  if (from) query.from = from;
+  const scoped = await scopeSessions(scope, from);
+  const out: AcrossListing = { scope: scoped.scope, hits: [], inContext: [], matching: 0, scanned: { sessions: 0, bytes: 0 }, sessions: [], unreadable: scoped.unreadable };
+  if (scoped.firstUnreadable) out.firstUnreadable = scoped.firstUnreadable;
+  for (const { session, bytes } of scoped.sessions) {
+    const hits = await sessionHits(session, query, { lines: 0, malformed: 0, hits: 0 });
+    if (!hits) {
+      out.unreadable++;
+      out.firstUnreadable ??= session.path;
+      continue;
+    }
+    out.scanned.sessions++;
+    out.scanned.bytes += bytes;
+    out.sessions.push(session);
+    out.matching += hits.length;
+    let shown: Set<string> | undefined;
+    for (const hit of hits) {
+      if (limit === 0 || out.hits.length < limit) {
+        out.hits.push({ ...hit, session });
+        continue;
+      }
+      shown ??= new Set(out.hits.filter((h) => h.session === session).flatMap((h) => h.context.map((e) => formatId(e.id))));
+      if (shown.has(formatId(hit.event.id))) out.inContext.push({ ...hit, session });
+    }
+  }
+  return out;
 }

@@ -3,63 +3,12 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AgentSessionError } from "./errors.js";
 import type { Session } from "./model.js";
-import { readLines, readLinesBackward } from "./reader.js";
+import { sessionStats, type SessionStats } from "./stats.js";
+import type { CacheOpts } from "./cache/store.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
 import { resolveScope, type Scope } from "./scope.js";
 
-export interface SessionInfo extends Session {
-  /** First entry timestamp in file order. */
-  started?: string;
-  /** Latest entry timestamp near the end of the file; the file mtime when none is found. */
-  last: string;
-  bytes: number;
-  mtime: string;
-}
-
-/** How far into the head / tail of a file the cheap listing looks for timestamps. */
-const HEAD_SCAN_BYTES = 1 << 20;
-const TAIL_SCAN_BYTES = 256 << 10;
-
-/** A cheap prefilter: most silent lines carry no timestamp at all. */
-const TS_RE = /"timestamp":"/;
-
-/**
- * The entry's own (top-level) `timestamp`. A `"timestamp":"…"` substring can also sit inside the
- * payload (a tool input, an attachment) ahead of the entry's, so the line is parsed.
- */
-function lineTimestamp(text: string): string | undefined {
-  if (!TS_RE.test(text)) return undefined;
-  let obj: unknown;
-  try {
-    obj = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-  const ts = typeof obj === "object" && obj !== null ? (obj as { timestamp?: unknown }).timestamp : undefined;
-  if (typeof ts !== "string") return undefined;
-  const t = Date.parse(ts);
-  return Number.isNaN(t) ? undefined : new Date(t).toISOString();
-}
-
-async function firstTimestamp(path: string): Promise<string | undefined> {
-  for await (const line of readLines(path)) {
-    const t = lineTimestamp(line.text);
-    if (t) return t;
-    if (line.offset > HEAD_SCAN_BYTES) break;
-  }
-  return undefined;
-}
-
-async function lastTimestamp(path: string, size: number): Promise<string | undefined> {
-  let max: string | undefined;
-  for await (const line of readLinesBackward(path, 64 << 10)) {
-    const t = lineTimestamp(line.text);
-    if (t && (!max || t > max)) max = t;
-    if (size - line.offset > TAIL_SCAN_BYTES && max) break;
-    if (size - line.offset > HEAD_SCAN_BYTES * 4) break;
-  }
-  return max;
-}
+export interface SessionInfo extends Session, SessionStats {}
 
 /** A session for a log file path; scope is ignored. Throws NOT_FOUND / UNREADABLE / VALIDATION_ERROR. */
 export async function openSession(path: string): Promise<Session> {
@@ -83,24 +32,21 @@ export async function openSession(path: string): Promise<Session> {
   return claudeCode.sessionForPath(abs);
 }
 
-export async function describeSession(session: Session): Promise<SessionInfo> {
-  const st = await stat(session.path);
-  const mtime = st.mtime.toISOString();
-  const info: SessionInfo = {
-    ...session,
-    last: (await lastTimestamp(session.path, st.size)) ?? mtime,
-    bytes: st.size,
-    mtime,
-  };
-  const started = await firstTimestamp(session.path);
-  if (started) info.started = started;
-  return info;
+/** A session with its stats (data-model.md#session): one streaming pass on first touch, cached. */
+export async function describeSession(session: Session, cache?: CacheOpts): Promise<SessionInfo> {
+  return { ...session, ...(await sessionStats(session, { cache: cache ?? {} })) };
+}
+
+/** The cache location a listing uses: the scope's env over the process env. */
+export function scopeCache(scope: Scope): CacheOpts {
+  return scope.env ? { env: { ...process.env, ...scope.env } } : {};
 }
 
 export interface ListOpts {
   from?: Date;
   to?: Date;
   limit?: number;
+  cache?: CacheOpts;
 }
 
 export interface SessionListing {
@@ -126,7 +72,7 @@ export async function sessionListing(scope: Scope = {}, opts: ListOpts = {}): Pr
     for await (const s of claudeCode.listSessions(project, { subagents: scope.subagents === true })) {
       // One unreadable or vanished file never fails the listing: it is skipped and counted.
       try {
-        all.push(await describeSession(s));
+        all.push(await describeSession(s, opts.cache ?? scopeCache(scope)));
       } catch {
         unreadable++;
         firstUnreadable ??= s.path;

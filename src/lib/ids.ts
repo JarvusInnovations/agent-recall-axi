@@ -137,20 +137,29 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
   if (matches.length === 0) {
     throw new AgentSessionError(`no session matches ${prefix} in ${whereOf(resolved)}`, "NOT_FOUND", widenHints(resolved, scope));
   }
-  const candidates = matches.map((s) => {
+  // Each candidate's title by the same precedence `sessions` prints (data-model.md#session).
+  const { sessionStats } = await import("./stats.js");
+  const candidates: Array<Record<string, string>> = [];
+  for (const s of matches) {
     const c: Record<string, string> = { id: s.id, kind: s.kind };
     if (s.parent) c.parent = s.parent;
     if (s.project) c.project = s.project.cwd;
-    // Titles arrive with the stats pass (sessions-and-recall); until then they say so.
-    c.title = "(pending)";
-    return c;
-  });
+    const stats = await sessionStats(s, { cache: scope.env ? { env: { ...process.env, ...scope.env } } : {} }).catch(() => undefined);
+    c.title = stats?.title !== undefined ? titleHead(stats.title) : "";
+    candidates.push(c);
+  }
   throw new AgentSessionError(
     `${prefix} matches ${matches.length} sessions`,
     "AMBIGUOUS_SESSION",
     ["Pass more characters of the id (or the full id) of the session you mean", ...matches.slice(0, 5).map((s) => `candidate: ${s.id}`)],
     { candidates },
   );
+}
+
+/** A title as one line, cut to the row head (data-model.md#session). */
+function titleHead(title: string): string {
+  const line = title.replace(/(\r?\n)+/g, " ").trim();
+  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }
 
 /**

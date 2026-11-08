@@ -55,3 +55,10 @@ export type { Span } from "./hold.js";
 
 // resume pack (specs/api.md#resume-pack); the renderer is the agent-session-axi/render subpath
 export { buildResumePack, DEFAULT_RESUME_BUDGET, DEFAULT_RESUME_CLAIMS, DEFAULT_RESUME_TOOLS, packCost, type ResumePack, type ResumePackOpts } from "./resume.js";
+
+// sessions and recall (specs/api.md#scope-and-sessions, #searching): stats, titles, the home
+// view's cheap listing, cross-session find and recall
+export { cachedStats, sessionStats, type SessionStats, type TitleSource } from "./stats.js";
+export { homeListing, lastHumanOf, type HomeListing, type HomeSession, type LastHuman } from "./home.js";
+export { findAcross, findAcrossListing, scopeSessions, type AcrossListing, type AcrossQuery, type ScopedHit } from "./find.js";
+export { recall, RECALL_KINDS, tokens, type IndexState, type Recall, type RecallOpts, type RecallResult } from "./recall.js";
