@@ -969,6 +969,77 @@ export function spacedSlashSession(s8 = "e9000029"): string {
   return s.render();
 }
 
+// ---------------------------------------------------------------------------------------------
+// resume pack (plan resume-pack-library): generated at test time
+
+/** The window-1 `H` texts of `resumeSession()`, as each event's text must read: oldest first. */
+export const RESUME_HUMAN = [
+  `pick up the flange split where the summary left off:\n  1. keep the public API\n  2. "no" renames\n${deterministicText(VOCAB, 600)}`,
+  "/review src/flange/a.ts  --strict ",
+  `also run the sprocket tests when you're done — ünïcode and trailing space ${deterministicText(VOCAB, 400)} `,
+  "beta",
+  `${deterministicText(VOCAB, 600)}\n\nthen tell me what is left`,
+  `last thing: ship it and update the plan file ${deterministicText(VOCAB, 500)}`,
+];
+
+/**
+ * A session with one compaction (two windows) whose last window holds every `H` kind (typed,
+ * slash, queued, answer), 12 tool calls (one error, one persisted output, one pending), and five
+ * assistant texts; message sizes chosen so a 2,000-char budget has to drop claims, then calls,
+ * then the oldest human messages.
+ */
+export function resumeSession(s8 = "ea00002a"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("start the flange split");
+  s.assistant([s.toolUse(TOOL(s8, 100), "Read", { file_path: "src/flange/index.ts" })]);
+  s.toolResult(TOOL(s8, 100), "export * from './a';");
+  s.say("Window zero work done.");
+  s.push(boundaryLine(s, 1));
+  s.user(`${CONTINUED} Summary:\n1. The flange module is being split into a.ts and b.ts.`, { isCompactSummary: true });
+  const [typed, slash, queued, answer, long, last] = RESUME_HUMAN;
+  s.human(typed!);
+  s.user(`<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args>src/flange/a.ts  --strict </command-args>`, { origin: { kind: "human" }, promptSource: "typed" });
+  let n = 0;
+  const call = (name: string, input: Json, result: string, extra: Json = {}) => {
+    const id = TOOL(s8, ++n);
+    s.assistant([s.toolUse(id, name, input)]);
+    s.toolResult(id, result, {}, extra);
+  };
+  call("Read", { file_path: "src/flange/a.ts" }, "export const a = 1;");
+  s.say(`Claim one: ${deterministicText(VOCAB, 180)}`);
+  call("Edit", { file_path: "src/flange/a.ts", old_string: "1", new_string: "2" }, "updated");
+  s.attachment({ type: "queued_command", prompt: queued!, commandMode: "prompt", origin: { kind: "human" } });
+  call("Bash", { command: "bun test src/flange", description: "Test" }, "FAIL flange.test.ts", { is_error: true });
+  s.say(`Claim two: ${deterministicText(VOCAB, 180)}`);
+  const q = TOOL(s8, ++n);
+  s.assistant([s.toolUse(q, "AskUserQuestion", { questions: [{ question: "Which channel?", options: [{ label: "beta" }, { label: "stable" }] }] })]);
+  s.toolResult(q, `User has answered your questions: "Which channel?"="${answer!}".`, {
+    toolUseResult: { questions: [{ question: "Which channel?" }], answers: { "Which channel?": answer! } },
+  });
+  s.human(long!);
+  for (const f of ["b.ts", "c.ts", "d.ts"]) call("Write", { file_path: `src/flange/${f}`, content: "x" }, "written");
+  s.say(`Claim three: ${deterministicText(VOCAB, 180)}`);
+  const stored = `/fixture-root/projects/${PROJECTS.widget.encoded}/${s.id}/tool-results/bfx00ea.txt`;
+  call("Bash", { command: "bun run build", description: "Build" }, `<persisted-output>\nOutput too large (9.9KB). Full output saved to: ${stored}\n\nPreview (first 2KB):\nbuild log\n...\n</persisted-output>`);
+  for (const f of ["e.ts", "f.ts", "g.ts"]) call("Read", { file_path: `src/flange/${f}` }, "ok");
+  s.say(`Claim four: ${deterministicText(VOCAB, 180)}`);
+  s.human(last!);
+  call("Bash", { command: "git push", description: "Push" }, "pushed");
+  s.say(`Claim five: ${deterministicText(VOCAB, 180)}`);
+  // A call whose result never arrives: `pending`.
+  s.assistant([s.toolUse(TOOL(s8, ++n), "Bash", { command: "gh pr create", description: "Open the PR" })]);
+  return s.render();
+}
+
+/** Human prompts and tool calls but no assistant text: an empty `claims` layer. */
+export function silentAgentSession(s8 = "eb00002b"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("list the gadgets");
+  s.assistant([s.toolUse(TOOL(s8, 1), "Bash", { command: "ls src/gadget" })]);
+  s.toolResult(TOOL(s8, 1), "a.ts\nb.ts");
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 

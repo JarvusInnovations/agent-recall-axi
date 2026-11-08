@@ -255,8 +255,9 @@ describe("help, planned commands, update", () => {
   it("--help lists commands, marks planned ones, and shows no SDK built-in block", async () => {
     const { stdout } = await run(["--help"]);
     expect(stdout).toContain("events <session>");
-    expect(stdout).toContain("(planned: resume-pack-library)");
+    expect(stdout).toContain("(planned: skill-and-hook)");
     expect(stdout).not.toContain("(planned: views)");
+    expect(stdout).not.toContain("(planned: resume-pack-library)");
     expect(stdout).not.toContain("built-in");
     const cmd = await run(["events", "--help"]);
     expect(cmd.stdout).toMatch(/^command: events$/m);
