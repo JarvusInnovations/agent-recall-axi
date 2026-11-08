@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 pr: 12
 depends: [pan]
 specs:
@@ -119,15 +119,49 @@ human, tools and compactions` commit:
   seeded checkpoint deep-equal a cold read filtered by the shared window rule. `show`'s window and
   the CLI pan count agree with them. A table extended across an append records the same windows
   as one built cold.
-- **Evidence**: `bun run check` and `bun run build` are clean. `bun run test` was run four times
-  in full:
-  - Run 1: 239/239 passed.
-  - The other three: unit 229/229, and one perf test (the pan plan's `around` build/warm
-    wall-clock bounds) failed each time, at a load average of about 11 on 8 cores.
-  - The perf project alone passed 11/11 on 2 of 4 runs.
-  - Measured by hand on a generated 200 MB file against `origin/develop`, built the same way:
-    warm `around` best of 7 took 291 ms (develop) vs 285 ms here, and the cold build was 3.3–3.9 s
-    for both. No regression; the misses are host load.
+- **Review round** (PR #12). The rulings went into `docs(specs): views review rulings`, ahead of
+  the fixes. `test/views-review.test.ts` has one test per finding; 11 of its 13 failed against the
+  pre-fix source, and the other two are coverage the review asked for.
+  1. `human`'s opening summary is `C` text: capped at 4,000 chars with the house marker and a
+     `show <summary-id> --full` hint, and its capped length counts against the 12,000 total. The
+     newest message still always prints whole.
+  2. Sidechain boundaries no longer cut the main session. A `compact_boundary`, `isCompactSummary`
+     or summary sentence on an `isSidechain` entry of a main file is `notice` (`source: parent`).
+     So is a subagent's parent prompt that opens with the summary sentence.
+  3. A compaction's summary is the next event after it; any other event ends the wait
+     (classify's `link`). The opening summary is the window's first event, when that is a summary.
+  4. The `turns` empty state counts the file's lines.
+  5. `resolveWindow` validates library values (integer ≥ 0, `k..`, `last`, `all`). The range
+     error's example index lies inside the range.
+  6. Boundary reads release a wanted compaction at once (`heldEvents` `noHold`). Not observable
+     through output, so it has no dedicated test.
+  7. `events`/`tail --window` stop after the window's end once nothing waits for a partner. Also
+     not observable, so no dedicated test; the window header's `malformed:` count comes from the
+     table.
+  8. The `turns` footer reads as `cli.md` says, followed by the `--to` continuation.
+  9. `omitted:` stays the last header line, as `truncation.md` now says.
+  10. A summary with no event before it is window 0's opening summary, not a boundary (the
+      `compaction-legacy` fixture now has one window, and turn 0 ends `stop`).
+  11. `tools --fields files` joins with `, `.
+  12. A shared-`<s8>` session with several messages exercises `human`'s `omitted:` continuation
+      under its full id. Cold output (no usable cache) is compared byte for byte with warm output
+      (table present) for `human`, `turns`, `tools`, `compactions`, `events` and `tail`.
+  13. `human.slash` keeps its args as stored; `authority.md` names it as the one reconstructed
+      `H` kind.
+
+  The window rule now tracks whether any event came before (`WindowCounter.seen`, seeded from a
+  checkpoint's per-kind counts). The table format went from version 3 to 4.
+- **Evidence (after the review round)**: `bun run check` and `bun run build` are clean.
+  `bun run test` was run twice in full:
+  - Both runs: unit 242/242.
+  - Each run had one perf failure, the pan plan's `around` bounds: warm 406 ms against a 361 ms
+    bound, then a cold build of 4,000.3 ms against 4,000 ms. The load average was about 11 on
+    8 cores.
+  - The perf project alone, run twice: 11/11, then one miss (359 ms against 350 ms).
+- **Evidence (first pass)**: four full runs, unit 229/229 each. One run was fully green; the other
+  three had one perf miss each. Measured by hand on a generated 200 MB file against
+  `origin/develop`, built the same way: warm `around` took 291 ms there vs 285 ms here, and the
+  cold build was 3.3–3.9 s for both, so the misses are host load, not a regression.
 - Only synthetic fixtures exercise pre-`compact_boundary` logs (`compaction-legacy`).
 
 ## Follow-ups
