@@ -21,7 +21,7 @@ Every command.
 | `show` text of `C`/`D` events, input JSON, result text, `meta` strings | 4,000 chars each | `--full` |
 | `show` text of `H` events | never cut | — |
 | `human` total output | 12,000 chars including the window's opening summary (itself capped at 4,000 as `C` text); the newest human message always prints whole; older messages drop oldest-first | `--budget <chars>`, `--full` |
-| `resume-pack` total | 16,000 chars | `--budget <chars>` |
+| `resume-pack` total | 16,000 chars of content (the opening summary counted at its 4,000-char cap, human and claim texts whole, each call's tool and target; `data-model.md#resume-pack`); claims drop first, then calls, then the oldest human messages; the newest human message always prints whole | `--budget <chars>` |
 | rows per listing | `--limit` default per command (`cli.md`) | `--limit <n>`; `--limit 0` = no cap |
 | `recall` sessions scanned | last 90 days | `--since`, `--from` |
 
@@ -35,8 +35,8 @@ Every command.
   `pointer: <path> (42.8k, missing)` and the preview, with no error.
 - A `human` or `resume-pack` output that dropped older messages to meet its budget carries
   `omitted: 7 earlier messages; continue with human <session> --to <id>` as the last line of its
-  header block, before the messages.
-- `human`'s opening summary over 4,000 chars ends with the house marker, and a
+  header block, before the messages (`resume-pack` adds `--window <k>`, its one window).
+- `human`'s and `resume-pack`'s opening summary over 4,000 chars ends with the house marker, and a
   `show <summary-id> --full` hint follows; `--full` prints it whole.
 
 ### Cuts never land inside

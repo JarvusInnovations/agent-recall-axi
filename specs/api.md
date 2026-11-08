@@ -138,9 +138,26 @@ interface ResumePack {
 buildResumePack(session: Session, opts?: ResumePackOpts): Promise<ResumePack>
 ```
 
-Deterministic for a given file and options. The budget policy is the one in
-`data-model.md#resume-pack`; the kit renders the pack itself or calls `renderResumePack(pack,
-{ tz })` from the `agent-session-axi/render` subpath, which produces the CLI's exact TOON.
+Deterministic for a given file and options, and the same whether the offset table was built cold
+or already cached. Defaults: `window: "last"`, `budget: 16000`, `tools: 10`, `claims: 3`. The
+budget is a positive integer of characters, counted and spent as `data-model.md#resume-pack`
+says; `tools` and `claims` are non-negative integers. Any other value, `window: "all"` or `"k.."`
+included (a pack is one window), and a window past the last are `VALIDATION_ERROR`. Event texts
+are uncut; the 4,000-char summary cap is the renderer's.
+
+The kit renders the pack itself or calls `renderResumePack` from the `agent-session-axi/render`
+subpath, which produces the CLI's exact TOON (`cli.md#resume-pack-session`):
+
+```ts
+import { renderResumePack } from "agent-session-axi/render";
+renderResumePack(pack: ResumePack, opts: {
+  tz: string;            // IANA zone for the time column
+  ref?: string;          // how hints name the session (scope flags included); default its <s8>
+  showCarry?: string;    // appended to `show` hints so their ids resolve the same way, e.g. " --session <uuid>"
+  carry?: string;        // appended to every hint, e.g. " --tz America/New_York"
+  notice?: string;       // a rewrite notice to print first (behaviors/id-stability.md)
+}): string               // the bytes the CLI prints, without the trailing newline
+```
 
 ## Time grammar
 

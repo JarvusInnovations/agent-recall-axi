@@ -28,7 +28,9 @@ the past, not the past.
 
 - Rows carry `kind`, which implies the class; `--fields authority` adds the letter as a column.
 - `human` prints only `H` events and says so in its header (`authority: H (verbatim)`).
-- `resume-pack` labels each layer with its class and prints `H` first.
+- `resume-pack` names each layer's class on one `layers:` header line and prints the layers in a
+  fixed order: the window's opening summary (`C`, what the window started from), then `H`, then
+  the tool calls and the claims (`cli.md#resume-pack-session`).
 - `show` prints `authority:` on every event.
 - `find` results across classes are not reordered by class; file order rules.
 
