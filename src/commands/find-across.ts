@@ -2,7 +2,7 @@
 import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { comparePosition, formatId, hintName, parseId, sharedShorts } from "../lib/ids.js";
-import { findAcross, findAcrossListing, type FindQuery, type ScopedHit, type Why } from "../lib/find.js";
+import { findAcrossListing, type FindQuery, type ScopedHit, type Why } from "../lib/find.js";
 import { parseSpan } from "../lib/time.js";
 import type { Event, EventId, Kind, Session } from "../lib/model.js";
 import type { RowField } from "../reference.js";
@@ -11,7 +11,7 @@ import { renderDocument, renderRows } from "../output/render.js";
 import { formatBytes } from "../output/sizes.js";
 import { BIN, carry, collapseHome, scopeCarry, scopeOf, shellArg, unreadableNote, type Io } from "./common.js";
 import { describeQuery } from "./find.js";
-import { withJsonOutLine, writeJsonOut, type JsonOutTarget } from "./json-out.js";
+import { openJsonOut, withJsonOutLine, type JsonOutTarget } from "./json-out.js";
 
 /** The default window of a search across every project (cli.md#find). */
 export const ALL_SINCE = "90d";
@@ -84,10 +84,15 @@ export async function runFindAcross(a: AcrossArgs): Promise<string> {
   const defaulted = all && getString(p, "since") === undefined && getString(p, "from") === undefined;
   const query: FindQuery & { since?: Date } = { ...q };
   if (defaulted) query.since = new Date(io.now.getTime() - parseSpan(ALL_SINCE));
+  // The export is written during the one read of each session that builds the view.
+  const sink = a.jsonOut ? await openJsonOut(a.jsonOut) : undefined;
   let listing;
   try {
-    listing = await findAcrossListing(scope, query);
+    await sink?.out.begin({ query: describeQuery(q, getString(p, "kind")) }, "hits");
+    listing = await findAcrossListing(scope, query, sink ? (hit) => sink.out.item({ ...hit, session: hit.session.id }) : undefined);
+    await sink?.out.end({ matching: listing.matching, scanned: listing.scanned });
   } catch (err) {
+    await sink?.abort();
     if (err instanceof AgentSessionError && err.code === "VALIDATION_ERROR") throw new AxiError(err.message, err.code, err.suggestions);
     throw err;
   }
@@ -117,7 +122,8 @@ export async function runFindAcross(a: AcrossArgs): Promise<string> {
     header.tz = tz;
     header.hits = `0 events match ${query_} in ${listing.scope.all ? "all projects" : collapseHome(listing.scope.projects[0]?.cwd ?? "")} (${scanned} scanned)`;
     if (!listing.scope.all) help.push(`Run \`${allHint(p, phrase, regex)}\` to search every project`);
-    else if (defaulted) help.push(`Run \`${BIN} find${h.args}${view} --all --since 1y${tzc}${h.trailing}\` to search the last year`);
+    // Under --all the window is what can widen, whether it was defaulted or given (cli.md#find).
+    else help.push(`Run \`${BIN} find${h.args}${view} --all --since 1y${tzc}${h.trailing}\` to search the last year`);
     const given: Why[] = [];
     if (phrase !== undefined) given.push("phrase");
     if (a.file !== undefined) given.push("file");
@@ -165,11 +171,5 @@ export async function runFindAcross(a: AcrossArgs): Promise<string> {
     if (skipped.help) help.push(skipped.help);
     out = renderDocument(header, help);
   }
-  if (!a.jsonOut) return out;
-  const path = await writeJsonOut(a.jsonOut, async (j) => {
-    await j.begin({ scope: where, query: query_ }, "hits");
-    for await (const hit of findAcross(scope, { ...query, limit: 0 })) await j.item({ ...hit, session: hit.session.id });
-    await j.end({ matching: listing.matching, scanned: listing.scanned });
-  });
-  return withJsonOutLine(out, path);
+  return sink ? withJsonOutLine(out, await sink.close()) : out;
 }

@@ -2,6 +2,8 @@
 import { AxiError } from "axi-sdk-js";
 import { hintName, sharedShorts } from "../lib/ids.js";
 import { sessionListing, type SessionInfo } from "../lib/session.js";
+import { headerTitle } from "../lib/stats.js";
+import type { Session } from "../lib/model.js";
 import type { Scope } from "../lib/scope.js";
 import { formatAgo, formatMonthDayMinute } from "../lib/time.js";
 import { findCommand, SESSIONS_FIELDS } from "../reference.js";
@@ -20,6 +22,15 @@ export const isLive = (last: string, now: Date) => Math.abs(now.getTime() - Date
 /** A title cell: one line, cut to the row head (data-model.md#session); empty when there is none. */
 export function titleCell(title: string | undefined): string {
   return title === undefined ? "" : headCut(oneLine(title).trim(), DEFAULT_HEAD).text;
+}
+
+/**
+ * `<s8> <title>` for a single-session header (cli.md#conventions): the cheap, cache-free title
+ * sources only, so cold and warm runs print the same bytes; `(untitled)` when none has one.
+ */
+export async function headerName(session: Session): Promise<string> {
+  const title = titleCell(await headerTitle(session));
+  return `${session.short} ${title || "(untitled)"}`;
 }
 
 function parseFields(text: string | undefined): Field[] {

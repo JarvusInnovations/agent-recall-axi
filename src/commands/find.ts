@@ -2,8 +2,8 @@
 import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { comparePosition, formatId } from "../lib/ids.js";
-import { compileQuery, find, findListing, type FindQuery, type Hit, type Why } from "../lib/find.js";
-import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
+import { compileQuery, findListing, type FindQuery, type Hit, type Why } from "../lib/find.js";
+import { jsonOutTarget, openJsonOut, withJsonOutLine } from "./json-out.js";
 import { allHint, runFindAcross } from "./find-across.js";
 import { KINDS, type Event, type EventId, type Kind } from "../lib/model.js";
 import { findCommand, type RowField } from "../reference.js";
@@ -12,6 +12,7 @@ import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { BIN, carry, parseKinds, parseRange, rewriteNotice, scopeCarry, scopeOf, sessionFromArg, sessionHint, shellArg, windowFlag, withNotice, zoneOf, type Io } from "./common.js";
 import { parseRowFields } from "./events.js";
+import { headerName } from "./sessions.js";
 
 /**
  * cli.md#find: with one positional, it is the session when it has a session reference's form
@@ -128,24 +129,24 @@ export async function runFind(args: string[], io: Io): Promise<string> {
     throw err;
   }
   const notice = await rewriteNotice(session, io, tz);
-  const listing = await withNotice(notice, () => findListing(session, q));
-  /** The output, with the export written when asked (every hit, its context, no limit). */
-  const finish = async (out: string): Promise<string> => {
-    if (!jsonOut) return out;
-    const path = await writeJsonOut(jsonOut, async (j) => {
-      await j.begin({ session: session.id, query: describeQuery(q, getString(p, "kind")) }, "hits");
-      const { limit: _l, ...all } = q;
-      for await (const hit of find(session, all)) await j.item(hit);
-      await j.end({ matching: listing.matching });
-    });
-    return withJsonOutLine(out, path);
-  };
+  // The export (every hit, with its context) is written during the one read that builds the view.
+  const sink = jsonOut ? await openJsonOut(jsonOut) : undefined;
+  let listing: Awaited<ReturnType<typeof findListing>>;
+  try {
+    await sink?.out.begin({ session: session.id, query: describeQuery(q, getString(p, "kind")) }, "hits");
+    listing = await withNotice(notice, () => findListing(session, q, sink ? (hit) => sink.out.item(hit) : undefined));
+    await sink?.out.end({ matching: listing.matching });
+  } catch (err) {
+    await sink?.abort();
+    throw err;
+  }
+  const finish = async (out: string): Promise<string> => (sink ? withJsonOutLine(out, await sink.close()) : out);
   const hint = await sessionHint("find", ref, session, p, io);
 
   // ---- render
   const header: Record<string, unknown> = {};
   if (notice) header.notice = notice;
-  header.scope = `${session.short} (title pending)`;
+  header.scope = await headerName(session);
   if (session.kind === "subagent") {
     header.kind = "subagent";
     if (session.parent) header.parent = session.parent.slice(0, 8);

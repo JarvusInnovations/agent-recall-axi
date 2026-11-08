@@ -16,7 +16,9 @@ function lastHumanLine(listing: HomeListing, tz: string, now: Date): string {
   const ev = lh.event;
   const t = ev.t ? new Date(ev.t) : undefined;
   const time = t ? (formatDay(t, tz) === formatDay(now, tz) ? formatClock(t, tz) : formatMonthDayClock(t, tz)) : "";
-  return `${formatId(ev.id)}${time ? ` ${time}` : ""} "${headCut(oneLine(ev.text), DEFAULT_HEAD).text}"`;
+  // Without a line number from the cache the id is left out: the home view never counts a whole file.
+  const id = lh.numbered ? `${formatId(ev.id)} ` : "";
+  return `${id}${time}${time ? " " : ""}"${headCut(oneLine(ev.text), DEFAULT_HEAD).text}"`;
 }
 
 export async function homeCommand(io: Io): Promise<string> {
@@ -56,7 +58,8 @@ export async function homeCommand(io: Io): Promise<string> {
   const scope = none ? " --all" : "";
   if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}${scope}\` for a cold-start pack of the latest session`);
   else help.push(`Run \`${BIN} human ${name} --window last${scope}\` for what the human asked in the latest session's live window`);
-  help.push(`Run \`${BIN} tail ${name}${scope}\` for the last 20 rows`);
+  const unnumbered = listing.lastHuman?.event !== undefined && !listing.lastHuman.numbered;
+  help.push(`Run \`${BIN} tail ${name}${scope}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
   if (none) help.push(`Run \`${BIN} sessions --project <path>\` for one project's sessions`);
   else help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
   help.push(`Run \`${BIN} recall "<phrase>"\` to search every project`);
