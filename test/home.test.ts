@@ -34,8 +34,10 @@ describe("home view", () => {
     expect(rows.map((x) => x.id)).toEqual(["dd000007", "dd000006", "dd000005", "dd000004", "dd000003"]);
     expect(r.stdout).toContain("sessions[5]{id,last,turns,title}:");
     expect(b.latest).toBe("dd000007");
-    // The newest human prompt of the latest file, with its id and its time on today's date.
-    expect(b.last_human).toMatch(/^dd000007:17 07:00:3\d "session 7 step 4: widget gadget/);
+    // The newest human prompt of the latest file, its time on today's date; cold, the cache cannot
+    // number its line, so no id (the home view never counts a whole file) and tail is offered for ids.
+    expect(b.last_human).toMatch(/^07:00:3\d "session 7 step 4: widget gadget/);
+    expect(r.stdout).toContain("tail dd000007` for the last 20 rows with their ids");
     expect(helpLines(r.stdout)).toHaveLength(5);
     // Cold: no cached stats, so turns is empty and the title comes from the file's head.
     expect(rows[0]).toMatchObject({ turns: "", title: expect.stringMatching(/^session 7 step 0: /) });
@@ -49,6 +51,8 @@ describe("home view", () => {
     await run(["sessions"], { env: box.env, now: NOW });
     const rows = body((await run([], { env: box.env, now: NOW })).stdout).sessions as Array<Record<string, unknown>>;
     expect(rows[0]).toMatchObject({ id: "dd000007", turns: 5 });
+    // With the cache's line numbers, last_human carries its id.
+    expect(body((await run([], { env: box.env, now: NOW })).stdout).last_human).toMatch(/^dd000007:17 07:00:3\d "session 7 step 4: /);
     expect(String(rows[0]!.last)).toMatch(/^11-01 07:00 /);
   });
 

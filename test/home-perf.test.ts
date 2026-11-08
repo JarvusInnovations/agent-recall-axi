@@ -66,6 +66,14 @@ describe("home view on 100 sessions", () => {
     expect(home.ms).toBeLessThan(budget(small));
   }, 120_000);
 
+  it("completes in under 300 ms (×2 on CI) when the latest session is 64 MB and nothing is cached: no whole-file read or count", () => {
+    const home = best([], big);
+    expect(home.stdout).toMatch(/^latest: f0000099$/m);
+    // Cold, the cache cannot number the line: no id, and no count of 64 MB of newlines.
+    expect(home.stdout).toMatch(/^last_human: "?(\d\d-\d\d )?\d\d:\d\d:\d\d /m);
+    expect(home.ms).toBeLessThan(budget(big));
+  }, 120_000);
+
   it("completes in budget when the latest session is 64 MB and the cache knows it (no whole-file read)", () => {
     expect(cli(["sessions"], big).status).toBe(0); // the stats pass, once
     const home = best([], big);

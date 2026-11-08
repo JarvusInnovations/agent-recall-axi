@@ -30,7 +30,7 @@ describe("events", () => {
     const { stdout, exitCode } = await run(["events", fx("parallel-tools")]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("events[7]{id,t,kind,text}:");
-    expect(stdout).toMatch(/^session: a3000003/m);
+    expect(stdout).toMatch(/^session: "?a3000003/m);
     expect(stdout).toMatch(/^day: 2026-11-07$/m);
     expect(stdout).toMatch(/^tz: UTC$/m);
     expect(stdout).toMatch(/^count: 7 of 7$/m);
@@ -87,7 +87,7 @@ describe("events", () => {
     copyFileSync(fx("parallel-tools"), renamed);
     const first = await run(["events", renamed]);
     expect(first.exitCode).toBe(0);
-    const s8 = /^session: ([0-9a-f]{8}) /m.exec(first.stdout)![1]!;
+    const s8 = /^session: "?([0-9a-f]{8}) /m.exec(first.stdout)![1]!;
     const rows = rowLines(first.stdout, "events");
     const third = /^ {2}"([^"]+)"/.exec(rows[2]!)![1]!;
     expect(third).toMatch(new RegExp(`^${s8}:\\d+`));

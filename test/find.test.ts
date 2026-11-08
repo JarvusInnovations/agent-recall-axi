@@ -218,7 +218,7 @@ describe("find: regex, ranges, deep", () => {
 describe("find: header and footer", () => {
   it("prints scope, query, count with lines scanned, and hints that resolve as printed", async () => {
     const r = await run(["find", S, "redirect", "--file", "*.env*"]);
-    expect(r.stdout).toMatch(/^scope: e1000018/m);
+    expect(r.stdout).toMatch(/^scope: "?e1000018/m);
     expect(r.stdout).toMatch(/^query: "phrase \\"redirect\\" \+ file \*\.env\*"$/m);
     expect(r.stdout).toMatch(/^count: 1 of 1 hit \(18 lines scanned\)$/m);
     expect(table(r.stdout).rows.find((x) => x.why)).toMatchObject({ id: `${S}:4`, why: "phrase+file" });
