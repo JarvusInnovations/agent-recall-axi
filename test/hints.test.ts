@@ -40,6 +40,24 @@ describe("hints when an <s8> is shared in scope", () => {
     for (const id of ["c3b5d7e9-0000-4000-8000-000000000000", FULL]) expect(r.stdout).toContain(`--session ${id}`);
   });
 
+  it("turns/human/tools/compactions hints name the session by its full id, and every hint runs", async () => {
+    for (const args of [["turns", FULL], ["human", FULL], ["tools", FULL], ["compactions", FULL], ["human", "c3b5d7e9-ffff", "--budget", "1"]]) {
+      const out = await run(args, { cwd });
+      expect(out.exitCode, args.join(" ")).toBe(0);
+      for (const h of hints(out.stdout)) {
+        expect(h.join(" "), args.join(" ")).not.toMatch(/(^| )c3b5d7e9( |$)/);
+        const r = await run(h, { cwd });
+        expect(r.exitCode, h.join(" ")).toBe(0);
+      }
+    }
+    // Scope flags ride on every hint, so it resolves where this one did.
+    const scoped = await run(["turns", "c2a4e6f1", "--project", "/src/sprocket"], { cwd: "/src/widget" });
+    for (const h of hints(scoped.stdout)) {
+      expect(h, h.join(" ")).toContain("--project");
+      expect((await run(h, { cwd: "/src/widget" })).exitCode, h.join(" ")).toBe(0);
+    }
+  });
+
   it("a unique <s8> stays short", async () => {
     const r = await run(["tail", "c2a4e6f1", "1"], { cwd });
     expect(r.stdout).toContain("prev c2a4e6f1:2 --limit 1`");

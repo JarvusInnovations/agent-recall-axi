@@ -202,11 +202,16 @@ describe("find: regex, ranges, deep", () => {
     expect(hitIds((await run(dropPhrase)).stdout)).toEqual(seq(8, 12, 16));
   });
 
-  it("--window accepts all only until window selection lands", async () => {
-    expect((await run(["find", S, "redirect", "--window", "all"])).exitCode).toBe(0);
-    const r = await run(["find", S, "redirect", "--window", "last"]);
+  it("--window all is the whole session; a window past the last is VALIDATION_ERROR", async () => {
+    const all = await run(["find", S, "redirect", "--window", "all"]);
+    expect(all.exitCode).toBe(0);
+    expect((await run(["find", S, "redirect"])).stdout).toBe(all.stdout.replaceAll(" --window all", ""));
+    // One window: `last` is window 0, the whole session.
+    expect(hitIds((await run(["find", S, "redirect", "--window", "last"])).stdout)).toEqual(hitIds(all.stdout));
+    const r = await run(["find", S, "redirect", "--window", "1"]);
     expect(r.exitCode).toBe(2);
-    expect(r.stdout).toContain("planned: views");
+    expect(r.stdout).toMatch(/^code: VALIDATION_ERROR$/m);
+    expect(r.stdout).toContain("only window 0");
   });
 });
 

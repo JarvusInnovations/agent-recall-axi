@@ -858,6 +858,19 @@ export function longHoldSession(s8 = "e3000023"): string {
   return s.render();
 }
 
+// ---------------------------------------------------------------------------------------------
+// views (plan views): shapes the committed fixtures do not cover, generated at test time
+
+/** A call whose result is only an image block: status `image`. */
+export function imageResultSession(s8 = "e4000024"): string {
+  const s = new SessionBuilder("widget", s8, START);
+  s.human("look at the widget screenshot");
+  s.assistant([s.toolUse(TOOL(s8, 1), "Read", { file_path: "docs/widget.png" })]);
+  s.toolResult(TOOL(s8, 1), [{ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } }]);
+  s.say("The screenshot shows the widget table.");
+  return s.render();
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_ROOT = join(here, "claude");
 
