@@ -10,6 +10,7 @@ import { findCommand } from "../reference.js";
 import { getNumber, getString, parseFlags, usageLine } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { renderResumePack } from "../output/resume.js";
+import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
 import { carry, rewriteNotice, scopeOf, sessionFromArg, sessionHint, withNotice, zoneOf, type Io } from "./common.js";
 
 const NAME = "resume-pack";
@@ -44,10 +45,20 @@ export async function resumePackCommand(args: string[], io: Io): Promise<string>
     throw err;
   }
   scopeOf(NAME, p, io);
+  const jsonOut = await jsonOutTarget(NAME, p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg(NAME, ref, p, io);
   const notice = await rewriteNotice(session, io, tz);
   const pack = await withNotice(notice, () => buildResumePack(session, opts));
   const hint = await sessionHint(NAME, ref, session, p, io);
-  return renderResumePack(pack, { tz, ref: hint.ref, showCarry: hint.showCarry, carry: carry(p), ...(notice ? { notice } : {}) });
+  const out = renderResumePack(pack, { tz, ref: hint.ref, showCarry: hint.showCarry, carry: carry(p), ...(notice ? { notice } : {}) });
+  if (!jsonOut) return out;
+  // --json-out (cli.md#conventions): the pack the library built, its layers whole.
+  const { human, ...rest } = pack;
+  const path = await writeJsonOut(jsonOut, async (j) => {
+    await j.begin({ ...rest, session: pack.session.id }, "human");
+    for (const ev of human) await j.item(ev);
+    await j.end();
+  });
+  return withJsonOutLine(out, path);
 }

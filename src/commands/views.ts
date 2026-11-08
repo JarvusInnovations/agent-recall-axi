@@ -267,7 +267,7 @@ export async function humanCommand(args: string[], io: Io): Promise<string> {
   if (msgs.length > 0) help.push(`Run \`${BIN} turns ${s}${rangeCarry(p)}${win}${tzc}\` for one row per prompt with what followed`);
   return withJson(jsonOut, assemble(parts, help), async (j) => {
     // Every message whole, no budget (cli.md#conventions).
-    const whole = budget === Infinity ? r : await humanMessages(o.session, { ...humanOpts, budget: Infinity });
+    const whole = budget === Infinity || budget === 0 ? r : await humanMessages(o.session, { ...humanOpts, budget: Infinity });
     await j.begin({ session: o.session.id, matching: whole.matching }, "messages");
     for (const m of whole.messages) await j.item(m);
     await j.end(whole.summary ? { summary: whole.summary } : {});
