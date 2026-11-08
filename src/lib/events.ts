@@ -7,10 +7,14 @@ import { comparePosition, formatId } from "./ids.js";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { DEFAULT_KINDS, KINDS, type Entry, type Event, type EventId, type Kind, type Pointer, type Session } from "./model.js";
-import { countNewlines, readLines, readLinesBackward, type Line } from "./reader.js";
+import { countNewlines, readLines, readLinesBackward } from "./reader.js";
+import { checkSession, heldEvents, inRange, inSpan, isEventId, kindSet, type HeldOpts, type Span } from "./hold.js";
+export { kindSet } from "./hold.js";
 import { newContext, type ClassifyContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
-import { countOf, ensureTable, extendTable, idOf, points, seedContext, startFor, type OffsetTable } from "./cache/index.js";
+import { countOf, ensureTable, extendTable, idOf, points, seedContext, startFor, tableFor, type Checkpoint, type OffsetTable } from "./cache/index.js";
+import { WindowCounter } from "./window-state.js";
+import { resolveWindow, windowOf, type WindowRange, type WindowSel } from "./windows.js";
 import type { CacheOpts } from "./cache/store.js";
 
 export interface ListOpts {
@@ -24,8 +28,23 @@ export interface ListOpts {
   limit?: number;
   /** Default: true when no `from` is given (the newest rows, printed oldest first). */
   newestLast?: boolean;
+  /** One compaction window (`k`, `last`, `k..`); default `all` (behaviors/context-windows.md). */
+  window?: WindowSel;
   /** Where the derived cache lives (default: `$XDG_CACHE_HOME/agent-session-axi`). */
   cache?: CacheOpts;
+}
+
+/** Where a seeded forward read of a window starts, and its classification context. */
+export function windowStart(session: Session, range: WindowRange | undefined): { offset: number; seq: number; ctx: ClassifyContext; malformed: number } {
+  if (!range || range.start.seq <= 1) return { offset: 0, seq: 1, ctx: newContext(session), malformed: 0 };
+  return { offset: range.start.offset, seq: range.start.seq, ctx: seedContext(session, range.start, range.table), malformed: range.start.malformed };
+}
+
+/** The tighter of an id bound and a window end, as the hold engine's line bound. */
+export function boundSeq(to: Date | EventId | undefined, span: WindowRange | undefined): number | undefined {
+  const a = isEventId(to) ? to.seq : undefined;
+  const b = span?.to?.seq;
+  return a === undefined ? b : b === undefined ? a : Math.min(a, b);
 }
 
 export interface Listing {
@@ -44,84 +63,6 @@ export interface Listing {
   scanned: number;
 }
 
-const isEventId = (v: unknown): v is EventId => typeof v === "object" && v !== null && "seq" in v;
-
-export function kindSet(kinds: ListOpts["kinds"]): ReadonlySet<Kind> {
-  if (kinds === "all") return new Set(KINDS);
-  return new Set(kinds ?? DEFAULT_KINDS);
-}
-
-function checkSession(session: Session, id: EventId | Date | undefined): void {
-  if (isEventId(id) && id.session !== session.short) {
-    throw new AgentSessionError(`${formatId(id)} is not an id of session ${session.short}`, "VALIDATION_ERROR", [
-      `ids of this session start with ${session.short}:`,
-    ]);
-  }
-}
-
-function inRange(ev: Event, from: ListOpts["from"], to: ListOpts["to"]): boolean {
-  if (from !== undefined) {
-    if (isEventId(from)) {
-      if (comparePosition(ev.id, from) < 0) return false;
-    } else if (!ev.t || Date.parse(ev.t) < from.getTime()) return false;
-  }
-  if (to !== undefined) {
-    if (isEventId(to)) {
-      if (comparePosition(ev.id, to) >= 0) return false;
-    } else if (!ev.t || Date.parse(ev.t) >= to.getTime()) return false;
-  }
-  return true;
-}
-
-/** How many visible events may wait behind a held row (and, past an id bound, how many lines are read). */
-const HOLD_CAP = 1000;
-
-/** A row still waiting for its partner: a call for its result, a compaction for its summary. */
-function waitingFor(ctx: ClassifyContext): (ev: Event) => boolean {
-  return (ev) => (ev.kind === "call" && ev.toolUseId !== undefined && ctx.pending.get(ev.toolUseId) === ev) || (ev.kind === "compaction" && ctx.compaction === ev);
-}
-
-interface HeldOpts {
-  ctx: ClassifyContext;
-  /** Where to start: a line start and its seq. */
-  offset: number;
-  seq: number;
-  /** Which events are rows. */
-  keep: (ev: Event) => boolean;
-  /** An id bound: lines past it are read only to settle held rows, at most HOLD_CAP of them. */
-  toSeq?: number;
-  /** Called for every line read, after it is classified (a partial last line: entry null, no events). */
-  onLine?: (line: Line, entry: Entry | null, evs: Event[]) => void;
-  /** Checked after each line once nothing is held: true ends the read. */
-  until?: () => boolean;
-}
-
-/**
- * The one hold-and-release engine every forward row reader uses (architecture.md#streaming-and-memory),
- * so the same row prints the same way whichever command reached it. Rows come out in file order; a
- * call waits for its result and a compaction for its summary, with the rows after it waiting too,
- * until it is settled or more than HOLD_CAP rows wait behind it (then it is released as it stands).
- */
-async function* heldEvents(session: Session, o: HeldOpts): AsyncGenerator<Event> {
-  const ctx = o.ctx;
-  const waiting = waitingFor(ctx);
-  const queue: Event[] = [];
-  let pastLines = 0;
-  for await (const line of readLines(session.path, { startOffset: o.offset, startSeq: o.seq })) {
-    const entry = claudeCode.parse(line);
-    const evs = entry ? claudeCode.classify(entry, ctx) : [];
-    o.onLine?.(line, entry, evs);
-    const pastBound = o.toSeq !== undefined && line.seq > o.toSeq;
-    if (!pastBound) for (const ev of evs) if (o.keep(ev)) queue.push(ev);
-    // Past an id bound nothing new is queued, so the held-row cap cannot trip: read on at most
-    // HOLD_CAP lines to settle the held rows, then release them as they are.
-    const giveUp = pastBound && ++pastLines > HOLD_CAP;
-    while (queue.length > 0 && (giveUp || !waiting(queue[0]!) || queue.length > HOLD_CAP)) yield queue.shift()!;
-    if (queue.length === 0 && (pastBound || o.until?.())) return;
-  }
-  yield* queue;
-}
-
 /**
  * Every visible event in file order, filtered. A call is yielded once its result has been read
  * (or the scan ends), so its `status`/`result` are already linked when a streaming consumer sees
@@ -135,8 +76,11 @@ export async function* events(session: Session, opts: Omit<ListOpts, "limit" | "
   checkSession(session, opts.from);
   checkSession(session, opts.to);
   const visible = kindSet(opts.kinds);
-  const held: HeldOpts = { ctx: newContext(session), offset: 0, seq: 1, keep: (ev) => visible.has(ev.kind) && inRange(ev, opts.from, opts.to) };
-  if (isEventId(opts.to)) held.toSeq = opts.to.seq;
+  const range = await resolveWindow(session, opts.window, opts.cache ? { cache: opts.cache } : {});
+  const start = windowStart(session, range);
+  const held: HeldOpts = { ctx: start.ctx, offset: start.offset, seq: start.seq, keep: (ev) => visible.has(ev.kind) && inRange(ev, opts.from, opts.to) && inSpan(ev, range) };
+  const toSeq = boundSeq(opts.to, range);
+  if (toSeq !== undefined) held.toSeq = toSeq;
   yield* heldEvents(session, held);
 }
 
@@ -146,27 +90,30 @@ export async function listEvents(session: Session, opts: ListOpts = {}): Promise
   checkSession(session, opts.to);
   const limit = opts.limit ?? 40;
   const newestLast = opts.newestLast ?? opts.from === undefined;
-  if (newestLast && opts.from === undefined && opts.to === undefined && limit > 0) {
+  const range = await resolveWindow(session, opts.window, opts.cache ? { cache: opts.cache } : {});
+  if (newestLast && opts.from === undefined && opts.to === undefined && limit > 0 && !range) {
     return (await tailFromTable(session, limit, opts)) ?? (await tailListing(session, limit, opts.kinds));
   }
-  return forwardListing(session, { ...opts, limit, newestLast });
+  return forwardListing(session, { ...opts, limit, newestLast }, range);
 }
 
-async function forwardListing(session: Session, opts: ListOpts & { limit: number; newestLast: boolean }): Promise<Listing> {
+/** A forward read of the range (from the window's checkpoint, seeded, when a window is selected). */
+async function forwardListing(session: Session, opts: ListOpts & { limit: number; newestLast: boolean }, range?: WindowRange): Promise<Listing> {
   const visible = kindSet(opts.kinds);
-  const ctx = newContext(session);
+  const start = windowStart(session, range);
+  const ctx = start.ctx;
   let rows: Event[] = [];
   let matching = 0;
-  let malformed = 0;
-  let lines = 0;
+  let malformed = start.malformed;
+  let lines = start.seq - 1;
   let firstMatch: Event | undefined;
-  for await (const line of readLines(session.path)) {
+  for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
     lines = line.seq;
     const entry = claudeCode.parse(line);
     if (!entry) continue;
     if (entry.malformed) malformed++;
     for (const ev of claudeCode.classify(entry, ctx)) {
-      if (!visible.has(ev.kind) || !inRange(ev, opts.from, opts.to)) continue;
+      if (!visible.has(ev.kind) || !inRange(ev, opts.from, opts.to) || !inSpan(ev, range)) continue;
       matching++;
       firstMatch ??= ev;
       if (opts.newestLast) {
@@ -272,6 +219,8 @@ export async function tail(session: Session, n: number, opts: Pick<ListOpts, "ki
 export interface PanOpts {
   /** Default: every kind but `thinking` and `result`. Counts are over these kinds. */
   kinds?: readonly Kind[] | "all";
+  /** Travel only inside this compaction window; an anchor outside it is VALIDATION_ERROR. */
+  window?: WindowSel;
   cache?: CacheOpts;
 }
 
@@ -310,11 +259,6 @@ function relation(ev: EventId, anchor: EventId): number {
   return b === anchor.block ? 0 : b < anchor.block ? -1 : 1;
 }
 
-async function tableFor(session: Session, cache: CacheOpts | undefined, upTo?: number): Promise<OffsetTable> {
-  const opts = { ...(cache ?? {}), build: true, ...(upTo !== undefined ? { upTo } : {}) };
-  return (await ensureTable(session, opts)) ?? (await extendTable(session, undefined, upTo));
-}
-
 function beyondEnd(session: Session, id: EventId, lines: number): AgentSessionError {
   return new AgentSessionError(
     `${formatId(id)} is beyond the end of the session (${lines} line${lines === 1 ? "" : "s"})`,
@@ -345,19 +289,31 @@ async function pan(
   const toEnd = anchor.seq === Number.MAX_SAFE_INTEGER;
   const visible = kindSet(opts.kinds);
   const table = given ?? (await tableFor(session, opts.cache));
+  const range = toEnd ? undefined : await resolveWindow(session, opts.window, { table });
+  if (range && !inSpan({ id: anchor } as Event, range)) {
+    const w = windowOf(table, anchor);
+    throw new AgentSessionError(`${formatId(anchor)} is in window ${w}, not ${range.index === range.through ? `window ${range.index}` : `windows ${range.index}..${range.through}`}`, "VALIDATION_ERROR", [
+      `pass --window ${w} to travel inside the anchor's window, or an anchor inside the window`,
+    ]);
+  }
   const pts = points(table);
   const anchorPoint = startFor(table, anchor.seq);
   let k = pts.findIndex((pt) => pt.seq === anchorPoint.seq);
-  if (before === Infinity) k = 0;
+  // A window's travel never starts before the checkpoint at or before the window's start.
+  const kMin = range?.from ? pts.findIndex((pt) => pt.seq === startFor(table, range.from!.seq).seq) : 0;
+  if (before === Infinity) k = kMin;
   else if (before > 0) {
     const atAnchor = countOf(anchorPoint, visible);
-    while (k > 0 && atAnchor - countOf(pts[k]!, visible) < before) k--;
+    while (k > kMin && atAnchor - countOf(pts[k]!, visible) < before) k--;
   }
   const start = pts[k]!;
   const ctx = seedContext(session, start, table);
-  const totalIndexed = countOf(table.tail, visible);
+  // Visible events before the window and up to its end (global indices; the whole file without a window).
+  const winBase = range?.fromCum ? countOf({ cum: range.fromCum } as Checkpoint, visible) : 0;
+  const totalIndexed = range?.toCum ? countOf({ cum: range.toCum } as Checkpoint, visible) : countOf(table.tail, visible);
 
-  let visIdx = countOf(start, visible); // visible rows released before the next one
+  // Visible rows released before the next one; rows before the window are never released.
+  let visIdx = Math.max(countOf(start, visible), winBase);
   let pre: Event[] = [];
   const anchorRows: Event[] = [];
   let anchorSel: Event[] | undefined;
@@ -381,7 +337,7 @@ async function pan(
     ctx,
     offset: start.offset,
     seq: start.seq,
-    keep: (ev) => visible.has(ev.kind),
+    keep: (ev) => visible.has(ev.kind) && inSpan(ev, range),
     onLine: (line, entry, evs) => {
       lines = line.seq;
       if (line.seq > table.seq && entry?.malformed) malformedBeyond++;
@@ -392,6 +348,7 @@ async function pan(
     },
     until: done,
   };
+  if (range?.to) held.toSeq = range.to.seq;
   for await (const ev of heldEvents(session, held)) {
     if (ev.id.seq > table.seq) beyond++;
     const rel = relation(ev.id, anchor);
@@ -431,9 +388,9 @@ async function pan(
   const out: PanResult & { scanned: number } = {
     rows,
     anchor,
-    atStart: firstIdx === 0,
+    atStart: firstIdx === winBase,
     atEnd: !moreAfter && last >= total,
-    matching: total,
+    matching: total - winBase,
     lines: Math.max(lines, table.seq),
     malformed: table.tail.malformed + malformedBeyond,
     anchorRows,
@@ -554,7 +511,7 @@ export async function showFromStart(session: Session, id: EventId): Promise<Show
 async function showFrom(session: Session, id: EventId, start: ShowStart): Promise<Shown | undefined> {
   const ctx = start.ctx;
   let turn = start.turn;
-  let window = start.window;
+  const windows = new WindowCounter(start.window);
   let lastEvent = start.last;
   const eventsByUuid = start.byUuid;
   let lines = start.seq - 1;
@@ -574,7 +531,7 @@ async function showFrom(session: Session, id: EventId, start: ShowStart): Promis
       if (line.seq < id.seq) {
         for (const ev of evs) {
           if (opensTurn(ev.kind)) turn = ev.id;
-          if (ev.kind === "compaction") window++;
+          windows.place(ev);
           lastEvent = ev.id;
         }
         if (eventsByUuid && entry.uuid && evs.length) eventsByUuid.set(entry.uuid, evs.length);
@@ -585,7 +542,7 @@ async function showFrom(session: Session, id: EventId, start: ShowStart): Promis
         return undefined;
       }
       const shownAll: ShownEvent[] = evs.map((ev) => {
-        const s: ShownEvent = { event: ev, window };
+        const s: ShownEvent = { event: ev, window: windows.place(ev) };
         const t = opensTurn(ev.kind) ? ev.id : turn;
         if (t) s.turn = t;
         if (opensTurn(ev.kind)) turn = ev.id;

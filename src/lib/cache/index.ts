@@ -14,12 +14,13 @@ import { claudeCode } from "../adapters/claude-code/index.js";
 import { formatId, parseId } from "../ids.js";
 import { KINDS, type Event, type EventId, type Kind, type Session } from "../model.js";
 import { readLines } from "../reader.js";
+import { opensWindow, WindowCounter } from "../window-state.js";
 import { VERSION as PACKAGE_VERSION } from "../../version.js";
 import { cacheDir, ownedRecord, readSlice, recordName, safeDir, sha, tablePath, writeRecord, type CacheOpts } from "./store.js";
 
 export const CHECKPOINT_EVERY = 256;
 /** The table format; bumped whenever what a table records changes. */
-const VERSION = 2;
+const VERSION = 3;
 
 /** A call still waiting for its result at a checkpoint: what linking a later result needs. */
 export interface PendingCall {
@@ -36,7 +37,7 @@ export interface Checkpoint {
   offset: number;
   /** The `human` / `human.slash` event in effect (the turn), as a formatted id. */
   turn?: string;
-  /** Compaction events before this line. */
+  /** Window boundaries before this line: the window in effect (window-state.ts). */
   window: number;
   /** The last event (any kind) before this line. */
   last?: string;
@@ -47,6 +48,21 @@ export interface Checkpoint {
   cum: number[];
   /** Malformed lines before this line. */
   malformed: number;
+}
+
+/**
+ * A window boundary (behaviors/context-windows.md): where window `k` (its index in `bounds`, + 1)
+ * begins. Ids are formatted.
+ */
+export interface Bound {
+  /** The compaction that closed the window before; absent for a boundary-less summary. */
+  compaction?: string;
+  /** The summary that opened the window, once read. */
+  summary?: string;
+  /** The position where the window begins (inclusive): the line after a compaction, or the summary itself. */
+  start: string;
+  /** Events per kind before `start`, in `KINDS` order. */
+  cum: number[];
 }
 
 export interface OffsetTable {
@@ -76,6 +92,8 @@ export interface OffsetTable {
    * it is searched on demand instead of being parsed into a map on every seek.
    */
   tools: string;
+  /** Window boundaries in file order (bounds[k - 1] opens window k). */
+  bounds: Bound[];
 }
 
 /** A tool name inside the `tools` log: backslash, tab and newline escaped. */
@@ -196,7 +214,7 @@ function isTable(v: unknown, path: string): v is OffsetTable {
   return (
     typeof t === "object" && t !== null && t.v === VERSION && t.path === path && typeof t.seq === "number" && typeof t.end === "number" &&
     Array.isArray(t.checkpoints) && t.checkpoints.length > 0 && typeof t.tail === "object" && Array.isArray(t.tail?.cum) &&
-    t.pkg === PACKAGE_VERSION && typeof t.tools === "string"
+    t.pkg === PACKAGE_VERSION && typeof t.tools === "string" && Array.isArray(t.bounds)
   );
 }
 
@@ -250,8 +268,9 @@ function snapshot(seq: number, offset: number, st: Running, ctx: ClassifyContext
 export async function extendTable(session: Session, table: OffsetTable | undefined, upTo?: number): Promise<OffsetTable> {
   const start = table?.tail ?? emptyState();
   const t: OffsetTable = table
-    ? { ...table, checkpoints: [...table.checkpoints] }
-    : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "" };
+    ? { ...table, checkpoints: [...table.checkpoints], bounds: table.bounds.map((b) => ({ ...b })) }
+    : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "", bounds: [] };
+  const windows = new WindowCounter(start.window);
   const ctx = seedContext(session, start, table);
   const tools: string[] = [];
   const st: Running = { window: start.window, cum: [...start.cum], malformed: start.malformed };
@@ -271,9 +290,20 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
     if (entry) {
       if (entry.malformed) st.malformed++;
       for (const ev of claudeCode.classify(entry, ctx)) {
+        if (opensWindow(ev)) t.bounds.push({ summary: formatId(ev.id), start: formatId(ev.id), cum: [...st.cum] });
+        windows.place(ev);
+        st.window = windows.index;
         st.cum[KIND_INDEX.get(ev.kind)!]!++;
+        if (ev.kind === "compaction") t.bounds.push({ compaction: formatId(ev.id), start: formatId({ session: ev.id.session, seq: ev.id.seq + 1 }), cum: [...st.cum] });
+        else if (ev.kind === "summary" && ev.meta?.compaction) {
+          const c = formatId(ev.meta.compaction as EventId);
+          for (let i = t.bounds.length - 1; i >= 0; i--) {
+            if (t.bounds[i]!.compaction !== c) continue;
+            t.bounds[i]!.summary = formatId(ev.id);
+            break;
+          }
+        }
         if (opensTurn(ev.kind)) st.turn = ev.id;
-        if (ev.kind === "compaction") st.window++;
         st.last = ev.id;
         // Mirrors classify's `ctx.tools.set` (adapter link): every call with a tool and an id.
         if (ev.kind === "call" && ev.toolUseId && ev.tool) tools.push(`${line.seq}\t${ev.toolUseId}\t${escapeTool(ev.tool)}\n`);
@@ -329,6 +359,12 @@ export async function ensureTable(session: Session, opts: EnsureOpts): Promise<O
   table = await extendTable(session, table, opts.upTo);
   if (`${table.seq}:${table.end}` !== before) await saveTable(table, opts);
   return table;
+}
+
+/** The table for a session, built when absent, covering the file (or up to `upTo`): what a seek reads. */
+export async function tableFor(session: Session, cache: CacheOpts | undefined, upTo?: number): Promise<OffsetTable> {
+  const opts = { ...(cache ?? {}), build: true, ...(upTo !== undefined ? { upTo } : {}) };
+  return (await ensureTable(session, opts)) ?? (await extendTable(session, undefined, upTo));
 }
 
 // ---------------------------------------------------------------------------------------------
