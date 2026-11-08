@@ -1,35 +1,42 @@
 /**
  * `hook install|status|uninstall` (specs/cli.md#hook): explicit opt-in registration of the
- * SessionStart hook that runs the home view. The only code in this tool that writes outside its
- * own cache. Built on the SDK's helpers with marker `agent-session-axi`: a full install is the
- * SDK's `installSessionStartHooks`; `--agent` installs one target through the primitives that
- * helper is built on (architecture.md#session-hook).
+ * SessionStart hook that runs the home view, the one command that writes outside the cache
+ * (specs/behaviors/privacy.md). The settings merges are this tool's own (hook-settings.ts); the
+ * SDK supplies the OpenCode plugin source and PATH-portable command resolution
+ * (specs/architecture.md#session-hook).
  */
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
-import {
-  computeCodexConfigUpdate,
-  computeSessionStartHookUpdate,
-  installSessionStartHooks,
-  resolvePortableHookCommand,
-  sessionStartHookStatus,
-  uninstallSessionStartHooks,
-  type HookSettings,
-} from "axi-sdk-js";
-import { AxiError } from "axi-sdk-js";
+import { basename, delimiter, join, resolve } from "node:path";
+import { AxiError, installSessionStartHooks, resolvePortableHookCommand } from "axi-sdk-js";
 import { findCommand, HOOK_AGENTS, HOOK_FLAGS, HOOK_SCOPES } from "../reference.js";
 import { getString, parseFlags, usageLine } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { renderDocument } from "../output/render.js";
 import { bundleShim, NAME } from "../invocation.js";
 import { BIN, type Io } from "./common.js";
+import {
+  atomicWrite,
+  codexHooksEnabled,
+  OUR_FILES,
+  ourCommands,
+  readHooksJson,
+  readText,
+  serializeJson,
+  SettingsError,
+  shellQuote,
+  TIMEOUT_SECONDS,
+  withCodexHooksFeature,
+  withOurEntry,
+  withoutOurEntries,
+} from "./hook-settings.js";
 
 export const MARKER = NAME;
 export const DISABLE_ENV = "AGENT_SESSION_AXI_DISABLE_HOOKS";
-const TIMEOUT_SECONDS = 10;
 const OPENCODE_FILE = "axi-agent-session-axi.js";
-const OPENCODE_MANAGED = `axi-sdk-js managed opencode plugin: ${MARKER}`;
+/** The first line of the SDK's managed plugin for this marker: the only plugin file that is ours. */
+const OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
+const COMMAND_LINE = /^const command = (".*");$/m;
 
 type Scope = (typeof HOOK_SCOPES)[number];
 type Agent = (typeof HOOK_AGENTS)[number];
@@ -42,22 +49,40 @@ export interface HookIo extends Io {
 interface Targets {
   claude: string;
   codex: string;
+  /** The user's Codex config: the only place Codex reads its hooks feature flag. */
   codexConfig: string;
   opencode: string;
 }
 
-/** The files each scope writes (the SDK's own layout, cli.md#hook). */
-export function hookTargets(scope: Scope, home: string, projectDir: string): Targets {
-  const root = scope === "project" ? resolve(projectDir) : home;
+/** The files each scope writes (cli.md#hook); user scope honours the agents' config-dir variables. */
+export function hookTargets(scope: Scope, env: Record<string, string | undefined>, home: string, projectDir: string): Targets {
+  const codexHome = env.CODEX_HOME || join(home, ".codex");
+  const codexConfig = join(codexHome, "config.toml");
+  if (scope === "project") {
+    const root = resolve(projectDir);
+    return {
+      claude: join(root, ".claude", "settings.json"),
+      codex: join(root, ".codex", "hooks.json"),
+      codexConfig,
+      opencode: join(root, ".opencode", "plugins", OPENCODE_FILE),
+    };
+  }
   return {
-    claude: join(root, ".claude", "settings.json"),
-    codex: join(root, ".codex", "hooks.json"),
-    codexConfig: join(home, ".codex", "config.toml"),
-    opencode: scope === "project" ? join(root, ".opencode", "plugins", OPENCODE_FILE) : join(home, ".config", "opencode", "plugins", OPENCODE_FILE),
+    claude: join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "settings.json"),
+    codex: join(codexHome, "hooks.json"),
+    codexConfig,
+    opencode: join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode", "plugins", OPENCODE_FILE),
   };
 }
 
-/** The executable the hook runs: the skill shim, else the npm bin. A `.ts` source entry cannot run as a hook. */
+function installFromBuildHints(): string[] {
+  return [
+    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
+    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`,
+  ];
+}
+
+/** The executable the hook runs: the skill shim (or bundle), else the npm bin; one of the forms install writes. */
 export function hookExecPath(entrypoint: string | undefined): string {
   if (!entrypoint) throw new AxiError("cannot tell which binary is running", "VALIDATION_ERROR", installFromBuildHints());
   const b = bundleShim(entrypoint);
@@ -66,18 +91,11 @@ export function hookExecPath(entrypoint: string | undefined): string {
     throw new AxiError(`a hook cannot run the TypeScript source (${entrypoint})`, "VALIDATION_ERROR", installFromBuildHints());
   }
   const path = resolve(entrypoint);
-  // The marker is how every later install, status and uninstall finds this entry again.
-  if (!path.includes(NAME)) {
-    throw new AxiError(`the running binary's path does not name ${NAME} (${path}), so its hook could not be found again`, "VALIDATION_ERROR", installFromBuildHints());
+  // Only these names are recognised as ours later (status, path repair, uninstall).
+  if (!OUR_FILES.has(basename(path))) {
+    throw new AxiError(`the running binary (${path}) is not one ${NAME} installs as a hook (${[...OUR_FILES].join(", ")})`, "VALIDATION_ERROR", installFromBuildHints());
   }
   return path;
-}
-
-function installFromBuildHints(): string[] {
-  return [
-    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
-    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`,
-  ];
 }
 
 function realFile(path: string): string | undefined {
@@ -88,7 +106,7 @@ function realFile(path: string): string | undefined {
   }
 }
 
-/** The command string `install` writes: the bare name when it is on PATH and resolves to execPath. */
+/** The command, unquoted: the bare name when it is on PATH and resolves to execPath, else the path. */
 export function hookCommandString(execPath: string, pathVar: string | undefined): string {
   return resolvePortableHookCommand(execPath, [NAME], MARKER, {
     pathEntries: (pathVar ?? "").split(delimiter).filter(Boolean),
@@ -97,32 +115,27 @@ export function hookCommandString(execPath: string, pathVar: string | undefined)
   });
 }
 
-function read(path: string): string | undefined {
+function collapseUnder(path: string, home: string): string {
+  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+function readOrUndefined(path: string): string | undefined {
   try {
-    return readFileSync(path, "utf8");
+    return readText(path);
   } catch {
     return undefined;
   }
 }
 
-/** The command of this tool's entry in a Claude Code / Codex hooks file, if any. */
-function jsonHookCommand(text: string | undefined): string | undefined {
-  if (text === undefined) return undefined;
-  try {
-    const settings = JSON.parse(text) as HookSettings;
-    for (const group of settings.hooks?.SessionStart ?? []) {
-      for (const h of group.hooks ?? []) if (typeof h.command === "string" && h.command.includes(MARKER)) return h.command;
-    }
-    for (const h of settings.hooks?.session_start ?? []) if (typeof h.command === "string" && h.command.includes(MARKER)) return h.command;
-  } catch {
-    return undefined;
-  }
-  return undefined;
+// ── OpenCode plugin ───────────────────────────────────────────────────────────────────────────
+
+function isOurPlugin(text: string | undefined): boolean {
+  return text !== undefined && text.split(/\r?\n/, 1)[0] === OPENCODE_MANAGED;
 }
 
 function pluginCommand(text: string | undefined): string | undefined {
-  if (text === undefined || !text.includes(OPENCODE_MANAGED)) return undefined;
-  const m = /^const command = (".*");$/m.exec(text);
+  if (!isOurPlugin(text)) return undefined;
+  const m = COMMAND_LINE.exec(text!);
   try {
     return m ? (JSON.parse(m[1]!) as string) : undefined;
   } catch {
@@ -130,100 +143,36 @@ function pluginCommand(text: string | undefined): string | undefined {
   }
 }
 
-function installedCommand(agent: Agent, text: string | undefined): string | undefined {
-  return agent === "opencode" ? pluginCommand(text) : jsonHookCommand(text);
-}
-
-/** This tool's entry (or managed plugin) is present in the file's text. */
-function hasManaged(agent: Agent, text: string | undefined): boolean {
-  return agent === "opencode" ? text?.includes(OPENCODE_MANAGED) === true : jsonHookCommand(text) !== undefined;
-}
-
-function collapseUnder(path: string, home: string): string {
-  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-}
-
-function writeJson(path: string, settings: HookSettings): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
-}
-
-/** One JSON hooks file brought to the managed entry (the SDK's own merge). */
-function installJson(path: string, command: string, errors: Map<string, string>): void {
-  try {
-    const text = read(path);
-    const current = text === undefined ? {} : (JSON.parse(text) as HookSettings);
-    const [updated, changed] = computeSessionStartHookUpdate(current, { marker: MARKER, command, timeoutSeconds: TIMEOUT_SECONDS });
-    if (changed) writeJson(path, updated);
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
-  }
-}
-
-function installCodexFeature(path: string, errors: Map<string, string>): void {
-  try {
-    const [updated, changed] = computeCodexConfigUpdate(read(path) ?? "");
-    if (changed) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, updated, "utf8");
-    }
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
-  }
-}
-
 /**
- * The OpenCode plugin alone. The SDK writes its plugin source only together with the other two
- * targets, so it is generated into a throwaway home and copied, never rewritten by hand: the bytes
- * are the SDK's.
+ * The SDK's plugin source, its command set to `raw` (spawned without a shell, so unquoted). The
+ * SDK writes it only alongside its other targets, so it is generated into a throwaway home.
  */
-function installOpenCode(path: string, execPath: string, errors: Map<string, string>): void {
+function pluginSource(execPath: string, raw: string): string {
   const scratch = mkdtempSync(join(tmpdir(), `${NAME}-hook-`));
   try {
-    installSessionStartHooks({
-      marker: MARKER,
-      execPath,
-      binaryNames: [NAME],
-      shouldInstall: () => true,
-      timeoutSeconds: TIMEOUT_SECONDS,
-      homeDir: scratch,
-      scope: "user",
-    });
-    const next = read(join(scratch, ".config", "opencode", "plugins", OPENCODE_FILE));
-    if (next === undefined) throw new Error("the plugin source could not be generated");
-    const current = read(path);
-    if (current !== undefined && !current.includes(OPENCODE_MANAGED)) {
-      errors.set(path, "refusing to overwrite unmanaged OpenCode plugin");
-      return;
-    }
-    if (current !== next) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, next, "utf8");
-    }
-  } catch (err) {
-    errors.set(path, err instanceof Error ? err.message : String(err));
+    installSessionStartHooks({ marker: MARKER, execPath, binaryNames: [], shouldInstall: () => true, timeoutSeconds: TIMEOUT_SECONDS, homeDir: scratch, scope: "user" });
+    const text = readText(join(scratch, ".config", "opencode", "plugins", OPENCODE_FILE));
+    if (text === undefined || !isOurPlugin(text)) throw new SettingsError("the plugin source could not be generated");
+    if ((text.match(new RegExp(COMMAND_LINE.source, "gm")) ?? []).length !== 1) throw new SettingsError("the generated plugin has no single command line");
+    return text.replace(COMMAND_LINE, () => `const command = ${JSON.stringify(raw)};`);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
 }
 
-/** `<path>: <message>` from the SDK's onError, keyed by the path. */
-function collect(errors: Map<string, string>, paths: string[]): (message: string) => void {
-  return (message) => {
-    const path = paths.find((p) => message.startsWith(`${p}: `));
-    if (path) errors.set(path, message.slice(path.length + 2));
-    else errors.set("", message);
-  };
-}
-
-function isUnmanaged(message: string | undefined): boolean {
-  return message !== undefined && /unmanaged OpenCode plugin/.test(message);
-}
+// ── the subcommands ───────────────────────────────────────────────────────────────────────────
 
 interface Row {
   agent: Agent;
   path: string;
   state: string;
+}
+
+interface Ctx {
+  scope: Scope;
+  targets: Targets;
+  scopeFlag: string;
+  show: (path: string) => string;
 }
 
 function parseScope(p: ReturnType<typeof parseFlags>): Scope {
@@ -245,13 +194,9 @@ const SUBCOMMANDS = ["install", "status", "uninstall"] as const;
 export async function hookCommand(args: string[], io: HookIo): Promise<string> {
   const doc = findCommand("hook");
   const sub = args[0];
-  if (sub === undefined || sub === "--help" || sub === "-h") {
-    if (sub === undefined) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
-    return renderCommandHelp("hook") ?? "";
-  }
-  if (!(SUBCOMMANDS as readonly string[]).includes(sub)) {
-    throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
-  }
+  if (sub === undefined) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
+  if (sub === "--help" || sub === "-h") return renderCommandHelp("hook") ?? "";
+  if (!(SUBCOMMANDS as readonly string[]).includes(sub)) throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
   // Per-subcommand flag sets: --agent belongs to install alone.
   const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => sub === "install" || f.name !== "agent");
   const p = parseFlags(`hook ${sub}`, args.slice(1), specs);
@@ -260,12 +205,15 @@ export async function hookCommand(args: string[], io: HookIo): Promise<string> {
   const scope = parseScope(p);
   const agent = sub === "install" ? parseAgent(p) : undefined;
   const home = io.env.HOME || homedir();
-  const targets = hookTargets(scope, home, io.cwd);
-  const scopeFlag = getString(p, "scope") !== undefined ? ` --scope ${scope}` : "";
-  const show = (path: string) => collapseUnder(path, home);
-  if (sub === "status") return status(scope, home, io, targets, scopeFlag, show);
-  if (sub === "uninstall") return uninstall(scope, home, io, targets, show);
-  return install(scope, agent, home, io, targets, scopeFlag, show);
+  const ctx: Ctx = {
+    scope,
+    targets: hookTargets(scope, io.env, home, io.cwd),
+    scopeFlag: getString(p, "scope") !== undefined ? ` --scope ${scope}` : "",
+    show: (path) => collapseUnder(path, home),
+  };
+  if (sub === "status") return status(ctx, io);
+  if (sub === "uninstall") return uninstall(ctx);
+  return install(ctx, agent, io);
 }
 
 function rowsFor(targets: Targets): Array<{ agent: Agent; path: string }> {
@@ -276,116 +224,151 @@ function rowsFor(targets: Targets): Array<{ agent: Agent; path: string }> {
   ];
 }
 
+/** The Codex feature flag line: on, or what is left for the user to set. */
+function codexFeatures(ctx: Ctx): string {
+  const path = ctx.show(ctx.targets.codexConfig);
+  if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
+  return ctx.scope === "project"
+    ? `not set (needs [features] hooks = true in ${path}; run hook install --scope user or set it yourself)`
+    : `${path} (not set)`;
+}
+
 function finish(body: Record<string, unknown>, help: string[], failed: boolean): string {
   if (failed) process.exitCode = 1;
   return renderDocument(body, help);
 }
 
-function install(scope: Scope, agent: Agent | undefined, home: string, io: HookIo, targets: Targets, scopeFlag: string, show: (p: string) => string): string {
-  if (io.env[DISABLE_ENV] === "1") {
-    return renderDocument({ hook: `disabled by ${DISABLE_ENV}=1 (no changes)` });
-  }
-  const execPath = hookExecPath(io.entrypoint ?? process.argv[1]);
-  const command = hookCommandString(execPath, io.env.PATH ?? process.env.PATH);
-  const chosen = rowsFor(targets).filter((r) => agent === undefined || r.agent === agent);
-  const watched = [...chosen.map((r) => r.path), ...(chosen.some((r) => r.agent === "codex") ? [targets.codexConfig] : [])];
-  const before = new Map(watched.map((p) => [p, read(p)]));
-  const errors = new Map<string, string>();
-  if (agent === undefined) {
-    installSessionStartHooks({
-      marker: MARKER,
-      execPath,
-      binaryNames: [NAME],
-      shouldInstall: () => true,
-      timeoutSeconds: TIMEOUT_SECONDS,
-      homeDir: home,
-      scope,
-      projectDir: io.cwd,
-      onError: collect(errors, watched),
-    });
-  } else if (agent === "claude") installJson(targets.claude, command, errors);
-  else if (agent === "codex") {
-    installJson(targets.codex, command, errors);
-    installCodexFeature(targets.codexConfig, errors);
-  } else installOpenCode(targets.opencode, execPath, errors);
-
-  const rows: Row[] = chosen.map(({ agent: a, path }) => {
-    const err = errors.get(path);
-    if (isUnmanaged(err)) return { agent: a, path: show(path), state: "unmanaged (left in place)" };
-    if (err !== undefined) return { agent: a, path: show(path), state: `error: ${err}` };
-    const was = before.get(path);
-    const now = read(path);
-    const state = was === now ? "unchanged" : hasManaged(a, was) ? "updated" : "added";
-    return { agent: a, path: show(path), state };
-  });
-  const body: Record<string, unknown> = {};
-  const changed = rows.some((r) => r.state === "added" || r.state === "updated") || watched.some((p) => before.get(p) !== read(p));
-  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope; no changes)`;
-  // What was written: the SDK's full install resolves PATH itself.
-  const written = chosen.map((r) => installedCommand(r.agent, read(r.path))).find((c) => c !== undefined);
-  body.command = written ?? command;
-  body.targets = rows;
-  if (chosen.some((r) => r.agent === "codex")) {
-    const err = errors.get(targets.codexConfig);
-    body.codex_features = `${show(targets.codexConfig)} (${err === undefined ? "hooks = true" : `error: ${err}`})`;
-  }
-  const other = errors.get("");
-  if (other !== undefined) body.error = other;
-  const failed = errors.size > [...errors.values()].filter(isUnmanaged).length;
-  return finish(body, [`Run \`${BIN} hook status${scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${scopeFlag}\` to remove it`], failed);
+/**
+ * One hooks JSON target brought to our entry; its row state. Nothing is written when the file
+ * fails its checks; `before` runs just ahead of this file's write (the Codex feature flag).
+ */
+function installJson(path: string, command: string, before?: () => void): string {
+  const file = readHooksJson(path);
+  const had = ourCommands(file.doc).length > 0;
+  const { doc, changed } = withOurEntry(file.doc, command);
+  before?.();
+  if (!changed) return "unchanged";
+  atomicWrite(path, serializeJson(file, doc));
+  if (!ourCommands(readHooksJson(path).doc).includes(command)) throw new SettingsError("the hook was not in the file after writing");
+  return had ? "updated" : "added";
 }
 
-function status(scope: Scope, home: string, io: HookIo, targets: Targets, scopeFlag: string, show: (p: string) => string): string {
-  const st = sessionStartHookStatus({ marker: MARKER, homeDir: home, scope, projectDir: io.cwd });
+function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
+  if (io.env[DISABLE_ENV] === "1") return renderDocument({ hook: `disabled by ${DISABLE_ENV}=1 (no changes)` });
+  const execPath = hookExecPath(io.entrypoint ?? process.argv[1]);
+  const raw = hookCommandString(execPath, io.env.PATH ?? process.env.PATH);
+  // Claude Code and Codex run the command through a shell; the OpenCode plugin takes it raw.
+  const command = shellQuote(raw);
+  const chosen = rowsFor(ctx.targets).filter((r) => agent === undefined || r.agent === agent);
+  let failed = false;
+  const rows: Row[] = chosen.map(({ agent: a, path }) => {
+    const row = (state: string): Row => ({ agent: a, path: ctx.show(path), state });
+    try {
+      if (a === "claude" || (a === "codex" && ctx.scope === "project")) return row(installJson(path, command));
+      if (a === "codex") {
+        // Both Codex files pass their checks before either is written.
+        const cfg = withCodexHooksFeature(readText(ctx.targets.codexConfig) ?? "");
+        readHooksJson(path);
+        const state = installJson(path, command, () => {
+          if (!cfg.changed) return;
+          atomicWrite(ctx.targets.codexConfig, cfg.text);
+          if (!codexHooksEnabled(readText(ctx.targets.codexConfig))) throw new SettingsError("the feature flag was not set after writing");
+        });
+        return row(state === "unchanged" && cfg.changed ? "updated" : state);
+      }
+      const current = readText(path);
+      if (current !== undefined && !isOurPlugin(current)) return row("unmanaged (left in place)");
+      const next = pluginSource(execPath, raw);
+      if (current === next) return row("unchanged");
+      atomicWrite(path, next);
+      if (pluginCommand(readText(path)) !== raw) throw new SettingsError("the plugin was not in place after writing");
+      return row(current === undefined ? "added" : "updated");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
+  });
+  const changed = rows.some((r) => r.state === "added" || r.state === "updated");
+  const body: Record<string, unknown> = {
+    hook: changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`,
+    command,
+    targets: rows,
+  };
+  if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
+  return finish(body, [`Run \`${BIN} hook status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`], failed);
+}
+
+function status(ctx: Ctx, io: HookIo): string {
   let expected: string | undefined;
   try {
     expected = hookCommandString(hookExecPath(io.entrypoint ?? process.argv[1]), io.env.PATH ?? process.env.PATH);
   } catch {
     expected = undefined; // a source checkout: nothing to compare against
   }
-  const installed = { claude: st.claude.installed, codex: st.codex.installed, opencode: st.opencode.installed };
-  const rows: Row[] = rowsFor(targets).map(({ agent, path }) => {
-    if (!installed[agent]) return { agent, path: show(path), state: "absent" };
-    const cmd = installedCommand(agent, read(path));
-    return { agent, path: show(path), state: expected !== undefined && cmd !== undefined && cmd !== expected ? "stale" : "installed" };
+  const seen = new Set<string>();
+  let failed = false;
+  const rows: Row[] = rowsFor(ctx.targets).map(({ agent, path }) => {
+    const row = (state: string): Row => ({ agent, path: ctx.show(path), state });
+    try {
+      if (agent === "opencode") {
+        const cmd = pluginCommand(readText(path));
+        if (cmd === undefined) return row("absent");
+        seen.add(shellQuote(cmd));
+        return row(expected !== undefined && cmd !== expected ? "stale" : "installed");
+      }
+      const cmds = ourCommands(readHooksJson(path).doc);
+      if (!cmds.length) return row("absent");
+      for (const c of cmds) seen.add(c);
+      const stale = expected !== undefined && (cmds.length > 1 || cmds[0] !== shellQuote(expected));
+      return row(stale ? "stale" : "installed");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
   });
-  const n = rows.filter((r) => r.state !== "absent").length;
-  const stale = rows.some((r) => r.state === "stale");
-  const word = n === 0 ? "not installed" : stale ? "stale" : n < rows.length ? "partly installed" : "installed";
-  const body: Record<string, unknown> = { hook: `${word} (${scope} scope)` };
-  const commands = [
-    ...new Set(
-      rowsFor(targets)
-        .filter(({ agent }) => installed[agent])
-        .map(({ agent, path }) => installedCommand(agent, read(path)))
-        .filter((c): c is string => c !== undefined),
-    ),
-  ];
-  if (commands.length === 1) body.command = commands[0];
-  else if (commands.length > 1) body.commands = commands;
+  const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
+  const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
+  const body: Record<string, unknown> = { hook: `${word} (${ctx.scope} scope)` };
+  if (seen.size === 1) body.command = [...seen][0];
+  else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
-  body.codex_features = `${show(st.codex.userFeaturePath)} (${st.codex.userFeatureEnabled ? "hooks = true" : "not set"})`;
+  body.codex_features = codexFeatures(ctx);
   const help = rows.every((r) => r.state === "installed")
-    ? [`Run \`${BIN} hook uninstall${scopeFlag}\` to remove it`]
-    : [`Run \`${BIN} hook install${scopeFlag}\` to ${n === 0 ? "install" : "repair"} it`];
-  return renderDocument(body, help);
+    ? [`Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`]
+    : [`Run \`${BIN} hook install${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+  return finish(body, help, failed);
 }
 
-function uninstall(scope: Scope, home: string, io: HookIo, targets: Targets, show: (p: string) => string): string {
-  const all = rowsFor(targets);
-  const before = new Map(all.map((r) => [r.path, hasManaged(r.agent, read(r.path))]));
-  const errors = new Map<string, string>();
-  uninstallSessionStartHooks({ marker: MARKER, homeDir: home, scope, projectDir: io.cwd, onError: collect(errors, all.map((r) => r.path)) });
-  const rows: Row[] = all.map(({ agent, path }) => {
-    const err = errors.get(path);
-    if (isUnmanaged(err)) return { agent, path: show(path), state: "unmanaged (left in place)" };
-    if (err !== undefined) return { agent, path: show(path), state: `error: ${err}` };
-    return { agent, path: show(path), state: before.get(path) && !hasManaged(agent, read(path)) ? "removed" : "absent" };
+function uninstall(ctx: Ctx): string {
+  let failed = false;
+  const rows: Row[] = rowsFor(ctx.targets).map(({ agent, path }) => {
+    const row = (state: string): Row => ({ agent, path: ctx.show(path), state });
+    try {
+      if (agent === "opencode") {
+        const text = readText(path);
+        if (text === undefined) return row("absent");
+        if (!isOurPlugin(text)) return row("unmanaged (left in place)");
+        try {
+          rmSync(path);
+        } catch (err) {
+          throw new SettingsError(`cannot remove: ${(err as Error).message}`);
+        }
+        return row("removed");
+      }
+      const file = readHooksJson(path);
+      const { doc, changed } = withoutOurEntries(file.doc);
+      if (!changed) return row("absent");
+      atomicWrite(path, serializeJson(file, doc));
+      if (ourCommands(readHooksJson(path).doc).length) throw new SettingsError("the hook was still in the file after writing");
+      return row("removed");
+    } catch (err) {
+      if (!(err instanceof SettingsError)) throw err;
+      failed = true;
+      return row(`error: ${err.message}`);
+    }
   });
   const removed = rows.some((r) => r.state === "removed");
-  const body: Record<string, unknown> = { hook: removed ? `removed (${scope} scope)` : `nothing to remove (${scope} scope)`, targets: rows };
-  const other = errors.get("");
-  if (other !== undefined) body.error = other;
-  const failed = errors.size > [...errors.values()].filter(isUnmanaged).length;
-  return finish(body, [], failed);
+  return finish({ hook: removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`, targets: rows }, [], failed);
 }
