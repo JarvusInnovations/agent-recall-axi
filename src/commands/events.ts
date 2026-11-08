@@ -73,6 +73,7 @@ function render(a: RenderArgs): string {
   if (shown === 0) {
     header[a.label] = `0 events in ${short} (${listing.lines} line${listing.lines === 1 ? "" : "s"})`;
     if (a.defaultKinds) help.push(`Run \`${BIN} events ${s} --kind all${win}${tz}\` to include thinking and result rows`);
+    if (a.label === "tail") help.push(resumeHint(s, tz));
     return renderDocument(header, help);
   }
   header[a.label] = rendered.rows;
@@ -94,7 +95,13 @@ function render(a: RenderArgs): string {
   } else {
     help.push(`Run \`${BIN} show ${formatId(last)}${scopeOnly(a)}${tz}\` to zoom into a row`);
   }
+  if (a.label === "tail") help.push(resumeHint(s, tz));
   return renderDocument(header, help);
+}
+
+/** tail's footer (cli.md#tail-session): the cold-start pack, the session named as the other hints name it. */
+function resumeHint(s: string, tz: string): string {
+  return `Run \`${BIN} resume-pack ${s}${tz}\` for a cold-start pack of this session`;
 }
 
 /** What a `show` hint needs so its id resolves the way this listing's session did. */
