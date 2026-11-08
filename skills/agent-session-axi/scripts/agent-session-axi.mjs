@@ -20,7 +20,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.0.0-gd316d29" : readVersion();
+    VERSION = true ? "0.0.0-g24da17a" : readVersion();
   }
 });
 
@@ -10012,7 +10012,16 @@ function tryFastPath(argv, options) {
 
 // bin/agent-session-axi.ts
 init_version();
+import { fstatSync } from "node:fs";
+function payloadStdin() {
+  try {
+    const st = fstatSync(0);
+    return st.isFIFO() || st.isSocket() || st.isFile() ? process.stdin : void 0;
+  } catch {
+    return void 0;
+  }
+}
 if (!tryFastPath(process.argv.slice(2), { version: VERSION })) {
   const { main: main2 } = await Promise.resolve().then(() => (init_cli2(), cli_exports));
-  await main2(process.argv.slice(2), { stdin: () => process.stdin });
+  await main2(process.argv.slice(2), { stdin: payloadStdin });
 }
