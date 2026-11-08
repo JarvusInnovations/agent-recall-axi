@@ -242,7 +242,9 @@ Two channels from one source, both committed to the same tag:
    `package.json` stays `0.0.0` in git; `publish-npm.yml`, on the GitHub release that
    `release-publish` creates, sets it from the tag, runs the full CI gate, checks that the
    committed bundle at the tag reports the tag's version, and runs
-   `npm publish --provenance --access public` on Node 24 with `id-token: write` and no token.
+   `npm publish --provenance --access public` on Node 24 with `id-token: write` and no token
+   (an `-rc.N` under the `next` dist-tag). A version already on the registry is skipped with a
+   warning, which is how the manually published first version's release run stays green.
 2. **Skill** `skills/agent-session-axi/`: `SKILL.md` (prose + generated command reference) and a
    **committed, self-contained bundle** `scripts/agent-session-axi.mjs` built by esbuild with every
    dependency inlined, plus an executable bash shim, so `npx skills add JarvusInnovations/agent-session-axi`
