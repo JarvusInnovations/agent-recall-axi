@@ -273,7 +273,8 @@ Sized by a budget (default 16,000) that **bounds the rendered pack**: the layers
 the first layer's key to the last claim, `help[]` excluded) take at most `budget.used` bytes,
 and `used` stays within the limit unless the newest human message alone exceeds it. So the
 whole output is at most the budget plus the header and footer blocks plus the newest human
-message, which is never cut. Without TOON in the library, each printed event is charged its
+message, which is never cut (and, past that point, the layers' fixed key lines and a dropped
+summary's one-line note, under 150 bytes). Without TOON in the library, each printed event is charged its
 encoded cost: the UTF-8 length of its text as a JSON string (quotes and escapes included, which
 TOON never exceeds), for the summary its text as printed (cut at 4,000 chars with the house
 marker), for a call its tool and its target as its row prints it, plus its id and a fixed
