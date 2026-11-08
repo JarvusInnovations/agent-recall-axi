@@ -53,6 +53,14 @@ describe("titles follow the precedence", () => {
     expect(sources).toEqual({ d4000034: "ai-title", d5000035: "custom-title", d6000036: "human", d7000037: "custom-title.json" });
   });
 
+  it("the resume-pack header carries the same title (from resume-pack-library)", async () => {
+    for (const [id, title] of [["d4000034", "gadget audit"], ["d7000037", "file title"], ["d6000036", "rename the cog helpers"]]) {
+      const r = await run(["resume-pack", id!], { cwd: "/src/gadget", env: box.env });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toMatch(new RegExp(`^session: ${id} ${title}$`, "m"));
+    }
+  });
+
   it("an ambiguous prefix's candidates carry each session's real title", async () => {
     const r = await run(["tail", "c3b5d7e9"], { cwd: "/src/sprocket" });
     expect(r.exitCode).toBe(1);

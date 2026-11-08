@@ -3,18 +3,15 @@
  * `bun run build`: it imports only from `agent-session-axi` and `agent-session-axi/render`, so
  * the `types` conditions of package.json `exports` resolve to `dist/`, and it uses every name
  * with the signature api.md gives it. Never run; a type error here is a spec/surface mismatch.
- *
- * Not yet here, owned by plans/sessions-and-recall.md: recall, RecallResult, sessionStats,
- * findAcross.
  */
 import {
   openRoot, listProjects, listSessions, resolveSession, openSession,
   events, around, next, prev, tail, turns, windows, compactions,
-  humanMessages, toolCalls, find, show, buildResumePack,
+  humanMessages, toolCalls, find, findAcross, recall, show, buildResumePack, sessionStats,
   parseId, formatId, parseWhen, parseSpan, resolveId, readPointer, linkedResult,
   cacheStatus, clearCache, checkRewrite,
   type Session, type Event, type Turn, type Window, type Pointer, type ResumePack,
-  type FindQuery, type Hit, type Scope, type EventId,
+  type FindQuery, type Hit, type RecallResult, type Scope, type EventId,
   AgentSessionError,
 } from "agent-session-axi";
 import { renderResumePack } from "agent-session-axi/render";
@@ -57,6 +54,16 @@ export async function consumer(): Promise<string> {
   void (await cacheStatus()).size;
   void (await clearCache({ paths: [session.path] })).removed;
   void (await checkRewrite(session.path)).rewritten;
+  const stats = await sessionStats(session);
+  const statNumbers: number[] = [stats.turns, stats.calls, stats.compactions, stats.humans, stats.lines, stats.bytes];
+  const statLast: string = stats.last;
+  const statTitle: string | undefined = stats.title;
+  for await (const hit of findAcross(scope, { ...q, since: new Date(0) })) void ((hit satisfies Hit).why, hit.session satisfies Session);
+  const r = await recall("redirect", { scope, since: new Date(0), regex: false, file: "*.env", tool: "bash", kinds: ["human"], limit: 5 });
+  const firstResult: RecallResult | undefined = r.sessions[0];
+  const recalled: [Session, number, EventId, Date] | undefined = firstResult ? [firstResult.session, firstResult.hits, firstResult.first, firstResult.last] : undefined;
+  const scanned: [number, number, number, "fresh" | "partial" | "none"] = [r.scanned.sessions, r.scanned.bytes, r.scanned.ms, r.scanned.index];
+  void [statNumbers, statLast, statTitle, recalled, scanned];
 
   const pack: ResumePack = await buildResumePack(session, { window: "last", budget: 6000, tools: 10, claims: 3 });
   const layers: Event[] = [...pack.human, ...pack.tools, ...pack.claims, ...(pack.summary ? [pack.summary] : [])];

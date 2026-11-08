@@ -3,7 +3,10 @@
  * principles.md#deterministic-output-for-the-same-file): every other command prints the same bytes
  * whatever the clock says, `recall`'s measured scan time aside.
  */
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { run } from "./helpers/run.js";
 
 const A = new Date("2026-11-07T14:00:00.000Z");
@@ -27,13 +30,18 @@ const COMMANDS: string[][] = [
   ["cache", "status"],
 ];
 
+/** `cache status` reports the cache's contents: give it one no parallel test writes into. */
+const own = mkdtempSync(join(tmpdir(), "asa-clock-"));
+afterAll(() => rmSync(own, { recursive: true, force: true }));
+const envFor = (args: string[]) => (args[0] === "cache" ? { XDG_CACHE_HOME: own } : {});
+
 /** recall reports how long its scan took: the one value allowed to differ. */
 const normalize = (out: string) => out.replace(/^(scanned: "[^"]*), [\d.]+s"$/m, "$1, <t>\"").replace(/^index: \w+$/m, "index: <state>");
 
 describe("output is clock-independent outside sessions and the home view", () => {
   it.each(COMMANDS.map((c) => [c.join(" "), c]))("%s", async (_name, args) => {
-    const a = await run(args as string[], { now: A });
-    const b = await run(args as string[], { now: B });
+    const a = await run(args as string[], { now: A, env: envFor(args as string[]) });
+    const b = await run(args as string[], { now: B, env: envFor(args as string[]) });
     expect(a.exitCode).toBe(0);
     expect(normalize(b.stdout)).toBe(normalize(a.stdout));
     expect(a.stdout).not.toMatch(/\d+[smhd] ago/);
