@@ -1,0 +1,47 @@
+name: 'Release: Validate PR'
+
+# Fires on every PR into main. A non-release PR fails the title check by design.
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, edited, reopened, synchronize ]
+
+jobs:
+  release-validate:
+
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: JarvusInnovations/infra-components@channels/github-actions/release-validate/latest
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # The tag lands on this PR's merge commit, so the committed skill bundle must already report
+  # the release version: `bun run build:bundle --stamp X.Y.Z` on develop before merging
+  # (RELEASING.md, specs/architecture.md#the-skill-bundle). Runs the bundle with node alone.
+  bundle-stamp:
+    if: "startsWith(github.event.pull_request.title, 'Release: v')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .tool-versions
+        package-manager-cache: false
+
+    - name: The committed skill bundle reports the release version
+      env:
+        TITLE: ${{ github.event.pull_request.title }}
+      run: |
+        set -euo pipefail
+        want="${TITLE#Release: v}"
+        got=$(node skills/agent-session-axi/scripts/agent-session-axi.mjs --version)
+        if [ "$got" != "$want" ]; then
+          echo "::error::the committed skill bundle reports $got, not $want; on develop run \`bun run build:bundle --stamp $want\`, commit it and push (RELEASING.md)"
+          exit 1
+        fi
+        echo "the committed skill bundle reports $got"

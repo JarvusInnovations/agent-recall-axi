@@ -1,0 +1,116 @@
+name: Publish npm package
+
+# On the GitHub release that release-publish.yml creates: set package.json's version from the
+# tag, run the full CI gate at the tag, then publish with npm trusted publishing (OIDC, no token)
+# and provenance. The first publish of the package is manual (RELEASING.md).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Resolve the release version
+      run: |
+        set -euo pipefail
+        version="${GITHUB_REF_NAME#v}"
+        echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'
+        echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+
+    - name: Scrub gate
+      run: bash scripts/scrub-check.sh
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version-file: .tool-versions
+        package-manager-cache: false
+
+    # The npm tarball and `npx skills add` both carry this file (RELEASING.md).
+    - name: The committed skill bundle reports the release version
+      run: |
+        set -euo pipefail
+        got=$(node skills/agent-session-axi/scripts/agent-session-axi.mjs --version)
+        if [ "$got" != "$RELEASE_VERSION" ]; then
+          echo "::error::the skill bundle at $GITHUB_REF_NAME reports $got, not $RELEASE_VERSION (RELEASING.md)"
+          exit 1
+        fi
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .tool-versions
+
+    - name: Set package.json version from tag
+      run: npm version --no-git-tag-version --allow-same-version "$RELEASE_VERSION"
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    - name: Type check
+      run: bun run check
+
+    - name: Build
+      run: bun run build
+
+    - name: Type check a consumer of the built package
+      run: bun run check:types
+
+    - name: Test
+      run: bun run test
+
+    - name: SKILL.md is current
+      run: bun run check:skill
+
+    - name: The committed skill bundle is current
+      run: bun run check:bundle
+
+    - name: The built bin reports the release version
+      run: test "$(node dist/bin/agent-session-axi.js --version)" = "$RELEASE_VERSION"
+
+  publish-npm:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # npm trusted publishing (OIDC) and provenance
+    steps:
+
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-node@v7
+      with:
+        # Node 24 ships npm 11, which supports trusted publishing without the broken
+        # `npm install -g npm@...` self-upgrade on Node 22 runners.
+        node-version: '24.x'
+        registry-url: 'https://registry.npmjs.org'
+        package-manager-cache: false
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .tool-versions
+
+    - name: Set package.json version from tag
+      run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    - name: Build
+      run: bun run build
+
+    # An rc (a GitHub prerelease) goes out under the `next` dist-tag so `latest` never moves to it.
+    - name: Publish to npm
+      run: |
+        set -euo pipefail
+        case "$GITHUB_REF_NAME" in
+          *-rc.*) npm publish --provenance --access public --tag next ;;
+          *) npm publish --provenance --access public ;;
+        esac

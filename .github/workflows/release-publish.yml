@@ -1,0 +1,18 @@
+name: 'Release: Publish PR'
+
+# Merging the Release PR tags main's merge commit and creates the GitHub release, with the PR
+# body as its notes; that release triggers publish-npm.yml.
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+
+jobs:
+  release-publish:
+
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: JarvusInnovations/infra-components@channels/github-actions/release-publish/latest
+      with:
+        github-token: ${{ secrets.BOT_GITHUB_TOKEN }}
