@@ -66,13 +66,21 @@ export async function buildBundle(version: string, write: boolean): Promise<stri
     write: false,
     logLevel: "warning",
   });
-  const text = result.outputFiles[0]!.text;
+  const text = stripModuleComments(result.outputFiles[0]!.text);
   if (write) {
     const { writeFileSync } = await import("node:fs");
     writeFileSync(OUTFILE, text);
     chmodSync(OUTFILE, 0o755);
   }
   return text;
+}
+
+/**
+ * esbuild marks each module with a `// <path>` comment line (`// node_modules/…/index.js`,
+ * `// src/lib/ids.ts`); those depend on the dependency layout, not on the code, so they go.
+ */
+export function stripModuleComments(text: string): string {
+  return text.replace(/^[ \t]*\/\/ (?:node_modules|src|bin)\/[^\n]*\.(?:[cm]?js|ts)\n/gm, "");
 }
 
 /** Fresh build vs the committed bundle, version normalized out of both. */
