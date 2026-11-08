@@ -8,7 +8,9 @@ adapters, so another agent's logs are a new adapter file, not a rewrite. An
 
 **It reads local files only and sends nothing.** Session logs hold everything a human typed; this
 tool never opens a network connection with their content, never modifies a log, and writes only
-its own disposable cache under `~/.cache/agent-session-axi/`.
+its own disposable cache under `~/.cache/agent-session-axi/`, plus, only when you run
+`agent-session-axi hook install`, the agent settings files that command names (`hook uninstall`
+reverts it).
 
 ## Why
 

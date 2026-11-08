@@ -11,7 +11,9 @@ for the life of the file, and every listing ends with the exact next command.
 
 **It reads local files only and sends nothing**: session logs hold everything a human typed, so
 the tool never opens a network connection, never modifies a log, and writes only its own
-disposable cache under `~/.cache/agent-session-axi/`.
+disposable cache under `~/.cache/agent-session-axi/`, plus, only when you run
+`scripts/agent-session-axi hook install`, the agent settings files that command names (which
+`scripts/agent-session-axi hook uninstall` reverts).
 
 ## Running it
 
@@ -36,8 +38,8 @@ show <id>                one entry, whole                         (zoom in)
 show <id> --full         ...with persisted output followed
 ```
 
-`find` and `recall` enter the ladder at any rung; `human`, `tools` and `compactions` are views of
-the rows rung; `resume-pack` is a fixed composite for a cold start. A `<session>` is a path, a
+Search (find, recall) enters the ladder at any rung; human, tools and compactions are views of
+the rows rung; resume-pack is a fixed composite for a cold start. A `<session>` is a path, a
 uuid, an 8+ character prefix, or `latest`.
 
 ## The exploration loop
@@ -48,8 +50,9 @@ uuid, an 8+ character prefix, or `latest`.
    verbatim, the last tool calls and the agent's last claims.
 3. **Find the moment**: `scripts/agent-session-axi find "<phrase>"` in this project,
    `scripts/agent-session-axi recall "<phrase>"` across every project ("have I dealt with this
-   before?"), or `find <session> --file '<glob>'` / `--tool <name>`. Each hit says why it matched.
-4. **Pan** around a hit: `scripts/agent-session-axi around <id>`, then `next <id>` / `prev <id>`.
+   before?"), or `scripts/agent-session-axi find <session> --file '<glob>'` (or `--tool <name>`). Each hit says why it matched.
+4. **Pan** around a hit: `scripts/agent-session-axi around <id>`, then
+   `scripts/agent-session-axi next <id>` / `scripts/agent-session-axi prev <id>`.
 5. **Zoom** into one entry: `scripts/agent-session-axi show <id>`, `--full` for persisted output.
 
 Weigh what you read by its authority column: `H` is what the human typed (the record of intent,
@@ -65,7 +68,8 @@ Two ways to get the same tool; one is enough.
 Optional ambient context: `scripts/agent-session-axi hook install` registers a SessionStart hook
 for Claude Code, Codex and OpenCode (`--scope project` for one repo). At session start it shows
 the project's sessions; after a compaction or a resume it prints that session's resume pack.
-Nothing else ever installs a hook; `hook uninstall` removes only this tool's entries.
+Nothing else ever installs a hook; `scripts/agent-session-axi hook uninstall` removes only this
+tool's entries.
 
 ## Commands
 
