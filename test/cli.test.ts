@@ -218,13 +218,13 @@ describe("sessions and home", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
     expect(stdout).toMatch(/^count: 3 of 22$/m);
-    expect(stdout).toContain("sessions[3]{id,started,last,title}:");
-    expect(stdout).toContain('b1000011,"11-07 23:50","11-08 00:05 (0s ago)",(pending)');
+    expect(stdout).toContain("sessions[3]{id,started,last,turns,title}:");
+    expect(stdout).toContain('b1000011,"11-07 23:50","11-08 00:05 (0s ago)",2,start the overnight widget migration');
   });
 
   it("--subagents adds kind and parent; --fields adds columns", async () => {
     const { stdout } = await run(["sessions", "--subagents", "--limit", "0", "--fields", "uuid"]);
-    expect(stdout).toContain("{id,started,last,title,kind,parent,uuid}");
+    expect(stdout).toContain("{id,started,last,turns,title,kind,parent,uuid}");
     expect(stdout).toMatch(/ae0f1e2d,.*,subagent,ae00000e,ae0f1e2d3c4b5a697/);
     const bad = await run(["sessions", "--fields", "turns"]);
     expect(bad.exitCode).toBe(2);
@@ -243,11 +243,12 @@ describe("sessions and home", () => {
     const here = await run([]);
     expect(here.stdout).toMatch(/^description: /m);
     expect(here.stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
-    expect(here.stdout).toContain("sessions[5]{id,last,title}:");
-    expect(here.stdout).toMatch(/^latest: b1000011$/m);
+    expect(here.stdout).toContain("sessions[5]{id,last,turns,title}:");
+    // Committed fixtures share their checkout mtime, so which is latest is not fixed here (home.test.ts sets mtimes).
+    expect(here.stdout).toMatch(/^latest: [0-9a-f]{8}$/m);
     const none = await run([], { cwd: "/elsewhere" });
     expect(none.stdout).toMatch(/^project: none for \/elsewhere$/m);
-    expect(none.stdout).toContain("sessions[5]{id,last,title}:");
+    expect(none.stdout).toContain("sessions[5]{id,last,turns,title}:");
   });
 });
 
@@ -267,15 +268,11 @@ describe("help, planned commands, update", () => {
   });
 
   it("a planned command says so instead of failing obscurely", async () => {
-    const { stdout, exitCode } = await run(["recall", "x"]);
+    const { stdout, exitCode } = await run(["hook", "status"]);
     expect(exitCode).toBe(2);
-    expect(stdout).toContain("planned: sessions-and-recall");
+    expect(stdout).toContain("planned: skill-and-hook");
     // errors.md#codes: a USAGE error's help is the command's usage line.
-    expect(stdout).toContain("usage: agent-session-axi recall <phrase>");
-    const flag = await run(["events", fx("thinking"), "--json-out"]);
-    expect(flag.exitCode).toBe(2);
-    expect(flag.stdout).toContain("planned: sessions-and-recall");
-    expect(flag.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");
+    expect(stdout).toContain("usage: agent-session-axi hook install|status|uninstall");
     const missing = await run(["events", fx("thinking"), "--limit"]);
     expect(missing.exitCode).toBe(2);
     expect(missing.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");

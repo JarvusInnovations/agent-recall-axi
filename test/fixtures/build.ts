@@ -8,7 +8,7 @@
  *   bun test/fixtures/build.ts            rewrite test/fixtures/claude/
  *   bun test/fixtures/build.ts <out-dir>  write somewhere else (the regeneration test does this)
  */
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1070,6 +1070,123 @@ export function longHumansSession(s8 = "ee00002e"): string {
     s.say(`Read ${i}.`);
   }
   return s.render();
+}
+
+// ---------------------------------------------------------------------------------------------
+// sessions and recall (plan sessions-and-recall): generated at test time, never committed
+
+/** A file under a generated log root's `projects/`, with the mtime a test gives it. */
+export interface GeneratedFile {
+  rel: string;
+  text: string;
+  /** ISO; the file's modification time once written. */
+  mtime?: string;
+}
+
+const projectFile = (s: SessionBuilder, mtime?: string): GeneratedFile => ({
+  rel: join(PROJECTS[s.project].encoded, s.fileName),
+  text: s.render(),
+  ...(mtime ? { mtime } : {}),
+});
+
+/**
+ * The title precedence: ai-title entries only (the last wins); a custom-title entry over them;
+ * neither (the first human prompt); custom-title.json over everything.
+ */
+export function titleSessions(): GeneratedFile[] {
+  const ai = new SessionBuilder("gadget", "d4000034", START);
+  ai.silent("ai-title", { aiTitle: "first gadget title" });
+  ai.human("look over the gadget module");
+  ai.say("Looking.");
+  ai.silent("ai-title", { aiTitle: "gadget audit" });
+  const custom = new SessionBuilder("gadget", "d5000035", START);
+  custom.silent("ai-title", { aiTitle: "flange ideas" });
+  custom.human("sketch the flange api");
+  custom.silent("custom-title", { customTitle: "my flange notes" });
+  custom.silent("ai-title", { aiTitle: "flange api sketch" });
+  const neither = new SessionBuilder("gadget", "d6000036", START);
+  neither.silent("permission-mode", { permissionMode: "default" });
+  neither.human("rename the\n\ncog helpers");
+  neither.say("Renamed.");
+  const file = new SessionBuilder("gadget", "d7000037", START);
+  file.silent("custom-title", { customTitle: "entry title" });
+  file.human("anything");
+  return [
+    projectFile(ai),
+    projectFile(custom),
+    projectFile(neither),
+    projectFile(file),
+    { rel: join(PROJECTS.gadget.encoded, file.id, "custom-title.json"), text: JSON.stringify({ customTitle: "file title" }) + "\n" },
+  ];
+}
+
+/** The phrase the recall fixtures share, and one that appears only in a tool's output. */
+export const RECALL_PHRASE = "sprocket rebalance";
+export const OUTPUT_ONLY_PHRASE = "torque table";
+
+/**
+ * Two projects for cross-session find and recall: in gadget a recent and an old session (by
+ * timestamps and mtime) that both mention the phrase, in sprocket a recent one whose only mention
+ * is a call's input. The phrase sits in human, assistant and call text; a result alone carries
+ * the output-only phrase.
+ */
+export function recallSessions(): GeneratedFile[] {
+  const recent = new SessionBuilder("gadget", "d1000031", "2026-11-07T10:00:00.000Z");
+  recent.human("the sprocket rebalance is drifting again");
+  recent.say("Checking the Sprocket Rebalance schedule.");
+  recent.assistant([recent.toolUse(TOOL("d1000031", 1), "Bash", { command: "cat logs/torque.log" })]);
+  recent.toolResult(TOOL("d1000031", 1), "torque table: 12 rows, all within bounds");
+  recent.say("The torque values look fine.");
+  const old = new SessionBuilder("gadget", "d2000032", "2026-06-01T09:00:00.000Z");
+  old.human("plan a sprocket rebalance from scratch");
+  old.say("Planned.");
+  const other = new SessionBuilder("sprocket", "d3000033", "2026-11-06T09:00:00.000Z");
+  other.human("tune the cog spacing");
+  other.assistant([other.toolUse(TOOL("d3000033", 1), "Edit", { file_path: "src/sprocket/spacing.ts", old_string: "v1", new_string: "// sprocket rebalance v2" })]);
+  other.toolResult(TOOL("d3000033", 1), "edited");
+  other.say("Spacing tuned.");
+  return [
+    projectFile(recent, "2026-11-07T10:00:20.000Z"),
+    projectFile(old, "2026-06-01T09:00:10.000Z"),
+    projectFile(other, "2026-11-06T09:00:10.000Z"),
+  ];
+}
+
+/** A session whose newest timestamp lies more than 256 KB before the end of the file. */
+export function lateTailSession(s8 = "d8000038"): GeneratedFile {
+  const s = new SessionBuilder("widget", s8, "2026-11-07T13:00:00.000Z");
+  s.human("start the long flange report");
+  s.at("2026-11-07T11:00:00.000Z");
+  // Written later, stamped earlier: the newest timestamp is the human prompt's.
+  for (let i = 0; i < 80; i++) s.say(`report part ${i}: ${deterministicText(VOCAB, 4000)}`);
+  return projectFile(s);
+}
+
+/** `n` small sessions in one project, newest mtime last (the home view's timing test). */
+export function manySessions(n: number, project: ProjectName = "widget"): GeneratedFile[] {
+  const out: GeneratedFile[] = [];
+  for (let i = 0; i < n; i++) {
+    const s8 = `dd${hex(i, 6)}`;
+    const s = new SessionBuilder(project, s8, new Date(Date.parse("2026-11-01T00:00:00.000Z") + i * 3_600_000).toISOString());
+    for (let k = 0; k < 5; k++) {
+      s.human(`session ${i} step ${k}: ${deterministicText(VOCAB, 80)}`);
+      s.assistant([s.toolUse(TOOL(s8, k), "Read", { file_path: `src/widget/part-${k}.ts` })]);
+      s.toolResult(TOOL(s8, k), deterministicText(VOCAB, 400));
+      s.say(`Step ${k} done.`);
+    }
+    out.push(projectFile(s, new Date(Date.parse("2026-11-01T00:00:00.000Z") + i * 3_600_000 + 60_000).toISOString()));
+  }
+  return out;
+}
+
+/** Write generated files under `<root>/projects/`, giving each its mtime. */
+export function writeGenerated(root: string, files: GeneratedFile[]): void {
+  for (const f of files) {
+    const abs = join(root, "projects", f.rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, f.text);
+    if (f.mtime) utimesSync(abs, new Date(f.mtime), new Date(f.mtime));
+  }
 }
 
 const here = dirname(fileURLToPath(import.meta.url));

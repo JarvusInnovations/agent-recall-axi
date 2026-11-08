@@ -110,10 +110,10 @@ describe("find: handles", () => {
   it("one positional is the session when it has a session reference's form, else the phrase", async () => {
     const asSession = await run(["find", fx("find"), "--tool", "edit"]);
     expect(asSession.exitCode).toBe(0);
+    // A lone phrase searches the current project (cross-session scope).
     const asPhrase = await run(["find", "redirect"]);
-    expect(asPhrase.exitCode).toBe(2);
-    expect(asPhrase.stdout).toContain("not available yet");
-    expect(asPhrase.stdout).toContain("Run `agent-session-axi find latest redirect`");
+    expect(asPhrase.exitCode).toBe(0);
+    expect(asPhrase.stdout).toMatch(/^scope: \/src\/widget \(project\)$/m);
     // a session-shaped phrase is searched by naming the session first
     const hexPhrase = await run(["find", S, "e1000018", "--context", "0"]);
     expect(hexPhrase.exitCode).toBe(0);
