@@ -1,5 +1,5 @@
 ---
-status: done
+status: in-progress
 pr: 12
 depends: [pan]
 specs:
