@@ -30,7 +30,8 @@ the past, not the past.
 - `human` prints only `H` events and says so in its header (`authority: H (verbatim)`).
 - `resume-pack` names each layer's class on one `layers:` header line and prints the layers in a
   fixed order: the window's opening summary (`C`, what the window started from), then `H`, then
-  the tool calls and the claims (`cli.md#resume-pack-session`).
+  the tool calls (`C`, each with its result's `D` status: `tools C (results D)`) and the claims
+  (`cli.md#resume-pack-session`).
 - `show` prints `authority:` on every event.
 - `find` results across classes are not reordered by class; file order rules.
 

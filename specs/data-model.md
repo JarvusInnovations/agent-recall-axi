@@ -266,20 +266,27 @@ library's answer to "what was I doing", over one window (default `last`). Layers
 | --- | --- | --- |
 | `summary` | the window's opening `summary` event, if any | C |
 | `human` | every `H`-class event in the window — `human`, `human.queued`, `human.slash`, `human.answer` — verbatim, oldest first | H |
-| `tools` | the last N (default 10) `call` events of the window with `target` and linked result status (a `persisted` status names the pointer), newest last | D |
+| `tools` | the last N (default 10) `call` events of the window with `target` and linked result status (a `persisted` status names the pointer), newest last | C (results D) |
 | `claims` | the last M (default 3) `assistant` events of the window, verbatim, oldest first | C |
 
-Sized by a character budget (default 16,000). **What counts** is content, not output: the
-summary's text at most 4,000 chars (it is `C` text, printed cut at that cap, as in `human`),
-every human and claim text whole, and for each tool call its tool name plus its target, the
-target counted at most 120 chars (its row cut). Ids, times, keys, statuses and the header do not
-count, so the rendered pack is somewhat longer than `budget.used`; a consumer that needs headroom
-passes a smaller budget. **What drops**, one event at a time while the count exceeds the budget:
-the oldest claim; once no claim is left, the oldest tool call; once no call is left, the oldest
-human message. The newest human message is never dropped and no human, claim or call text is cut, so `used`
-exceeds the limit only when the summary and the newest human message alone do. Dropped human
-messages are reported as `omitted.human` with `continueTo`, the oldest kept message's id: the
-exclusive `--to` that yields exactly the omitted ones within the window.
+Sized by a budget (default 16,000) that **bounds the rendered pack**: the layers as printed (from
+the first layer's key to the last claim, `help[]` excluded) take at most `budget.used` bytes,
+and `used` stays within the limit unless the newest human message alone exceeds it. So the
+whole output is at most the budget plus the header and footer blocks plus the newest human
+message, which is never cut. Without TOON in the library, each printed event is charged its
+encoded cost: the UTF-8 length of its text as a JSON string (quotes and escapes included, which
+TOON never exceeds), for the summary its text as printed (cut at 4,000 chars with the house
+marker), for a call its tool and its target as its row prints it, plus its id and a fixed
+per-event overhead for keys, time, kind and indentation; each layer's key line is a fixed
+charge. The constants are the renderer's layout and live next to it (`src/output/`). A budget
+of `0` means no budget.
+
+**What drops**, one event at a time while `used` exceeds the budget: the oldest claim; once no
+claim is left, the oldest tool call; once no call is left, the oldest human message but the
+newest; then the opening summary (`C`, so it goes before the last `H` message). No human, claim
+or call text is ever cut. Dropped human messages are reported as `omitted.human` with
+`continueTo`, the oldest kept message's id: the exclusive `--to` that yields exactly the
+omitted ones within the window; a dropped summary as `omitted.summary`, its id.
 
 ## Timestamps
 

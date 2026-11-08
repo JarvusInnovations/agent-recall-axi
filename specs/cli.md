@@ -178,8 +178,9 @@ messages[9]:
 - Includes `human`, `human.queued`, `human.slash`, `human.answer`; never `summary`, `skill`,
   `hook`, `notice`. The opening `summary` of a window is printed after the messages, under its own
   `summary:` key with `authority: C`, when `--window` selects a window that begins with one.
-- Default `--budget 12000` chars, newest kept; `omitted: 7 earlier messages; continue with human
-  7a2f1c3e --to 7a2f1c3e:388` when it bites. `--full` lifts the budget. The budget is 12,000
+- Default `--budget 12000` chars, newest kept; `omitted: "7 earlier messages; continue with
+  human 7a2f1c3e --to 7a2f1c3e:388"` when it bites (TOON quotes the value: it holds a `:`).
+  `--full` or `--budget 0` lifts the budget. The budget is 12,000
   chars of text in total, the window's opening summary included: the summary is `C` text, capped
   at 4,000 chars with the house marker and a `show <summary-id> --full` hint, and its printed
   length counts first; the newest message is always printed, whole, even when it alone exceeds
@@ -469,7 +470,7 @@ Default `--window last`, `--budget 16000`, `--tools 10`, `--claims 3`.
 session: 7a2f1c3e fix auth redirect loop
 window: 1 (last; windows 0..1)
 budget: 5.8k of 16.0k used
-layers: summary C; human H (verbatim); tools D; claims C
+layers: summary C; human H (verbatim); tools C (results D); claims C
 days: 2026-11-07..2026-11-08
 tz: America/New_York
 summary:
@@ -503,23 +504,26 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 
 - **Header**: `session:`, then `window: <k> (last; windows 0..<n>)` (`(windows 0..<n>)` when `k`
   is not the last, `only window 0` for a session with one), `budget: <used> of <limit> used`
-  (sizes as in `row-format.md#sizes`), `layers:` naming each layer's authority class, `;`
+  (sizes as in `row-format.md#sizes`; `budget: <used> used (no limit)` for `--budget 0`), `layers:` naming each layer's authority class, `;`
   between layers (TOON has no comments, so the classes ride on this one line; the summary is
   named only when present),
   then `day:`/`days:` and `tz:` for the one time column every layer shares, and `omitted:` last.
 - **Layers**: `summary:` is a block (`id`, `t`, `text`), printed only when the window opens with
   one (`behaviors/context-windows.md`); it is `C` text, cut at 4,000 chars with the house marker
-  and a `show <summary-id> --full` hint. `human[n]` and `claims[n]` are block lists whose texts
+  and a `show <summary-id> --full` hint. When the budget drops it, the layer prints in its
+  place as `summary: "dropped to meet the budget; show <summary-id> --full"`. `human[n]` and `claims[n]` are block lists whose texts
   are whole and verbatim; `tools[n]{id,t,tool,target,result}` is the `tools` view's row (target
   cut to 120 chars, `result` the linked status). An empty layer prints `human[0]:`,
   `tools[0]:`, `claims[0]:`; it is never left out.
-- **Budget** (`data-model.md#resume-pack`): characters of content, not of output. When it drops
-  human messages the header's last line is `omitted: <n> earlier messages; continue with human
-  <session> --window <k> --to <id>`, which prints exactly the omitted ones (under `human`'s own
-  budget), and the same command is a `help[]` line.
+- **Budget** (`data-model.md#resume-pack`): a bound on the rendered layers, so the whole output
+  is at most the budget plus the header and footer blocks plus the newest human message. When
+  it drops human messages the header's last line is `omitted: "<n> earlier messages; continue
+  with human <session> --window <k> --to <id> --budget 0"` (quoted by TOON), which prints
+  exactly the omitted ones, and the same command is a `help[]` line.
 - **Flags**: `--window` takes a window index or `last`; `all` and `k..` are `VALIDATION_ERROR`
-  (a pack is one window). `--budget` is a positive integer; `--tools` and `--claims` are
-  non-negative integers (`0` empties that layer).
+  (a pack is one window); a window past the last is `VALIDATION_ERROR` naming the index-or-`last`
+  grammar and the valid range. `--budget` is a non-negative integer, `0` for no budget;
+  `--tools` and `--claims` are non-negative integers (`0` empties that layer).
 - **Footer**: `tail <session>`, `human <session> --window all`, plus `show <summary-id> --full`
   when the summary was cut and `show <result-id> --full` for the newest persisted output in the
   `tools` layer. Hints name the session as `tail`'s do and carry scope and `--tz`.

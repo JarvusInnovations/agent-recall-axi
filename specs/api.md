@@ -68,7 +68,7 @@ show(session: Session, id: EventId): Promise<Shown>           // the entry, its 
 turns(session: Session, opts?: ListOpts): AsyncIterable<Turn>
 windows(session: Session): Promise<Window[]>
 compactions(session: Session): Promise<Event[]>               // kind "compaction", with meta + summary id
-humanMessages(session: Session, opts?: ListOpts & { budget?: number }): Promise<{ messages: Event[]; matching: number; omitted: number; continueTo?: EventId; summary?: Event }>
+humanMessages(session: Session, opts?: ListOpts & { budget?: number /* 0 = none */ }): Promise<{ messages: Event[]; matching: number; omitted: number; continueTo?: EventId; summary?: Event }>
 toolCalls(session: Session, opts?: ListOpts & { name?: string; file?: string; errors?: boolean }): AsyncIterable<Event>
 readPointer(pointer: Pointer, session: Session): Promise<{ text: string; exists: boolean; followed: boolean; reason?: string }>
 linkedResult(session: Session, event: Event): Promise<Event | undefined>   // a call's result, a result's call
@@ -130,9 +130,9 @@ interface ResumePack {
   session: Session; window: { index: number; count: number };
   summary?: Event;            // C
   human: Event[];             // H, verbatim, oldest first
-  tools: Event[];             // D-linked calls, newest last
+  tools: Event[];             // C: calls, each with its linked (D) result status; newest last
   claims: Event[];            // C
-  omitted: { human: number; continueTo?: EventId };
+  omitted: { human: number; continueTo?: EventId; summary?: EventId };
   budget: { used: number; limit: number };
 }
 buildResumePack(session: Session, opts?: ResumePackOpts): Promise<ResumePack>
@@ -140,10 +140,12 @@ buildResumePack(session: Session, opts?: ResumePackOpts): Promise<ResumePack>
 
 Deterministic for a given file and options, and the same whether the offset table was built cold
 or already cached. Defaults: `window: "last"`, `budget: 16000`, `tools: 10`, `claims: 3`. The
-budget is a positive integer of characters, counted and spent as `data-model.md#resume-pack`
-says; `tools` and `claims` are non-negative integers. Any other value, `window: "all"` or `"k.."`
-included (a pack is one window), and a window past the last are `VALIDATION_ERROR`. Event texts
-are uncut; the 4,000-char summary cap is the renderer's.
+budget is a non-negative integer bounding the rendered pack, counted and spent as
+`data-model.md#resume-pack` says; `0` means no budget (`budget.limit` is then `0`), as in
+`humanMessages`. `tools` and `claims` are non-negative integers. Any other value, and
+`window: "all"` or `"k.."` (a pack is one window), are `VALIDATION_ERROR`; so is a window past
+the last, whose help names the index-or-`last` grammar and the valid range. Event texts are
+uncut; the 4,000-char summary cap is the renderer's.
 
 The kit renders the pack itself or calls `renderResumePack` from the `agent-session-axi/render`
 subpath, which produces the CLI's exact TOON (`cli.md#resume-pack-session`):
