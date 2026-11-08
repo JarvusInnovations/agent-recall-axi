@@ -15,6 +15,7 @@ import { showCommand } from "./commands/show.js";
 import { updateCommand } from "./commands/update.js";
 import { panCommand } from "./commands/pan.js";
 import { cacheCommand } from "./commands/cache.js";
+import { compactionsCommand, humanCommand, toolsCommand, turnsCommand } from "./commands/views.js";
 
 const USAGE_CODES = new Set(["USAGE", "UNKNOWN_FLAG", "VALIDATION_ERROR"]);
 
@@ -87,6 +88,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   commands.next = (a) => panCommand("next", a, ctx);
   commands.prev = (a) => panCommand("prev", a, ctx);
   commands.cache = (a) => cacheCommand(a, ctx);
+  // The views (plan views).
+  commands.turns = (a) => turnsCommand(a, ctx);
+  commands.human = (a) => humanCommand(a, ctx);
+  commands.tools = (a) => toolsCommand(a, ctx);
+  commands.compactions = (a) => compactionsCommand(a, ctx);
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
 

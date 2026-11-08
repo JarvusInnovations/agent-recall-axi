@@ -9,7 +9,7 @@ import { getBool, getNumber, getString, parseFlags, usageLine, type Parsed } fro
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, renderDocument, renderRows } from "../output/render.js";
 import { parseRowFields } from "./events.js";
-import { BIN, carry, parseKinds, rewriteNotice, scopeCarry, scopeOf, shellArg, zoneOf, type Io } from "./common.js";
+import { BIN, carry, parseKinds, rewriteNotice, scopeCarry, scopeOf, shellArg, windowCarry, windowFlag, zoneOf, type Io } from "./common.js";
 
 type Verb = "around" | "next" | "prev";
 
@@ -57,6 +57,7 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
   const context = getNumber(p, "context");
   const before = getNumber(p, "before") ?? context ?? 5;
   const after = getNumber(p, "after") ?? context ?? 5;
+  const window = windowFlag(p);
   const scope = scopeOf(verb, p, io);
   const sessionRef = getString(p, "session");
 
@@ -64,6 +65,7 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
   const notice = await rewriteNotice(session, io, tz);
   const opts: PanOpts = { cache: { env: io.env } };
   if (kinds) opts.kinds = kinds;
+  if (window !== undefined) opts.window = window;
   const limit = n ?? (full ? 0 : 20);
   let r: PanResult;
   try {
@@ -87,7 +89,7 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
   const headFlag = getString(p, "head") !== undefined ? ` --head ${getString(p, "head")}` : "";
   const fieldsFlag = fields.length ? ` --fields ${fields.join(",")}` : "";
   const limitFlag = n !== undefined ? ` --limit ${n}` : "";
-  const view = `${kindFlag}${verb === "around" ? "" : limitFlag}${headFlag}${full ? " --full" : ""}${fieldsFlag}`;
+  const view = `${kindFlag}${verb === "around" ? "" : limitFlag}${headFlag}${full ? " --full" : ""}${fieldsFlag}${windowCarry(p)}`;
 
   const rendered = renderRows(r.rows, tz, { head, fields });
   const header: Record<string, unknown> = {};
@@ -124,6 +126,6 @@ export async function panCommand(verb: Verb, args: string[], io: Io): Promise<st
     help.push(`Run \`${BIN} show ${formatId(rendered.firstCut!)}${idCarry}\` to see one of the ${rows} cut to ${head} chars whole`);
   }
   help.push(`Run \`${BIN} show ${formatId(id)}${idCarry}\` to zoom into the anchor`);
-  if (r.rows.length === 0 && !kinds) help.push(`Run \`${BIN} ${verb} ${formatId(id)} --kind all${idCarry}\` to include thinking and result rows`);
+  if (r.rows.length === 0 && !kinds) help.push(`Run \`${BIN} ${verb} ${formatId(id)} --kind all${windowCarry(p)}${idCarry}\` to include thinking and result rows`);
   return renderDocument(header, help);
 }

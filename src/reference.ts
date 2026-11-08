@@ -59,7 +59,7 @@ const FULL: FlagSpec = { name: "full", value: "boolean", describe: "lift the hea
 const FROM: FlagSpec = { name: "from", value: "string", arg: "<when|id>", describe: "inclusive start: a time or an event id" };
 const TO: FlagSpec = { name: "to", value: "string", arg: "<when|id>", describe: "exclusive end: a time or an event id" };
 const SINCE: FlagSpec = { name: "since", value: "string", arg: "<span>", describe: "shorthand for --from now-<span> (90m, 24h, 7d, 2w)" };
-const WINDOW: FlagSpec = { name: "window", value: "string", arg: "<k|last|all>", describe: "one compaction window", planned: "views" };
+const WINDOW: FlagSpec = { name: "window", value: "string", arg: "<k|last|all>", describe: "one compaction window: a 0-based index, last, k.. (k to the end) or all", default: "all" };
 export const ROW_FIELDS = ["authority", "size", "tool", "target", "result", "call", "error"] as const;
 export type RowField = (typeof ROW_FIELDS)[number];
 const FIELDS: FlagSpec = { name: "fields", value: "string", arg: "<a,b>", describe: `extra columns: ${ROW_FIELDS.join(", ")}` };
@@ -76,6 +76,7 @@ const PAN_FLAGS: FlagSpec[] = [
   { name: "full", value: "boolean", describe: "lift the head cap (and, on next/prev without <n>, the row cap)" },
   FIELDS,
   { name: "session", value: "string", arg: "<ref>", describe: "the session a bare <seq> belongs to" },
+  WINDOW,
   REF_PROJECT,
   REF_ALL,
 ];
@@ -145,9 +146,12 @@ const FIND_FLAGS: FlagSpec[] = [
   { name: "deep", value: "boolean", describe: "also search persisted-output files (slow)" },
   { ...REF_PROJECT, describe: "resolve <session> in this project (a path, encoded dir name, or unique cwd substring)" },
   { ...REF_ALL, describe: "resolve <session> across every project" },
-  { name: "window", value: "string", arg: "<k|last|all>", describe: "one compaction window; only all until window selection lands (planned: views)" },
+  { ...WINDOW, describe: "search one compaction window: a 0-based index, last, k.. (k to the end) or all" },
   JSON_OUT,
 ];
+
+export const TOOLS_FIELDS = ["result_id", "error", "files"] as const;
+export type ToolsField = (typeof TOOLS_FIELDS)[number];
 
 export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "kind", "parent"] as const;
 
@@ -175,9 +179,22 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "turns",
-        usage: "turns <session> [--from <when|id>] [--to <when|id>] [--window <k|last>] [--limit <n>]",
-        summary: "one row per human prompt",
-        status: { planned: "views" },
+        usage: "turns <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--project <p> | --all]",
+        summary: "one row per human prompt: events, calls and how the turn ended",
+        status: "available",
+        args: [SESSION_ARG],
+        flags: [
+          { ...FROM, describe: "turns opened at or after this time or event id" },
+          { ...TO, describe: "turns opened before this time or event id" },
+          SINCE,
+          WINDOW,
+          { name: "limit", value: "number", arg: "<n>", describe: "turns to show, newest last; 0 = no cap", default: "30" },
+          { name: "full", value: "boolean", describe: "lift the prompt head cap and the row cap" },
+          REF_PROJECT,
+          REF_ALL,
+          JSON_OUT,
+        ],
+        examples: ["turns latest", "turns 7a2f1c3e --window last", "turns 7a2f1c3e --since 2h --limit 0"],
       },
     ],
   },
@@ -186,7 +203,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       {
         name: "events",
-        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
+        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
         summary: "rows of a session in file order; newest last unless --from is given",
         status: "available",
         args: [SESSION_ARG],
@@ -195,16 +212,16 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "tail",
-        usage: "tail <session> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
+        usage: "tail <session> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--window <k|last>] [--project <p> | --all]",
         summary: "the last n visible rows (default 20): what was I doing",
         status: "available",
         args: [SESSION_ARG, "<n>: same as --limit"],
-        flags: [LIMIT("20"), KIND, HEAD, FULL, FIELDS, REF_PROJECT, REF_ALL],
+        flags: [LIMIT("20"), KIND, HEAD, FULL, FIELDS, WINDOW, REF_PROJECT, REF_ALL],
         examples: ["tail latest", "tail 7a2f1c3e 5 --kind all", "tail ./7a2f1c3e-0000-4000-8000-000000000001.jsonl"],
       },
       {
         name: "around",
-        usage: "around <id> [--before <n>] [--after <n>] [--context <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        usage: "around <id> [--before <n>] [--after <n>] [--context <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--window <k|last>] [--session <ref>] [--project <p> | --all]",
         summary: "rows on both sides of an id, the anchor included",
         status: "available",
         args: [ID_ARG],
@@ -218,7 +235,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "next",
-        usage: "next <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        usage: "next <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--window <k|last>] [--session <ref>] [--project <p> | --all]",
         summary: "the n visible rows after an id (default 20)",
         status: "available",
         args: [ID_ARG, "<n>: same as --limit"],
@@ -227,7 +244,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "prev",
-        usage: "prev <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--session <ref>] [--project <p> | --all]",
+        usage: "prev <id> [<n>] [--limit <n>] [--kind <a,b|all>] [--head <n>] [--full] [--fields <a,b>] [--window <k|last>] [--session <ref>] [--project <p> | --all]",
         summary: "the n visible rows before an id (default 20), in file order",
         status: "available",
         args: [ID_ARG, "<n>: same as --limit"],
@@ -263,9 +280,58 @@ export const COMMAND_GROUPS: CommandGroup[] = [
   {
     group: "views",
     commands: [
-      { name: "human", usage: "human <session> [--window <k|last>] [--budget <chars>]", summary: "every human message, verbatim", status: { planned: "views" } },
-      { name: "tools", usage: "tools <session> [--name <tool>] [--file <pattern>] [--errors]", summary: "tool calls with results folded in", status: { planned: "views" } },
-      { name: "compactions", usage: "compactions <session> [--full]", summary: "where the context window closed", status: { planned: "views" } },
+      {
+        name: "human",
+        usage: "human <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--budget <chars>] [--full] [--rows] [--project <p> | --all]",
+        summary: "every human message (typed, queued, slash commands, answers), verbatim",
+        status: "available",
+        args: [SESSION_ARG],
+        flags: [
+          FROM,
+          TO,
+          SINCE,
+          { ...WINDOW, describe: "one compaction window (a 0-based index, last, k.. or all); a window that opens with a summary prints it after the messages" },
+          { name: "budget", value: "number", arg: "<chars>", describe: "characters of message text to print, newest kept (the newest is always printed whole)", default: "12000" },
+          { name: "full", value: "boolean", describe: "lift the budget" },
+          { name: "rows", value: "boolean", describe: "the standard row table instead of whole messages" },
+          REF_PROJECT,
+          REF_ALL,
+          JSON_OUT,
+        ],
+        examples: ["human latest", "human 7a2f1c3e --window last", "human 7a2f1c3e --rows --full"],
+      },
+      {
+        name: "tools",
+        usage: "tools <session> [--name <tool>] [--file <pattern>] [--errors] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
+        summary: "tool calls with their result status folded in",
+        status: "available",
+        args: [SESSION_ARG],
+        flags: [
+          { name: "name", value: "string", arg: "<tool>", describe: "case-insensitive substring of the tool name" },
+          { name: "file", value: "string", arg: "<pattern>", describe: "files touched: a substring, or a glob when it has * ? or [ (* crosses /)" },
+          { name: "errors", value: "boolean", describe: "only calls whose result is an error" },
+          FROM,
+          TO,
+          SINCE,
+          WINDOW,
+          LIMIT("30"),
+          { name: "full", value: "boolean", describe: "block form with the full input and result text (persisted outputs followed); lifts the row cap" },
+          { name: "fields", value: "string", arg: "<a,b>", describe: `extra columns: ${TOOLS_FIELDS.join(", ")}` },
+          REF_PROJECT,
+          REF_ALL,
+          JSON_OUT,
+        ],
+        examples: ["tools latest", "tools 7a2f1c3e --name bash --errors", "tools 7a2f1c3e --file '*.env' --full"],
+      },
+      {
+        name: "compactions",
+        usage: "compactions <session> [--full] [--project <p> | --all]",
+        summary: "where the context window closed, and the summary that stood in for it",
+        status: "available",
+        args: [SESSION_ARG],
+        flags: [{ name: "full", value: "boolean", describe: "block form with dropped tokens, window sizes and each summary's text" }, REF_PROJECT, REF_ALL],
+        examples: ["compactions latest", "compactions 7a2f1c3e --full"],
+      },
       { name: "resume-pack", usage: "resume-pack <session> [--window <k|last>] [--budget <chars>]", summary: "the cold-start block", status: { planned: "resume-pack-library" } },
     ],
   },

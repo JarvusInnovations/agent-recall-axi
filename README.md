@@ -20,9 +20,9 @@ the true full-resolution memory. This tool is how an agent remembers.
 ## Status
 
 Early. The desired state is fully specified in [`specs/`](specs/README.md) and the work to build
-it is the plan DAG in [`plans/`](plans/README.md). Today `sessions`, `events`, `tail`, `show`,
-`find` (within one session), the home
-view and the Claude Code reader work; the rest of the shape below is planned, and
+it is the plan DAG in [`plans/`](plans/README.md). Today `sessions`, `events`, `tail`, the pan
+verbs, `show`, `find` (within one session), `turns`, `human`, `tools`, `compactions`, `--window`,
+the home view and the Claude Code reader work; the rest of the shape below is planned, and
 `agent-session-axi --help` marks each command with the plan that brings it.
 
 ## Shape

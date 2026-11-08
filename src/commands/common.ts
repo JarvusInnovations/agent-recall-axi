@@ -9,6 +9,7 @@ import { isKind, KINDS, type EventId, type Kind } from "../lib/model.js";
 import type { Scope } from "../lib/scope.js";
 import { formatClock, formatDay, parseSpan, parseWhen, resolveZone } from "../lib/time.js";
 import type { Session } from "../lib/model.js";
+import { parseWindow, type WindowSel } from "../lib/windows.js";
 import { getBool, getString, usageLine, type Parsed } from "../flags.js";
 
 export const BIN = "agent-session-axi";
@@ -163,4 +164,22 @@ export function unreadableNote(listing: { unreadable: number; firstUnreadable?: 
     count: listing.unreadable,
     help: `Run \`ls -l ${shellPath(listing.firstUnreadable)}\` to check why that session file is unreadable${more}`,
   };
+}
+
+/** `--window` parsed before any file is opened (VALIDATION_ERROR on a bad value); undefined = all. */
+export function windowFlag(p: Parsed): WindowSel | undefined {
+  const text = getString(p, "window");
+  if (text === undefined) return undefined;
+  try {
+    return parseWindow(text);
+  } catch (err) {
+    if (err instanceof AgentSessionError) throw new AxiError(err.message, err.code, err.suggestions);
+    throw err;
+  }
+}
+
+/** ` --window <w>` as given, for hints that must show the same window. */
+export function windowCarry(p: Parsed): string {
+  const w = getString(p, "window");
+  return w !== undefined ? ` --window ${shellArg(w)}` : "";
 }
