@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs the bundled CLI: `scripts/agent-session-axi <command>`. Bash, not node. Follows symlinks to
+# itself first, so a link to this file on PATH still finds the sibling agent-session-axi.mjs.
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+exec node "$(cd -P "$(dirname "$src")" && pwd)/agent-session-axi.mjs" "$@"
