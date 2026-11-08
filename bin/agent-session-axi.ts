@@ -5,5 +5,6 @@ import { VERSION } from "../src/version.js";
 
 if (!tryFastPath(process.argv.slice(2), { version: VERSION })) {
   const { main } = await import("../src/cli.js");
-  await main();
+  // stdin only for the home view's hook mode, and only when it asks (src/hook.ts).
+  await main(process.argv.slice(2), { stdin: () => process.stdin });
 }
