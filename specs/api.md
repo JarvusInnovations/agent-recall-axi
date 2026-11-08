@@ -132,6 +132,7 @@ order and `last` are exact.
 interface ResumePackOpts { window?: number | "last"; budget?: number; tools?: number; claims?: number }
 interface ResumePack {
   session: Session; window: { index: number; count: number };
+  title?: string;             // the session's title (data-model.md#session), uncut; the header prints `session: <s8> <title>`
   summary?: Event;            // C
   human: Event[];             // H, verbatim, oldest first
   tools: Event[];             // C: calls, each with its linked (D) result status; newest last
