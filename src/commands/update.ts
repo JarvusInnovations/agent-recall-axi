@@ -10,6 +10,7 @@ import { parseFlags } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { renderDocument } from "../output/render.js";
 import { BIN } from "./common.js";
+import { NAME } from "../invocation.js";
 
 const SKILL_LINE = "Run `npx skills update agent-session-axi` to update the skill bundle";
 const NPM_LINE = "Run `npm i -g agent-session-axi@latest` if installed from npm";
@@ -31,5 +32,5 @@ export async function updateCommand(args: string[], entrypoint: string | undefin
   if (p.positionals.length) throw new AxiError(`update takes no arguments (got ${p.positionals[0]})`, "USAGE", [`usage: ${BIN} update [--check]`]);
   const channel = installChannel(entrypoint);
   const help = channel === "skill" ? [SKILL_LINE, NPM_LINE] : [NPM_LINE, SKILL_LINE];
-  return renderDocument({ update: `${BIN} ${VERSION} (${channel} install)` }, help);
+  return renderDocument({ update: `${NAME} ${VERSION} (${channel} install)` }, help);
 }
