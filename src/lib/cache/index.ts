@@ -14,13 +14,13 @@ import { claudeCode } from "../adapters/claude-code/index.js";
 import { formatId, parseId } from "../ids.js";
 import { KINDS, type Event, type EventId, type Kind, type Session } from "../model.js";
 import { readLines } from "../reader.js";
-import { opensWindow, WindowCounter } from "../window-state.js";
+import { WindowCounter } from "../window-state.js";
 import { VERSION as PACKAGE_VERSION } from "../../version.js";
 import { cacheDir, ownedRecord, readSlice, recordName, safeDir, sha, tablePath, writeRecord, type CacheOpts } from "./store.js";
 
 export const CHECKPOINT_EVERY = 256;
 /** The table format; bumped whenever what a table records changes. */
-const VERSION = 3;
+const VERSION = 4;
 
 /** A call still waiting for its result at a checkpoint: what linking a later result needs. */
 export interface PendingCall {
@@ -270,7 +270,7 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
   const t: OffsetTable = table
     ? { ...table, checkpoints: [...table.checkpoints], bounds: table.bounds.map((b) => ({ ...b })) }
     : { v: VERSION, pkg: PACKAGE_VERSION, path: session.path, seq: 0, end: 0, lastOffset: 0, lastLength: 0, lastHash: sha(""), checkpoints: [], tail: start, tools: "", bounds: [] };
-  const windows = new WindowCounter(start.window);
+  const windows = new WindowCounter(start.window, start.cum.some((n) => n > 0));
   const ctx = seedContext(session, start, table);
   const tools: string[] = [];
   const st: Running = { window: start.window, cum: [...start.cum], malformed: start.malformed };
@@ -290,7 +290,7 @@ export async function extendTable(session: Session, table: OffsetTable | undefin
     if (entry) {
       if (entry.malformed) st.malformed++;
       for (const ev of claudeCode.classify(entry, ctx)) {
-        if (opensWindow(ev)) t.bounds.push({ summary: formatId(ev.id), start: formatId(ev.id), cum: [...st.cum] });
+        if (windows.opens(ev)) t.bounds.push({ summary: formatId(ev.id), start: formatId(ev.id), cum: [...st.cum] });
         windows.place(ev);
         st.window = windows.index;
         st.cum[KIND_INDEX.get(ev.kind)!]!++;
