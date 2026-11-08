@@ -19,6 +19,23 @@ import { getBool, getNumber, getString, parseFlags, usageLine, type Parsed } fro
 import { renderCommandHelp } from "../output/help.js";
 import { DEFAULT_HEAD, headCut, oneLine, renderBlockList, renderHelp, renderRows, renderStatus, targetCut, TARGET_HEAD, timeColumn } from "../output/render.js";
 import { formatSize } from "../output/sizes.js";
+import { detail, DETAIL_CAP } from "../output/truncate.js";
+import { countNewlines } from "../lib/reader.js";
+import { open as openFile, stat } from "node:fs/promises";
+
+/** Lines in a file: complete lines, plus a trailing line still being written. */
+async function lineCount(path: string): Promise<number> {
+  const [newlines, st] = await Promise.all([countNewlines(path), stat(path)]);
+  if (st.size === 0) return 0;
+  const fh = await openFile(path, "r");
+  try {
+    const b = Buffer.alloc(1);
+    await fh.read(b, 0, 1, st.size - 1);
+    return newlines + (b[0] === 0x0a ? 0 : 1);
+  } finally {
+    await fh.close();
+  }
+}
 import {
   BIN,
   carry,
@@ -139,7 +156,7 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
   const help: string[] = [];
   if (kept.length === 0) {
     header.tz = tz;
-    header.turns = `0 turns in ${o.session.short} (${plural(stats.lines, "line")})`;
+    header.turns = `0 turns in ${o.session.short} (${plural(await lineCount(o.session.path), "line")})`;
     if (range.from || range.to || window !== undefined) help.push(`Run \`${BIN} turns ${s}${tzc}\` for every turn of the session`);
     return assemble([encode(header)], help);
   }
@@ -157,6 +174,7 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
   const last = kept[kept.length - 1]!;
   if (matching > kept.length) {
     const earlier = matching - kept.length;
+    help.push(`Showing the last ${kept.length} of ${matching} turns; raise --limit or narrow with --from`);
     help.push(
       `Run \`${BIN} turns ${s} --to ${formatId(first.id)}${rangeCarry(p, { to: false })}${win}${getString(p, "limit") !== undefined ? ` --limit ${getString(p, "limit")}` : ""}${tzc}\` for the ${plural(earlier, "earlier turn")} (showing the last ${kept.length} of ${matching} turns)`,
     );
@@ -224,8 +242,11 @@ export async function humanCommand(args: string[], io: Io): Promise<string> {
     const doc: Doc = { id: formatId(sm.id) };
     if (sm.t) doc.t = time.format(sm);
     doc.authority = "C";
-    doc.text = sm.text;
+    // C text: the detail cap and house marker under a budget (truncation.md#caps).
+    const cut = full ? { text: sm.text, cut: false } : detail(sm.text, DETAIL_CAP);
+    doc.text = cut.text;
     parts.push(encode({ summary: doc }));
+    if (cut.cut) help.push(`Run \`${BIN} show ${formatId(sm.id)} --full${o.hint.showCarry}${tzc}\` for the whole summary (${formatSize(sm.size)} chars)`);
   }
   if (msgs.length === 0 && (range.from || range.to || window !== undefined)) help.push(`Run \`${BIN} human ${s}${tzc}\` for every human message of the session`);
   if (msgs.length > 0) help.push(`Run \`${BIN} turns ${s}${rangeCarry(p)}${win}${tzc}\` for one row per prompt with what followed`);
@@ -252,7 +273,7 @@ function toolsField(c: ToolCall, f: ToolsField): string | boolean {
     case "error":
       return c.call.status?.state === "error";
     case "files":
-      return (c.call.files ?? []).join(" ");
+      return (c.call.files ?? []).join(", ");
   }
 }
 
