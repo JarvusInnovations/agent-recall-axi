@@ -65,6 +65,8 @@ export interface HeldOpts {
   onLine?: (line: Line, entry: Entry | null, evs: Event[]) => void;
   /** Checked after each line once nothing is held: true ends the read. */
   until?: () => boolean;
+  /** Kept rows that must not wait for a partner (released as they stand). */
+  noHold?: (ev: Event) => boolean;
 }
 
 /**
@@ -75,7 +77,8 @@ export interface HeldOpts {
  */
 export async function* heldEvents(session: Session, o: HeldOpts): AsyncGenerator<Event> {
   const ctx = o.ctx;
-  const waiting = waitingFor(ctx);
+  const partner = waitingFor(ctx);
+  const waiting = o.noHold ? (ev: Event) => partner(ev) && !o.noHold!(ev) : partner;
   const queue: Event[] = [];
   let pastLines = 0;
   for await (const line of readLines(session.path, { startOffset: o.offset, startSeq: o.seq })) {

@@ -15,7 +15,17 @@ import { heldEvents, type Span } from "./hold.js";
 /** `k`, `last`, `k..` (k to the end) or `all` (the default). */
 export type WindowSel = number | "last" | "all" | `${number}..`;
 
-export const WINDOW_GRAMMAR = "--window takes a 0-based window index (2), last, k.. (2.. runs to the end) or all";
+export const WINDOW_GRAMMAR = "--window takes a 0-based window index, last, k.. (k to the end) or all";
+
+/** The grammar with an example index inside the session's range. */
+function grammarFor(count: number): string {
+  const k = count - 1;
+  return `--window takes a 0-based window index (0..${k}), last, k.. (${k}.. runs to the end) or all`;
+}
+
+function invalid(value: unknown): AgentSessionError {
+  return new AgentSessionError(`--window ${String(value)} is not a window`, "VALIDATION_ERROR", [WINDOW_GRAMMAR]);
+}
 
 /** Parse `--window`; throws VALIDATION_ERROR (before any file is opened). */
 export function parseWindow(text: string): WindowSel {
@@ -23,7 +33,15 @@ export function parseWindow(text: string): WindowSel {
   if (v === "last" || v === "all") return v;
   if (/^\d+$/.test(v)) return Number(v);
   if (/^\d+\.\.$/.test(v)) return v as `${number}..`;
-  throw new AgentSessionError(`--window ${text} is not a window`, "VALIDATION_ERROR", [WINDOW_GRAMMAR]);
+  throw invalid(text);
+}
+
+/** A library caller's selection, checked: an integer ≥ 0, `k..`, `last` or `all`. */
+function checkSel(sel: unknown): WindowSel {
+  if (sel === "last" || sel === "all") return sel;
+  if (typeof sel === "number" && Number.isSafeInteger(sel) && sel >= 0) return sel;
+  if (typeof sel === "string" && /^\d+\.\.$/.test(sel)) return sel as `${number}..`;
+  throw invalid(sel);
 }
 
 export function formatWindow(sel: WindowSel): string {
@@ -64,7 +82,9 @@ function rangeText(count: number): string {
  * window past the last.
  */
 export async function resolveWindow(session: Session, sel: WindowSel | undefined, opts: { cache?: CacheOpts; table?: OffsetTable } = {}): Promise<WindowRange | undefined> {
-  if (sel === undefined || sel === "all") return undefined;
+  if (sel === undefined) return undefined;
+  sel = checkSel(sel);
+  if (sel === "all") return undefined;
   const table = opts.table ?? (await tableFor(session, opts.cache));
   const count = table.bounds.length + 1;
   let index: number;
@@ -77,7 +97,7 @@ export async function resolveWindow(session: Session, sel: WindowSel | undefined
   }
   if (index >= count) {
     throw new AgentSessionError(`window ${index} does not exist in ${session.short}: it has ${rangeText(count)}`, "VALIDATION_ERROR", [
-      `${WINDOW_GRAMMAR}; this session has ${rangeText(count)}`,
+      `${grammarFor(count)}; this session has ${rangeText(count)}`,
     ]);
   }
   const r: WindowRange = { index, through, count, start: table.checkpoints[0]!, table };
@@ -179,6 +199,8 @@ async function eventsById(session: Session, table: OffsetTable, ids: EventId[]):
       offset: cp.offset,
       seq: cp.seq,
       keep: (ev) => want.has(formatId(ev.id)) && !found.has(formatId(ev.id)),
+      // A wanted row is the answer as it stands: never read on for its partner.
+      noHold: () => true,
       until: () => found.has(formatId(id)),
     })) {
       found.set(formatId(ev.id), ev);
@@ -220,9 +242,27 @@ export async function compactions(session: Session, opts: { cache?: CacheOpts } 
   return (await boundaries(session, opts)).map((b) => b.compaction);
 }
 
-/** The summary event that opened a selected window, when it begins with one. */
+/**
+ * The summary that opens a selected window: the window's first event, when it is a summary
+ * (context-windows.md). A summary further into the window opens nothing.
+ */
 export async function openingSummary(session: Session, range: WindowRange | undefined): Promise<Event | undefined> {
-  const s = idOf(range?.opening?.summary);
-  if (!range || !s) return undefined;
-  return (await eventsById(session, range.table, [{ ...s, session: session.short }])).get(formatId({ ...s, session: session.short }));
+  if (!range) return undefined;
+  const cp = range.start;
+  const from = range.from;
+  let first: Event | undefined;
+  for await (const ev of heldEvents(session, {
+    ctx: cp.seq > 1 ? seedContext(session, cp, range.table) : newContext(session),
+    offset: cp.offset,
+    seq: cp.seq,
+    keep: (ev) => first === undefined && (!from || comparePosition(ev.id, from) >= 0),
+    noHold: () => true,
+    until: () => first !== undefined,
+  })) {
+    first = ev;
+    break;
+  }
+  if (!first || first.kind !== "summary") return undefined;
+  if (range.to && comparePosition(first.id, range.to) >= 0) return undefined;
+  return first;
 }

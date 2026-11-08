@@ -10,7 +10,6 @@ import { readLines } from "./reader.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
 import type { CacheOpts } from "./cache/store.js";
 import { checkSession, inRange, inSpan, isEventId } from "./hold.js";
-import { opensWindow } from "./window-state.js";
 import { resolveWindow, type WindowSel } from "./windows.js";
 import { windowStart } from "./events.js";
 
@@ -76,6 +75,7 @@ export async function* turns(session: Session, opts: TurnOpts = {}, stats?: { li
   const range = await resolveWindow(session, opts.window, opts.cache ? { cache: opts.cache } : {});
   const start = windowStart(session, range);
   const ctx = start.ctx;
+  const windows = start.windows;
   const selected = (ev: Event) => inRange(ev, opts.from, opts.to) && inSpan(ev, range);
   // Where no further turn can open inside the selection.
   const endSeq = Math.min(isEventId(opts.to) ? opts.to.seq : Infinity, range?.to?.seq ?? Infinity);
@@ -87,6 +87,8 @@ export async function* turns(session: Session, opts: TurnOpts = {}, stats?: { li
     const entry = claudeCode.parse(line);
     const evs = entry ? claudeCode.classify(entry, ctx) : [];
     for (const ev of evs) {
+      const boundary = windows.isBoundary(ev);
+      windows.place(ev);
       if (opensTurn(ev)) {
         if (cur?.listed) yield close(cur, true);
         if (ev.id.seq > endSeq) return;
@@ -102,7 +104,7 @@ export async function* turns(session: Session, opts: TurnOpts = {}, stats?: { li
       o.turn.last = ev.id;
       if (ev.kind === "call") o.turn.calls++;
       if (ev.kind === "human.queued") o.turn.queued++;
-      if (ev.kind === "compaction" || opensWindow(ev)) o.boundary = true;
+      if (boundary) o.boundary = true;
       if (WORK.has(ev.kind)) o.lastWork = ev.kind;
       if (ev.t) {
         o.firstT ??= ev.t;

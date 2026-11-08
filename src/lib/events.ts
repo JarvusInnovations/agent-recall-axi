@@ -8,7 +8,7 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { DEFAULT_KINDS, KINDS, type Entry, type Event, type EventId, type Kind, type Pointer, type Session } from "./model.js";
 import { countNewlines, readLines, readLinesBackward } from "./reader.js";
-import { checkSession, heldEvents, inRange, inSpan, isEventId, kindSet, type HeldOpts, type Span } from "./hold.js";
+import { checkSession, heldEvents, HOLD_CAP, inRange, inSpan, isEventId, kindSet, waitingFor, type HeldOpts } from "./hold.js";
 export { kindSet } from "./hold.js";
 import { newContext, type ClassifyContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
@@ -35,9 +35,10 @@ export interface ListOpts {
 }
 
 /** Where a seeded forward read of a window starts, and its classification context. */
-export function windowStart(session: Session, range: WindowRange | undefined): { offset: number; seq: number; ctx: ClassifyContext; malformed: number } {
-  if (!range || range.start.seq <= 1) return { offset: 0, seq: 1, ctx: newContext(session), malformed: 0 };
-  return { offset: range.start.offset, seq: range.start.seq, ctx: seedContext(session, range.start, range.table), malformed: range.start.malformed };
+export function windowStart(session: Session, range: WindowRange | undefined): { offset: number; seq: number; ctx: ClassifyContext; malformed: number; windows: WindowCounter } {
+  if (!range || range.start.seq <= 1) return { offset: 0, seq: 1, ctx: newContext(session), malformed: 0, windows: new WindowCounter() };
+  const cp = range.start;
+  return { offset: cp.offset, seq: cp.seq, ctx: seedContext(session, cp, range.table), malformed: cp.malformed, windows: new WindowCounter(cp.window, cp.cum.some((n) => n > 0)) };
 }
 
 /** The tighter of an id bound and a window end, as the hold engine's line bound. */
@@ -107,13 +108,23 @@ async function forwardListing(session: Session, opts: ListOpts & { limit: number
   let malformed = start.malformed;
   let lines = start.seq - 1;
   let firstMatch: Event | undefined;
+  // Past a window's end only rows still waiting for a partner keep the read going (hold.ts rule).
+  const endSeq = range?.to?.seq;
+  const isWaiting = waitingFor(ctx);
+  const waiting = new Set<Event>();
+  let pastLines = 0;
   for await (const line of readLines(session.path, { startOffset: start.offset, startSeq: start.seq })) {
+    if (endSeq !== undefined && line.seq > endSeq) {
+      for (const ev of waiting) if (!isWaiting(ev)) waiting.delete(ev);
+      if (waiting.size === 0 || ++pastLines > HOLD_CAP) break;
+    }
     lines = line.seq;
     const entry = claudeCode.parse(line);
     if (!entry) continue;
     if (entry.malformed) malformed++;
     for (const ev of claudeCode.classify(entry, ctx)) {
       if (!visible.has(ev.kind) || !inRange(ev, opts.from, opts.to) || !inSpan(ev, range)) continue;
+      if (endSeq !== undefined && isWaiting(ev)) waiting.add(ev);
       matching++;
       firstMatch ??= ev;
       if (opts.newestLast) {
@@ -130,8 +141,9 @@ async function forwardListing(session: Session, opts: ListOpts & { limit: number
     matching,
     atStart: rows.length === 0 || rows[0] === firstMatch,
     atEnd: rows.length === matching ? true : opts.newestLast,
-    lines,
-    malformed,
+    lines: range ? Math.max(lines, range.table.seq) : lines,
+    // A window read stops early: the file's malformed count comes from the table it resolved through.
+    malformed: range ? range.table.tail.malformed : malformed,
     scanned: lines,
   };
 }
@@ -471,6 +483,8 @@ interface ShowStart {
   ctx: ClassifyContext;
   turn?: EventId;
   window: number;
+  /** Whether any event came before the start (a boundary-less summary needs one). */
+  seen: boolean;
   last?: EventId;
   /** Events per entry uuid before the start; only a read from the file start knows them. */
   byUuid?: Map<string, number>;
@@ -490,7 +504,7 @@ export async function show(session: Session, id: EventId, opts: { cache?: CacheO
   const table = await tableFor(session, opts.cache, id.seq);
   const cp = startFor(table, id.seq);
   if (cp.seq > 1) {
-    const start: ShowStart = { offset: cp.offset, seq: cp.seq, ctx: seedContext(session, cp, table), window: cp.window };
+    const start: ShowStart = { offset: cp.offset, seq: cp.seq, ctx: seedContext(session, cp, table), window: cp.window, seen: cp.cum.some((n) => n > 0) };
     const turn = idOf(cp.turn);
     if (turn) start.turn = turn;
     const last = idOf(cp.last);
@@ -504,14 +518,14 @@ export async function show(session: Session, id: EventId, opts: { cache?: CacheO
 /** `show` by a forward scan from the file start, without the offset table (the reference a seek must match). */
 export async function showFromStart(session: Session, id: EventId): Promise<Shown> {
   checkSession(session, id);
-  return (await showFrom(session, id, { offset: 0, seq: 1, ctx: newContext(session), window: 0, byUuid: new Map() }))!;
+  return (await showFrom(session, id, { offset: 0, seq: 1, ctx: newContext(session), window: 0, seen: false, byUuid: new Map() }))!;
 }
 
 /** `show` from a start point; undefined when a seeked read cannot be exact (see `show`). */
 async function showFrom(session: Session, id: EventId, start: ShowStart): Promise<Shown | undefined> {
   const ctx = start.ctx;
   let turn = start.turn;
-  const windows = new WindowCounter(start.window);
+  const windows = new WindowCounter(start.window, start.seen);
   let lastEvent = start.last;
   const eventsByUuid = start.byUuid;
   let lines = start.seq - 1;

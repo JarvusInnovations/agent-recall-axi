@@ -10,12 +10,17 @@ import { boundSeq, windowStart } from "./events.js";
 import { openingSummary, resolveWindow, type WindowSel } from "./windows.js";
 
 export const DEFAULT_HUMAN_BUDGET = 12_000;
+/** The opening summary is C text: printed to this many chars under a budget (truncation.md#caps). */
+export const SUMMARY_CAP = 4_000;
 
 export interface HumanOpts {
   from?: Date | EventId;
   to?: Date | EventId;
   window?: WindowSel;
-  /** Characters of message text to keep, newest first; 0 or Infinity = no budget. Default 12,000. */
+  /**
+   * Characters of text in total, newest messages first, the opening summary included at its capped
+   * length (SUMMARY_CAP); 0 or Infinity = no budget (and no summary cap). Default 12,000.
+   */
   budget?: number;
   cache?: CacheOpts;
 }
@@ -39,7 +44,7 @@ export interface HumanMessages {
  * first that does not fit ends the selection, so the omitted ones are always the oldest.
  */
 export function budgetCut(all: Event[], budget: number): { kept: Event[]; omitted: number } {
-  if (!(budget > 0) || budget === Infinity || all.length === 0) return { kept: all, omitted: 0 };
+  if (budget === Infinity || all.length === 0) return { kept: all, omitted: 0 };
   let used = all[all.length - 1]!.size;
   let i = all.length - 1;
   while (i > 0 && used + all[i - 1]!.size <= budget) {
@@ -65,10 +70,14 @@ export async function humanMessages(session: Session, opts: HumanOpts = {}): Pro
   const toSeq = boundSeq(opts.to, range);
   if (toSeq !== undefined) held.toSeq = toSeq;
   for await (const ev of heldEvents(session, held)) all.push(ev);
-  const { kept, omitted } = budgetCut(all, opts.budget ?? DEFAULT_HUMAN_BUDGET);
+  const summary = await openingSummary(session, range);
+  const asked = opts.budget ?? DEFAULT_HUMAN_BUDGET;
+  const budget = asked > 0 ? asked : Infinity;
+  // The summary's printed length counts first; the newest message still always prints.
+  const forMessages = budget !== Infinity && summary ? Math.max(0, budget - Math.min(summary.size, SUMMARY_CAP)) : budget;
+  const { kept, omitted } = budgetCut(all, forMessages);
   const out: HumanMessages = { messages: kept, matching: all.length, omitted };
   if (omitted > 0) out.continueTo = kept[0]!.id;
-  const summary = await openingSummary(session, range);
   if (summary) out.summary = summary;
   return out;
 }
