@@ -118,7 +118,7 @@ describe("hook install / status / uninstall", () => {
     const before = tree(join(b.home, ".."));
     const again = await hook(b, ["install", "--scope", "project"], bin);
     expect(again.exitCode).toBe(0);
-    expect(again.stdout).toMatch(/^hook: "already installed \(project scope, no changes\)"$/m);
+    expect(again.stdout).toMatch(/^hook: already installed \(project scope; no changes\)$/m);
     expect(again.stdout.match(/,unchanged$/gm)).toHaveLength(3);
     expect(tree(join(b.home, ".."))).toEqual(before);
   });
@@ -401,6 +401,8 @@ describe("home view hook mode", () => {
       JSON.stringify({ source: "compact" }),
       JSON.stringify({ session_id: "--all", source: "compact" }),
       JSON.stringify({ session_id: "latest", source: "compact" }),
+      JSON.stringify({ session_id: id.slice(0, 8), source: "compact" }),
+      JSON.stringify({ session_id: session, source: "compact" }),
       JSON.stringify({ session_id: 42, source: "compact" }),
       // a well-formed id that is not a session here (another agent's, say)
       JSON.stringify({ session_id: "0f0f0f0f-0000-4000-8000-000000000000", source: "resume" }),
@@ -435,6 +437,13 @@ describe("home view hook mode", () => {
     const t0 = Date.now();
     expect(await readHookStdin(slow, { firstByteMs: 50, totalMs: 100, maxBytes: 1024 })).toBe('{"session_id":');
     expect(Date.now() - t0).toBeLessThan(5_000);
+    // a multi-byte character split across two chunks
+    const split = new PassThrough();
+    const bytes = Buffer.from('{"session_id":"x","cwd":"/src/wïdget","source":"startup"}');
+    const at = bytes.indexOf(0xc3) + 1;
+    split.write(bytes.subarray(0, at));
+    setTimeout(() => split.end(bytes.subarray(at)), 20);
+    expect(JSON.parse((await readHookStdin(split))!).cwd).toBe("/src/wïdget");
     expect(parseHookPayload('{"session_id":"ABCDEF01-0000-4000-8000-000000000000","source":"compact"}')!.session_id).toBe("abcdef01-0000-4000-8000-000000000000");
   });
 });
