@@ -47,6 +47,8 @@ export interface ResumePack {
   omitted: { human: number; continueTo?: EventId; summary?: EventId };
   /** The counted cost of the printed layers, and the budget (0 = none). */
   budget: { used: number; limit: number };
+  /** The session's title by the data-model precedence, uncut; absent when it has none. */
+  title?: string;
 }
 
 function invalid(what: string, value: unknown, grammar: string): AgentSessionError {
@@ -142,5 +144,9 @@ export async function buildResumePack(session: Session, opts: ResumePackOpts = {
   };
   if (dropped > 0) pack.omitted.continueTo = kept[0]!.id;
   if (droppedSummary) pack.omitted.summary = droppedSummary;
+  // The window read went through the offset table, which carries the stats: no further pass.
+  const { sessionStats } = await import("./stats.js");
+  const title = (await sessionStats(session, { cache: opts.cache ?? {} })).title;
+  if (title !== undefined) pack.title = title;
   return pack;
 }
