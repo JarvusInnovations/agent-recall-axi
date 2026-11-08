@@ -29,6 +29,7 @@ src/
     schema.ts                    FieldDef helpers; default schemas per command
     truncate.ts                  head cuts that respect URLs/paths/ids; house markers
     resume.ts                    renderResumePack: the resume-pack TOON
+    resume-layout.ts             the pack's layout as byte costs (no TOON): the library's budget charges these
   render/
     index.ts                     the agent-session-axi/render subpath (re-exports renderResumePack)
   lib/                           the library (specs/api.md); no CLI concerns
