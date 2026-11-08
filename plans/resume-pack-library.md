@@ -38,6 +38,9 @@ entry, not from `src/`).
 3. `src/lib/index.ts`: export audit test generated from the list in `api.md` (parse the spec's
    `import { … }` block in the test, assert each name is exported).
 4. `commands/resume-pack.ts`: flags, header (`window:`, `budget:`), footers.
+5. `tail`'s footer gains `resume-pack <session>` (cli.md#tail-session), named the way its other
+   hints name the session (deferred from [`pan`](pan.md), which shipped `prev <first-id>` only
+   because the command did not exist yet).
 
 ## Validation
 
@@ -55,6 +58,8 @@ entry, not from `src/`).
 - [ ] The library never writes to stdout: a test runs every exported function with `stdout`
       captured and asserts it stayed empty.
 - [ ] `AgentSessionError` codes map one-to-one to the CLI's `AxiError` codes (table test).
+- [ ] `tail <session>` prints a `resume-pack <session>` footer that runs as printed, including for
+      a shared `<s8>` and a path session (from [`pan`](pan.md)).
 
 ## Risks / unknowns
 
