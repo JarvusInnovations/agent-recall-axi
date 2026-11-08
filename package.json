@@ -9,7 +9,8 @@
     "test:watch": "vitest",
     "build:skill": "bun scripts/build-skill.ts",
     "check:skill": "bun scripts/build-skill.ts --check",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "check:types": "tsc -p test/consumer/tsconfig.json"
   },
   "dependencies": {
     "@toon-format/toon": "^4.4.0",
@@ -51,6 +52,10 @@
     ".": {
       "types": "./dist/src/lib/index.d.ts",
       "import": "./dist/src/lib/index.js"
+    },
+    "./render": {
+      "types": "./dist/src/render/index.d.ts",
+      "import": "./dist/src/render/index.js"
     },
     "./package.json": "./package.json"
   },

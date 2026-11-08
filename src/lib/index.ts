@@ -1,5 +1,5 @@
 /** The library surface (specs/api.md). No stdout, no process.exit, no flags, no TOON in here. */
-export { AgentSessionError, type ErrorCode } from "./errors.js";
+export { AgentSessionError, ERROR_CODES, type ErrorCode } from "./errors.js";
 export {
   AUTHORITY,
   DEFAULT_KINDS,
@@ -52,3 +52,6 @@ export { turns, type Turn, type TurnEnd, type TurnOpts } from "./turns.js";
 export { budgetCut, DEFAULT_HUMAN_BUDGET, humanMessages, type HumanMessages, type HumanOpts } from "./human.js";
 export { toolCalls, toolCallsWithResults, toolFilter, type ToolCall, type ToolOpts } from "./tools.js";
 export type { Span } from "./hold.js";
+
+// resume pack (specs/api.md#resume-pack); the renderer is the agent-session-axi/render subpath
+export { buildResumePack, DEFAULT_RESUME_BUDGET, DEFAULT_RESUME_CLAIMS, DEFAULT_RESUME_TOOLS, packCost, type ResumePack, type ResumePackOpts } from "./resume.js";

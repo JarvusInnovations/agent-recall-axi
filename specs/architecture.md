@@ -28,6 +28,10 @@ src/
     render.ts                    header/rows/footer composition, block-form help[], sizes, times
     schema.ts                    FieldDef helpers; default schemas per command
     truncate.ts                  head cuts that respect URLs/paths/ids; house markers
+    resume.ts                    renderResumePack: the resume-pack TOON
+    resume-layout.ts             the pack's layout as byte costs (no TOON): the library's budget charges these
+  render/
+    index.ts                     the agent-session-axi/render subpath (re-exports renderResumePack)
   lib/                           the library (specs/api.md); no CLI concerns
     index.ts                     public exports
     model.ts                     Session, Entry, Event, Turn, Window, Pointer, ResumePack types
@@ -71,7 +75,11 @@ The library (`src/lib`) is the product another program calls (`specs/api.md`); t
 consumer. Rules: no `process.stdout` writes, no `process.exit`, no flag parsing, no TOON inside
 `src/lib`; every function takes structured arguments and returns structured results or throws a
 typed error the CLI maps to `behaviors/errors.md`. The package exports the library as
-`agent-session-axi` (`exports["."]`) and the CLI only as the `bin`.
+`agent-session-axi` (`exports["."]`), the resume-pack renderer as `agent-session-axi/render`
+(`exports["./render"]`, `api.md#resume-pack`), and the CLI only as the `bin`. The `render`
+subpath is the one public entry into `src/output/`: it re-exports `renderResumePack`, which
+the `resume-pack` command calls too, so the CLI and a library caller cannot print different
+bytes for the same pack.
 
 ## Event model and adapters
 

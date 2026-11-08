@@ -259,19 +259,35 @@ sidechain entries of a main file are not boundaries (`behaviors/context-windows.
 
 ## Resume pack
 
-A deterministic three-layer structure built from one session (`api.md#buildresumepack`), the
-library's answer to "what was I doing":
+A deterministic three-layer structure built from one session (`api.md#resume-pack`), the
+library's answer to "what was I doing", over one window (default `last`). Layers in print order:
 
 | layer | content | authority |
 | --- | --- | --- |
-| `human` | every `H`-class event in the chosen window — `human`, `human.queued`, `human.slash`, `human.answer` — verbatim, oldest first | H |
-| `tools` | the last N `call` events with `target`, result status and pointer, newest last | D |
-| `claims` | the last M `assistant` events, verbatim | C |
 | `summary` | the window's opening `summary` event, if any | C |
+| `human` | every `H`-class event in the window — `human`, `human.queued`, `human.slash`, `human.answer` — verbatim, oldest first | H |
+| `tools` | the last N (default 10) `call` events of the window with `target` and linked result status (a `persisted` status names the pointer), newest last | C (results D) |
+| `claims` | the last M (default 3) `assistant` events of the window, verbatim, oldest first | C |
 
-Sized by a character budget: `human` is never cut below its newest message; `claims` shrinks
-first, then `tools`, then older `human` messages drop with a note of how many were omitted and the
-id to continue from.
+Sized by a budget (default 16,000) that **bounds the rendered pack**: the layers as printed (from
+the first layer's key to the last claim, `help[]` excluded) take at most `budget.used` bytes,
+and `used` stays within the limit unless the newest human message alone exceeds it. So the
+whole output is at most the budget plus the header and footer blocks plus the newest human
+message, which is never cut (and, past that point, the layers' fixed key lines and a dropped
+summary's one-line note, under 150 bytes). Without TOON in the library, each printed event is charged its
+encoded cost: the UTF-8 length of its text as a JSON string (quotes and escapes included, which
+TOON never exceeds), for the summary its text as printed (cut at 4,000 chars with the house
+marker), for a call its tool and its target as its row prints it, plus its id and a fixed
+per-event overhead for keys, time, kind and indentation; each layer's key line is a fixed
+charge. The constants are the renderer's layout and live next to it (`src/output/`). A budget
+of `0` means no budget.
+
+**What drops**, one event at a time while `used` exceeds the budget: the oldest claim; once no
+claim is left, the oldest tool call; once no call is left, the oldest human message but the
+newest; then the opening summary (`C`, so it goes before the last `H` message). No human, claim
+or call text is ever cut. Dropped human messages are reported as `omitted.human` with
+`continueTo`, the oldest kept message's id: the exclusive `--to` that yields exactly the
+omitted ones within the window; a dropped summary as `omitted.summary`, its id.
 
 ## Timestamps
 

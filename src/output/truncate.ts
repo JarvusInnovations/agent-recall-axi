@@ -6,6 +6,8 @@
  * a path (the path is kept whole and the rest of the target is cut).
  */
 
+import type { Event } from "../lib/model.js";
+
 /** The row mark for a cut head. */
 export const ROW_MARK = "…";
 
@@ -86,3 +88,20 @@ export function detail(text: string, cap = DETAIL_CAP): { text: string; cut: boo
   if (end >= text.length) return { text, cut: false };
   return { text: `${text.slice(0, end)}${detailMark(text.length)}`, cut: true };
 }
+
+/** row-format.md#text-by-kind: newline runs collapse to one space; nothing else changes. */
+export function oneLine(text: string): string {
+  return text.replace(/(\r?\n)+/g, " ");
+}
+
+/**
+ * A `call` target cut to min(head, 120): a target that is itself a path is kept whole; inside a
+ * longer target (a shell command) path-like tokens are kept whole and the rest is cut.
+ */
+export function targetCut(ev: Event, cap: number): { text: string; cut: boolean } {
+  const target = oneLine(ev.target ?? "");
+  // A path target is kept whole, within the same bound as any protected span (twice the cap).
+  if (ev.files?.includes(ev.target ?? "") && (cap <= 0 || target.length <= 2 * cap)) return { text: target, cut: false };
+  return head(target, cap, { paths: true });
+}
+
