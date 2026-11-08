@@ -156,6 +156,13 @@ export type ToolsField = (typeof TOOLS_FIELDS)[number];
 
 export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"] as const;
 
+export const HOOK_SCOPES = ["user", "project"] as const;
+export const HOOK_AGENTS = ["claude", "codex", "opencode"] as const;
+const HOOK_SCOPE: FlagSpec = { name: "scope", value: "string", arg: "<user|project>", describe: "user: each agent's home config; project: this directory's", default: "user" };
+const HOOK_AGENT: FlagSpec = { name: "agent", value: "string", arg: "<claude|codex|opencode>", describe: "install for one agent only (install only)", default: "all three" };
+/** Every flag `hook` declares; each subcommand accepts its own subset (commands/hook.ts). */
+export const HOOK_FLAGS: FlagSpec[] = [HOOK_SCOPE, HOOK_AGENT];
+
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
     group: "zoomed out",
@@ -394,7 +401,19 @@ export const COMMAND_GROUPS: CommandGroup[] = [
   {
     group: "setup",
     commands: [
-      { name: "hook", usage: "hook install|status|uninstall [--scope user|project]", summary: "opt-in SessionStart hook", status: { planned: "skill-and-hook" } },
+      {
+        name: "hook",
+        usage: "hook install [--scope user|project] [--agent claude|codex|opencode] | hook status [--scope user|project] | hook uninstall [--scope user|project]",
+        summary: "opt-in SessionStart hook (Claude Code, Codex, OpenCode): the sessions at session start, a resume pack after a compaction",
+        status: "available",
+        args: [
+          "install: register the hook (idempotent; repairs a moved binary path)",
+          "status: where it is installed and whether its command is current (writes nothing)",
+          "uninstall: remove only this tool's entries; every other hook stays",
+        ],
+        flags: HOOK_FLAGS,
+        examples: ["hook install", "hook install --scope project --agent claude", "hook status", "hook uninstall --scope project"],
+      },
       {
         name: "cache",
         usage: "cache status | cache clear [--project <p> | --all]",
