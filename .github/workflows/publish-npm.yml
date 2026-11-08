@@ -97,17 +97,35 @@ jobs:
       with:
         bun-version-file: .tool-versions
 
+    # The bootstrap: the first version is published by hand before its Release PR merges
+    # (RELEASING.md), so this run finds it on the registry and stops green. Any other hit means
+    # the version went out by some other path; the warning says so.
+    - name: Skip a version already on the registry
+      id: registry
+      run: |
+        set -euo pipefail
+        name=$(node -p 'require("./package.json").name')
+        version="${GITHUB_REF_NAME#v}"
+        if [ "$(npm view "$name@$version" version 2>/dev/null || true)" = "$version" ]; then
+          echo "::warning::$name@$version is already on the registry (the manual first publish?); not publishing"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Set package.json version from tag
+      if: steps.registry.outputs.published != 'true'
       run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
 
     - name: Install dependencies
+      if: steps.registry.outputs.published != 'true'
       run: bun install --frozen-lockfile
 
     - name: Build
+      if: steps.registry.outputs.published != 'true'
       run: bun run build
 
     # An rc (a GitHub prerelease) goes out under the `next` dist-tag so `latest` never moves to it.
     - name: Publish to npm
+      if: steps.registry.outputs.published != 'true'
       run: |
         set -euo pipefail
         case "$GITHUB_REF_NAME" in
