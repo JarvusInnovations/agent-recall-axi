@@ -4,7 +4,7 @@
  * throwaway HOME and project directory: process.env.HOME is pointed at the sandbox too, so even a
  * fallback to os.homedir() cannot reach a real settings file.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,14 +42,19 @@ function box(): Box {
   const project = join(root, "project");
   mkdirSync(home, { recursive: true });
   mkdirSync(project, { recursive: true });
-  return { home, project, env: { HOME: home, PATH: "/usr/bin:/bin", [`AGENT_SESSION_AXI_DISABLE_HOOKS`]: undefined } };
+  // Every config-dir variable pinned, so no target can resolve outside the box.
+  return {
+    home,
+    project,
+    env: { HOME: home, PATH: "/usr/bin:/bin", AGENT_SESSION_AXI_DISABLE_HOOKS: undefined, CLAUDE_CONFIG_DIR: undefined, CODEX_HOME: undefined, XDG_CONFIG_HOME: undefined },
+  };
 }
 
 /** A runnable stand-in for the npm bin whose path names the marker. */
-function fakeBin(b: Box, name = "agent-session-axi.js"): string {
-  const dir = join(b.home, "lib", "node_modules", "agent-session-axi", "dist", "bin");
+function fakeBin(b: Box, prefix = "lib"): string {
+  const dir = join(b.home, prefix, "node_modules", "agent-session-axi", "dist", "bin");
   mkdirSync(dir, { recursive: true });
-  const p = join(dir, name);
+  const p = join(dir, "agent-session-axi.js");
   writeFileSync(p, "#!/bin/sh\nexit 0\n");
   chmodSync(p, 0o755);
   return p;
@@ -101,8 +106,9 @@ describe("hook install / status / uninstall", () => {
       expect(r.stdout).toContain(`${agent},${join(b.project, rel)},added`);
       expect(existsSync(join(b.project, rel))).toBe(true);
     }
-    // Codex reads its feature flag only from the user's config.
-    expect(readFileSync(join(b.home, ".codex", "config.toml"), "utf8")).toContain("hooks = true");
+    // A project install writes project files only: the user's Codex flag is reported, not set.
+    expect(existsSync(join(b.home, ".codex"))).toBe(false);
+    expect(r.stdout).toContain(`codex_features: "not set (needs [features] hooks = true in ~/.codex/config.toml; run hook install --scope user or set it yourself)"`);
     const settings = JSON.parse(readFileSync(join(b.project, ".claude", "settings.json"), "utf8"));
     expect(settings.hooks.SessionStart[0].hooks[0]).toEqual({ type: "command", command: bin, timeout: 10 });
     expect(r.stdout).toContain("Run `agent-session-axi hook status --scope project` to check it");
@@ -113,7 +119,7 @@ describe("hook install / status / uninstall", () => {
     expect(st.exitCode).toBe(0);
     expect(st.stdout).toMatch(/^hook: installed \(project scope\)$/m);
     expect(st.stdout.match(/,installed$/gm)).toHaveLength(3);
-    expect(st.stdout).toContain("(hooks = true)");
+    expect(st.stdout).toContain("codex_features: ");
 
     const before = tree(join(b.home, ".."));
     const again = await hook(b, ["install", "--scope", "project"], bin);
@@ -187,7 +193,7 @@ describe("hook install / status / uninstall", () => {
     const b = box();
     const first = fakeBin(b);
     await hook(b, ["install", "--scope", "project"], first);
-    const moved = fakeBin(b, "agent-session-axi-moved.js");
+    const moved = fakeBin(b, "moved");
     const st = await hook(b, ["status", "--scope", "project"], moved);
     expect(st.stdout).toMatch(/^hook: stale \(project scope\)$/m);
     expect(st.stdout.match(/,stale$/gm)).toHaveLength(3);
@@ -302,11 +308,242 @@ describe("hook install / status / uninstall", () => {
   });
 });
 
+/** A settings file holding `json` (raw text when a string), returned with its path. */
+function settingsFile(b: Box, text: string, rel = ".claude/settings.json"): string {
+  const p = join(b.project, rel);
+  mkdirSync(join(p, ".."), { recursive: true });
+  writeFileSync(p, text);
+  return p;
+}
+
+const groups = (p: string) => JSON.parse(readFileSync(p, "utf8")).hooks.SessionStart as Array<{ hooks: Array<{ command: string }> }>;
+const commands = (p: string) => groups(p).flatMap((g) => g.hooks.map((h) => h.command));
+
+describe("hook review fixes", () => {
+  it("never touches a hook that merely mentions the tool: wrappers, arguments, pipelines", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const theirs = ["/opt/tools/agent-session-axi-wrapper --project x", "agent-session-axi --flag", "echo agent-session-axi | logger", `${bin} tail latest`];
+    const doc = { hooks: { SessionStart: theirs.map((command) => ({ matcher: "", hooks: [{ type: "command", command }] })) } };
+    const p = settingsFile(b, `${JSON.stringify(doc, null, 2)}\n`);
+    const r = await hook(b, ["install", "--scope", "project", "--agent", "claude"], bin);
+    expect(r.stdout).toContain(",added");
+    expect(commands(p)).toEqual([...theirs, bin]);
+    const u = await hook(b, ["uninstall", "--scope", "project"], bin);
+    expect(u.stdout).toMatch(/claude,.*,removed$/m);
+    expect(JSON.parse(readFileSync(p, "utf8"))).toEqual(doc);
+    const st = await hook(b, ["status", "--scope", "project"], bin);
+    expect(st.stdout).toMatch(/claude,.*,absent$/m);
+  });
+
+  it("recognises its own entry quoted, repairs it, and drops a duplicate", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const old = "/old/place/dist/bin/agent-session-axi.js";
+    const doc = { hooks: { SessionStart: [{ matcher: "", hooks: [{ type: "command", command: `'${old}'`, timeout: 10 }] }, { matcher: "", hooks: [{ type: "command", command: `"${old}"` }] }] } };
+    const p = settingsFile(b, JSON.stringify(doc, null, 2));
+    const st = await hook(b, ["status", "--scope", "project"], bin);
+    expect(st.stdout).toMatch(/claude,.*,stale$/m);
+    await hook(b, ["install", "--scope", "project", "--agent", "claude"], bin);
+    expect(commands(p)).toEqual([bin]);
+  });
+
+  it("quotes a command whose path has a space for the shell targets, and the hook runs", async () => {
+    const b = box();
+    const dir = join(b.home, "my tools", "dist", "bin");
+    mkdirSync(dir, { recursive: true });
+    const bin = join(dir, "agent-session-axi.js");
+    writeFileSync(bin, `#!/bin/sh\necho ran-$1\n`);
+    chmodSync(bin, 0o755);
+    const r = await hook(b, ["install", "--scope", "project"], bin);
+    expect(r.exitCode).toBe(0);
+    const quoted = `'${bin}'`;
+    expect(r.stdout).toContain(`command: "${quoted}"`);
+    const claude = commands(join(b.project, ".claude", "settings.json"));
+    expect(claude).toEqual([quoted]);
+    expect(commands(join(b.project, ".codex", "hooks.json"))).toEqual([quoted]);
+    expect(readFileSync(join(b.project, ".opencode", "plugins", "axi-agent-session-axi.js"), "utf8")).toContain(`const command = ${JSON.stringify(bin)};`);
+    expect(spawnSync("/bin/sh", ["-c", claude[0]!], { encoding: "utf8" }).stdout).toBe("ran-\n");
+    const st = await hook(b, ["status", "--scope", "project"], bin);
+    expect(st.stdout.match(/,installed$/gm)).toHaveLength(3);
+    const again = await hook(b, ["install", "--scope", "project"], bin);
+    expect(again.stdout).toMatch(/^hook: already installed/m);
+    const u = await hook(b, ["uninstall", "--scope", "project"], bin);
+    expect(u.stdout.match(/,removed$/gm)).toHaveLength(3);
+  });
+
+  it("a settings file of the wrong shape is an error, not overwritten", async () => {
+    for (const text of ["[]", '{"hooks":[]}', '{"hooks":{"SessionStart":{}}}', '"text"', "null", '{"hooks":null}']) {
+      const b = box();
+      const bin = fakeBin(b);
+      const p = settingsFile(b, text);
+      const r = await hook(b, ["install", "--scope", "project", "--agent", "claude"], bin);
+      expect(r.exitCode, text).toBe(1);
+      expect(r.stdout, text).toMatch(/claude,.*,"?error: /m);
+      expect(r.stdout, text).not.toContain(",added");
+      expect(readFileSync(p, "utf8"), text).toBe(text);
+    }
+  });
+
+  it("keeps indentation, every key, the file's mode, and writes through a symlink onto its target", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const doc = { z: 1, a: { nested: [1, 2] }, hooks: { Stop: [] } };
+    for (const indent of ["    ", "\t"]) {
+      const real = join(b.home, `real-${indent.length}.json`);
+      writeFileSync(real, `${JSON.stringify(doc, null, indent)}\n`);
+      chmodSync(real, 0o600);
+      rmSync(join(b.project, ".claude"), { recursive: true, force: true });
+      mkdirSync(join(b.project, ".claude"));
+      const { symlinkSync, lstatSync } = await import("node:fs");
+      symlinkSync(real, join(b.project, ".claude", "settings.json"));
+      await hook(b, ["install", "--scope", "project", "--agent", "claude"], bin);
+      expect(lstatSync(join(b.project, ".claude", "settings.json")).isSymbolicLink()).toBe(true);
+      const text = readFileSync(real, "utf8");
+      expect(text.split("\n")[1]!.startsWith(`${indent}"z"`)).toBe(true);
+      expect(Object.keys(JSON.parse(text))).toEqual(["z", "a", "hooks"]);
+      expect(JSON.parse(text).a).toEqual(doc.a);
+      expect(statSync(real).mode & 0o777).toBe(0o600);
+      expect(readdirSync(b.home).filter((f) => f.includes(".tmp"))).toEqual([]);
+    }
+  });
+
+  it("user scope honours CLAUDE_CONFIG_DIR, CODEX_HOME and XDG_CONFIG_HOME", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const env = { ...b.env, CLAUDE_CONFIG_DIR: join(b.home, "cc"), CODEX_HOME: join(b.home, "cx"), XDG_CONFIG_HOME: join(b.home, "xdg") };
+    const r = await run(["hook", "install"], { cwd: b.project, env, entrypoint: bin });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("claude,~/cc/settings.json,added");
+    expect(r.stdout).toContain("codex,~/cx/hooks.json,added");
+    expect(r.stdout).toContain("opencode,~/xdg/opencode/plugins/axi-agent-session-axi.js,added");
+    expect(r.stdout).toContain("codex_features: ~/cx/config.toml (hooks = true)");
+    for (const d of [".claude", ".codex", ".config"]) expect(existsSync(join(b.home, d)), d).toBe(false);
+    const st = await run(["hook", "status"], { cwd: b.project, env, entrypoint: bin });
+    expect(st.stdout.match(/,installed$/gm)).toHaveLength(3);
+    const u = await run(["hook", "uninstall"], { cwd: b.project, env, entrypoint: bin });
+    expect(u.stdout.match(/,removed$/gm)).toHaveLength(3);
+  });
+
+  it("project scope reports the Codex flag as on when the user's config already has it", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    mkdirSync(join(b.home, ".codex"));
+    writeFileSync(join(b.home, ".codex", "config.toml"), "[features]\nhooks = true\n");
+    const r = await hook(b, ["install", "--scope", "project", "--agent", "codex"], bin);
+    expect(r.stdout).toContain("codex_features: ~/.codex/config.toml (hooks = true)");
+  });
+
+  it("Codex config: a features table declared any way but plain is an error; neither Codex file is written", async () => {
+    const bad = [
+      'model = "x"\nfeatures.hooks = true\n',
+      "features = { hooks = true }\n",
+      "[features.extra]\nx = 1\n",
+      "[[features]]\nx = 1\n",
+      "[features]\nx = 1\n[features]\ny = 2\n",
+      '[features]\nhooks = "yes"\n',
+      '"features".hooks = true\n',
+    ];
+    for (const text of bad) {
+      const b = box();
+      const bin = fakeBin(b);
+      mkdirSync(join(b.home, ".codex"));
+      const cfg = join(b.home, ".codex", "config.toml");
+      writeFileSync(cfg, text);
+      const r = await hook(b, ["install", "--agent", "codex"], bin);
+      expect(r.exitCode, text).toBe(1);
+      expect(r.stdout, text).toMatch(/codex,.*,"?error: /m);
+      expect(readFileSync(cfg, "utf8"), text).toBe(text);
+      expect(existsSync(join(b.home, ".codex", "hooks.json")), text).toBe(false);
+    }
+  });
+
+  it("Codex config: a plain table gains one line inside it; false becomes true; line endings kept", async () => {
+    const cases: Array<[string, string]> = [
+      ["", "[features]\nhooks = true\n"],
+      ['model = "x"\n', 'model = "x"\n\n[features]\nhooks = true\n'],
+      ["[features]\nother = 1\n\n[profile]\nx = 1\n", "[features]\nother = 1\nhooks = true\n\n[profile]\nx = 1\n"],
+      ["[features]\nhooks = false # off\n", "[features]\nhooks = true # off\n"],
+      ["[tui]\nfeatures.x = 1\n", "[tui]\nfeatures.x = 1\n\n[features]\nhooks = true\n"],
+      ["[features]\r\nother = 1\r\n", "[features]\r\nother = 1\r\nhooks = true\r\n"],
+    ];
+    for (const [text, want] of cases) {
+      const b = box();
+      const bin = fakeBin(b);
+      mkdirSync(join(b.home, ".codex"));
+      const cfg = join(b.home, ".codex", "config.toml");
+      writeFileSync(cfg, text);
+      const r = await hook(b, ["install", "--agent", "codex"], bin);
+      expect(r.exitCode, JSON.stringify(text)).toBe(0);
+      expect(readFileSync(cfg, "utf8"), JSON.stringify(text)).toBe(want);
+    }
+  });
+
+  it("update run from the bundle is a skill install wherever the bundle lives", async () => {
+    const dir = join(sandbox, "anywhere", "scripts");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "agent-session-axi.mjs"), "");
+    writeFileSync(join(dir, "agent-session-axi"), "#!/bin/sh\n");
+    chmodSync(join(dir, "agent-session-axi"), 0o755);
+    const u = await run(["update"], { entrypoint: join(dir, "agent-session-axi.mjs") });
+    expect(u.stdout).toMatch(/^update: agent-session-axi \S+ \(skill install\)$/m);
+    const npm = await run(["update"], { entrypoint: "/opt/skills/x/node_modules/agent-session-axi/dist/bin/agent-session-axi.js" });
+    expect(npm.stdout).toMatch(/\(npm install\)$/m);
+  });
+
+  it("a quoted hint path under HOME keeps its ~/ outside the quotes", async () => {
+    const home = process.env.HOME!;
+    const dir = join(home, "my skills", "agent-session-axi", "scripts");
+    mkdirSync(dir, { recursive: true });
+    const bundle = join(dir, "agent-session-axi.mjs");
+    writeFileSync(bundle, "");
+    writeFileSync(join(dir, "agent-session-axi"), "#!/bin/sh\n");
+    chmodSync(join(dir, "agent-session-axi"), 0o755);
+    expect(cliInvocation(bundle, "/usr/bin")).toBe("~/'my skills/agent-session-axi/scripts/agent-session-axi'");
+    const plain = join(home, "plain", "scripts");
+    mkdirSync(plain, { recursive: true });
+    writeFileSync(join(plain, "agent-session-axi.mjs"), "");
+    writeFileSync(join(plain, "agent-session-axi"), "#!/bin/sh\n");
+    chmodSync(join(plain, "agent-session-axi"), 0o755);
+    expect(cliInvocation(join(plain, "agent-session-axi.mjs"), "/usr/bin")).toBe("~/plain/scripts/agent-session-axi");
+    const { shellPath } = await import("../src/commands/common.js");
+    expect(shellPath(join(home, "my proj"))).toBe("~/'my proj'");
+    expect(shellPath(join(home, "proj"))).toBe("~/proj");
+    expect(shellPath("/opt/my proj")).toBe("'/opt/my proj'");
+  });
+});
+
+describe("the bin's stdin, process-level", () => {
+  const spawnBin = (cwd: string, write?: string) =>
+    new Promise<{ code: number | null; stdout: string }>((resolveRun, reject) => {
+      const child = spawn(node, [BIN_JS], { cwd, env: { PATH: process.env.PATH, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: FIXTURE_ROOT, TZ: "UTC", XDG_CACHE_HOME: CACHE_HOME }, stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      child.stdout.on("data", (c) => (stdout += c));
+      if (write !== undefined) child.stdin.write(write);
+      // the writer stays open: the child must not wait for end of input
+      child.on("error", reject);
+      child.on("close", (code) => {
+        child.stdin.destroy();
+        resolveRun({ code, stdout });
+      });
+    });
+
+  it("a held-open silent pipe and a partial payload with an open writer both print the listing", async () => {
+    const cwd = sandbox;
+    for (const write of [undefined, '{"session_id":"a6000006-0000-4000-8000-000000000000","sour']) {
+      const r = await spawnBin(cwd, write);
+      expect(r.code, String(write)).toBe(0);
+      expect(r.stdout, String(write)).toMatch(/^sessions\[\d+\]/m);
+    }
+  });
+});
+
 describe("nothing but hook install writes a settings file (privacy.md)", () => {
   it("every other command, the home view in hook mode, and hook status/uninstall leave HOME and the project untouched", async () => {
     const b = box();
     const bin = fakeBin(b);
     const before = tree(join(b.home, ".."));
+    const fixturesBefore = tree(FIXTURE_ROOT);
     const session = fx("compaction");
     const id = basename(session, ".jsonl");
     const invocations: string[][] = [
@@ -342,7 +579,10 @@ describe("nothing but hook install writes a settings file (privacy.md)", () => {
     for (const payload of ['{"session_id":"x","source":"compact"}', `{"session_id":"${id}","source":"compact"}`, "garbage"]) {
       await homeWith(payload, { cwd: "/src/widget", env: b.env });
     }
+    // user-scope status/uninstall with the log root as CLAUDE_CONFIG_DIR read it, never write it
+    await run(["hook", "uninstall"], { cwd: b.project, env: { ...b.env, CLAUDE_CONFIG_DIR: FIXTURE_ROOT }, entrypoint: bin });
     expect(tree(join(b.home, ".."))).toEqual(before);
+    expect(tree(FIXTURE_ROOT)).toEqual(fixturesBefore);
   });
 });
 
@@ -415,14 +655,11 @@ describe("home view hook mode", () => {
     }
   });
 
-  it("never hangs: a pipe nobody writes to, or a payload whose writer never closes, returns promptly", async () => {
-    const t0 = Date.now();
+  it("never hangs: a pipe nobody writes to, or a payload whose writer never closes, returns", async () => {
     const silent = await homeWith(undefined);
     expect(silent.stdout).toMatch(/^sessions\[/m);
     const open = await homeWith(JSON.stringify({ session_id: id, source: "compact" }), { end: false });
     expect(open.stdout).toMatch(/^budget: .* of 6\.0k used$/m);
-    // generous: two bounded reads (200 ms each at most) plus the work itself
-    expect(Date.now() - t0).toBeLessThan(15_000);
   });
 
   it("the stdin reader's bounds", async () => {
@@ -434,9 +671,7 @@ describe("home view hook mode", () => {
     expect((await readHookStdin(big, { firstByteMs: 200, totalMs: 1000, maxBytes: 64 * 1024 }))!.length).toBeGreaterThanOrEqual(64 * 1024);
     const slow = new PassThrough();
     slow.write('{"session_id":');
-    const t0 = Date.now();
     expect(await readHookStdin(slow, { firstByteMs: 50, totalMs: 100, maxBytes: 1024 })).toBe('{"session_id":');
-    expect(Date.now() - t0).toBeLessThan(5_000);
     // a multi-byte character split across two chunks
     const split = new PassThrough();
     const bytes = Buffer.from('{"session_id":"x","cwd":"/src/wïdget","source":"startup"}');

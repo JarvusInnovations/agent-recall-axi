@@ -4,7 +4,7 @@
  * bundle running offline from a copy of the skill directory with no node_modules anywhere.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -31,6 +31,10 @@ describe("the committed bundle", () => {
     expect(text).not.toMatch(/\brequire\(\s*["'][^"']+["']\s*\)/);
     expect(text).not.toMatch(/createRequire/);
     expect(text).not.toContain("package.json\"))"); // the version is stamped, not read
+  });
+
+  it("carries no module-path comments, so its bytes do not depend on the node_modules layout", () => {
+    expect(committedBundle()).not.toMatch(/^\s*\/\/ (?:node_modules|src|bin)\//m);
   });
 
   it("bakes in no machine path", () => {
@@ -118,9 +122,10 @@ describe("SKILL.md", () => {
     expect(spliceSkill(prose)).toBe(prose);
   });
 
-  it("every example invokes the shim by its resolved path, never a bare binary name", () => {
+  it("every example invokes the shim by its resolved path, never a bare binary name or a bare command word", () => {
     const spans = [...doc.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
-    const bare = spans.filter((s) => /^agent-session-axi\s/.test(s));
+    const words = new Set(["agent-session-axi", ...COMMAND_GROUPS.flatMap((g) => g.commands.map((c) => c.name))]);
+    const bare = spans.filter((s) => words.has(s.split(/\s+/)[0]!) && s !== "agent-session-axi");
     expect(bare).toEqual([]);
     const invocations = spans.filter((s) => /^scripts\/agent-session-axi(\s|$)/.test(s));
     expect(invocations.length).toBeGreaterThan(20);
@@ -184,6 +189,33 @@ describe("the skill, copied out of the repository, runs offline with node only",
     expect(r.stdout).not.toMatch(/Run `agent-session-axi /);
     const u = viaShim(["update"]);
     expect(u.stdout).toMatch(/^update: .* \(skill install\)$/m);
+  });
+
+  it("the shim ignores an exported CDPATH, and says so clearly when node is missing or too old", () => {
+    const quiet = join(tmp, "cdpath-target");
+    mkdirSync(join(quiet, "scripts"), { recursive: true });
+    const env = { ...baseEnv(cacheOf(`cd-${k++}`)), CDPATH: quiet };
+    const r = spawnSync(join(linkDir, "agent-session-axi"), ["--version"], { cwd: tmp, encoding: "utf8", env });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\n$/);
+    const bash = spawnSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim();
+    const onlyBash = join(tmp, "only-bash");
+    mkdirSync(onlyBash, { recursive: true });
+    for (const tool of ["bash", "dirname", "readlink"]) {
+      const at = spawnSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).stdout.trim();
+      if (at) symlinkSync(at, join(onlyBash, tool));
+    }
+    expect(bash).not.toBe("");
+    const missing = spawnSync(shim, ["--version"], { cwd: tmp, encoding: "utf8", env: { PATH: onlyBash } });
+    expect(missing.status).toBe(127);
+    expect(missing.stderr).toMatch(/node 22 or newer is required/);
+    const oldNode = join(tmp, "old-node");
+    mkdirSync(oldNode, { recursive: true });
+    writeFileSync(join(oldNode, "node"), "#!/bin/sh\necho v20.11.0\n");
+    chmodSync(join(oldNode, "node"), 0o755);
+    const old = spawnSync(shim, ["--version"], { cwd: tmp, encoding: "utf8", env: { PATH: `${oldNode}:${onlyBash}` } });
+    expect(old.status).toBe(1);
+    expect(old.stderr).toMatch(/node 22 or newer is required \(found v20\.11\.0\)/);
   });
 
   it("opens no socket", () => {
