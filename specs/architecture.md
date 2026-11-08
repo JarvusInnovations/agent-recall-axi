@@ -161,7 +161,11 @@ before its seq. Together these are the whole classification context: nothing els
 classification reads is carried from earlier lines. The table's tail record holds the same state
 after the last indexed line, which is where an append resumes, so a table extended across appends
 equals one built cold. The per-kind counts give listings an exact `<matching>`, and the cumulative
-counts let a seek pick its start checkpoint without scanning.
+counts let a seek pick its start checkpoint without scanning. The table also lists the window
+boundaries (`behaviors/context-windows.md`) in file order: for each, the compaction's id (none
+for a boundary-less summary), its summary's id once read, the position where the next window
+starts, and the cumulative per-kind counts there, so `--window` resolves to a position range and
+an exact count without a scan, and `compactions` reads only the boundary entries.
 
 The table records the format version of the table and the package version that built it; a
 mismatch on either discards it, so a classifier change never serves counts or kinds computed by

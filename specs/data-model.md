@@ -239,17 +239,18 @@ path is still printed with its preview, marked `followed: false` with the reason
 | `events` | count of events in the turn (all kinds, hidden included) |
 | `calls` | count of `call` events |
 | `queued` | count of `human.queued` events that arrived during the turn |
-| `ended` | `stop` (next human prompt or end of file after an assistant text), `compaction` (a boundary fell inside), `open` (last turn of a live session) |
+| `ended` | `compaction` (a boundary fell inside); otherwise `stop` (a next human prompt follows, or the file ends after an assistant text) or `open` (the last turn, when the last of its `assistant`, `thinking`, `call`, `result`, `human.answer` and `human.queued` events is not an assistant text: the agent was still working when the file ends, whether the session is live or was cut off). Decided from the file alone, never the clock |
 | `duration` | last event time − first event time |
 
 A session's first events before any human prompt (hooks, skills, reminders) form turn 0 with no
-`prompt`; it is listed only when non-empty.
+`prompt`; it is listed only when non-empty, and its `id` is its first event's id.
 
 ## Window
 
 Window `k` is the events after the `k`-th `compaction` and before the `(k+1)`-th; window 0 begins
 at the file start. `last` names the highest window. The `summary` event that follows a boundary
-belongs to the new window (it is what the agent saw first).
+belongs to the new window (it is what the agent saw first). A `summary` with no boundary before it
+is a boundary itself (`behaviors/context-windows.md`).
 
 ## Resume pack
 
