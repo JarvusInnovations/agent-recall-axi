@@ -44,13 +44,20 @@ export function onPath(targets: string[], pathVar: string | undefined): boolean 
   return false;
 }
 
-function collapse(path: string): string {
-  const home = homedir();
-  return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+/** A word as a shell would need it: unquoted when safe, else single-quoted. */
+export function shellWord(text: string): string {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
-function quoted(text: string): string {
-  return /^[\w@%+=:,./~-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
+/**
+ * A path as a hint prints it: `~/` for the home directory, kept outside any quotes so the shell
+ * still expands it (`~/'my skills/…'`), and only the rest quoted when it needs it.
+ */
+export function pathWord(path: string): string {
+  const home = homedir();
+  if (path === home) return "~";
+  if (path.startsWith(`${home}/`)) return `~/${shellWord(path.slice(home.length + 1))}`;
+  return shellWord(path);
 }
 
 /** The command prefix hints print, for a process started from `entrypoint`. */
@@ -59,7 +66,7 @@ export function cliInvocation(entrypoint: string | undefined = process.argv[1], 
   if (!b) return NAME;
   const targets = b.shim ? [b.shim, b.bundle] : [b.bundle];
   if (onPath(targets, pathVar)) return NAME;
-  return b.shim ? quoted(collapse(b.shim)) : `node ${quoted(collapse(b.bundle))}`;
+  return b.shim ? pathWord(b.shim) : `node ${pathWord(b.bundle)}`;
 }
 
 /** The tool as every hint in this process names it. */
