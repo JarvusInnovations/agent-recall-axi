@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 depends: [skill-and-hook]
 specs:
   - specs/architecture.md
