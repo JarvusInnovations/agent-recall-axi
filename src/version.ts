@@ -16,4 +16,7 @@ function readVersion(): string {
   return "0.0.0";
 }
 
-export const VERSION = readVersion();
+/** Stamped by scripts/build-cli.ts into the skill bundle, which has no package.json beside it. */
+declare const __AGENT_SESSION_AXI_VERSION__: string | undefined;
+
+export const VERSION = typeof __AGENT_SESSION_AXI_VERSION__ === "string" ? __AGENT_SESSION_AXI_VERSION__ : readVersion();

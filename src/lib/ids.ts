@@ -14,7 +14,7 @@ import { resolveScope, type ResolvedScope, type Scope } from "./scope.js";
 import { openSession } from "./session.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
 
-const BIN = "agent-session-axi";
+import { BIN } from "../invocation.js";
 
 /** `<s8>:<seq>[.<n>]` (specs/data-model.md#entry-id-and-event-id). */
 export function formatId(id: EventId): string {

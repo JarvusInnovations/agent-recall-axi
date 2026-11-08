@@ -12,7 +12,8 @@ import type { Session } from "../lib/model.js";
 import { parseWindow, type WindowSel } from "../lib/windows.js";
 import { getBool, getString, usageLine, type Parsed } from "../flags.js";
 
-export const BIN = "agent-session-axi";
+import { BIN } from "../invocation.js";
+export { BIN };
 
 export interface Io {
   cwd: string;

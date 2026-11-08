@@ -11,7 +11,7 @@ import { DEFAULT_HEAD, headCut, oneLine, renderBlockList, renderHelp, renderStat
 import { formatSize } from "./sizes.js";
 import { summaryText } from "./resume-layout.js";
 
-const BIN = "agent-session-axi";
+import { BIN } from "../invocation.js";
 
 export interface RenderResumeOpts {
   /** IANA zone for the time column. */

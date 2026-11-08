@@ -4,7 +4,8 @@
  */
 import { AxiError } from "axi-sdk-js";
 
-export const BIN = "agent-session-axi";
+import { BIN } from "./invocation.js";
+export { BIN };
 
 export type { FlagSpec, FlagValue } from "./reference.js";
 import { findCommand, GLOBAL_FLAGS, type FlagSpec } from "./reference.js";

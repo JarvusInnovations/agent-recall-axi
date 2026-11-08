@@ -1,4 +1,5 @@
 /** Open and list sessions (specs/api.md#scope-and-sessions). */
+import { BIN } from "../invocation.js";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AgentSessionError } from "./errors.js";
@@ -19,7 +20,7 @@ export async function openSession(path: string): Promise<Session> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "EACCES") throw new AgentSessionError(`cannot read ${path}`, "UNREADABLE", [`read permission on ${abs} is needed`], { path: abs });
-    throw new AgentSessionError(`no session file at ${path}`, "NOT_FOUND", ["Run `agent-session-axi sessions --fields path` to list session files"]);
+    throw new AgentSessionError(`no session file at ${path}`, "NOT_FOUND", [`Run \`${BIN} sessions --fields path\` to list session files`]);
   }
   if (!st.isFile()) throw new AgentSessionError(`${path} is not a file`, "VALIDATION_ERROR", ["pass the path of a session .jsonl file"]);
   let ok: boolean;
