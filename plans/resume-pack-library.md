@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 pr: 14
 depends: [views]
 specs:
@@ -78,28 +78,35 @@ Spec readings this plan settled, in the leading `docs(specs): resume-pack readin
 budget, layer labels and render subpath` commit and the follow-up semicolon commit; the
 Validation wording was amended to match in its own `chore(plans)` commit before the code:
 
-- **Budget = content characters**, not output bytes, which keeps it tz-free and keeps TOON out
-  of `src/lib` (Approach 1 said "measure rendered size"). The summary counts at its 4,000-char
-  C-text cap (printed cut with the house marker and a `show --full` hint, as in `human`). Human
-  and claim texts count whole. A call counts its tool name plus at most 120 chars of target.
-  The rendered pack is therefore somewhat longer than `budget.used`; `api.md` says a consumer
-  wanting headroom passes a smaller budget.
+- **The budget bounds the rendered pack** (the first pass counted only text, tool and target
+  chars; the review round's ruling replaced that, see below). The library still emits no TOON:
+  `src/output/resume-layout.ts`, a TOON-free leaf next to the renderer, charges each event its
+  encoded bytes. That is the UTF-8 length of its printed text as a JSON string (the summary
+  cut at 4,000 with the house marker; a target cut as its row prints it) plus its id and a
+  per-event layout constant. The three layer key lines are a fixed charge (`LAYER_KEYS`). The
+  printed layers take at most `budget.used` bytes.
 - **Drops go one event at a time**: the oldest claim, then the oldest call once no claim is
-  left, then the oldest human message, never the newest. The kept human messages are the
+  left, then the oldest human message but the newest, then the opening summary, which leaves a
+  one-line `summary: "dropped to meet the budget; show <id> --full"` note. The newest human
+  message is never dropped. The kept human messages are the
   longest suffix that fits, the same as `budgetCut`.
 - **Layer order is summary, human, tools, claims** (`cli.md`). `data-model.md`'s table and
   `authority.md`'s "prints H first" were brought into line.
 - **TOON has no comments**: a `# C — …` annotation as in the old example breaks decoding. The
-  classes ride on one header line, `layers: summary C; human H (verbatim); tools D; claims C`.
+  classes ride on one header line,
+  `layers: summary C; human H (verbatim); tools C (results D); claims C`.
   It uses semicolons because the encoder quotes a comma-separated value.
 - **Header**: `session`, `window: <k> (last; windows 0..<n>)` (or `only window 0`), `budget`,
   `layers`, `day`/`days`, `tz`, then `omitted:` last. All layers share one time column.
-- **The omitted continuation carries `--window <k>`** (the resolved index, never `last`), so
-  `human … --window <k> --to <continueTo>` yields exactly the omitted messages. Without it,
-  `human` would read the whole file.
+- **The omitted continuation carries `--window <k> --budget 0`**: the resolved index (never
+  `last`), and no budget, so `human` prints every omitted message (without them, it would read
+  the whole file, or cut the omitted set at its own 12,000). TOON quotes the `omitted:` value
+  because it holds a `:`; the spec examples now show the quoted form.
 - **Flags**: `--window` takes an index or `last` (`all` and `k..` are `VALIDATION_ERROR`, since
-  a pack is one window); `--budget` is a positive integer; `--tools`/`--claims` are
-  non-negative integers. The library validates the same before opening any file.
+  a pack is one window), and a window past the last names that grammar and the range;
+  `--budget` is a non-negative integer, with `0` meaning no budget, as in `human`
+  (`budget: <used> used (no limit)`); `--tools`/`--claims` are non-negative integers. The
+  library validates the same before opening any file.
 - **Empty layers** print `tools[0]:`, `claims[0]:` and `human[0]:`. The encoder writes an empty
   array as `tools: []`, so the tools layer is hand-written when empty.
 - **One read**: `buildResumePack` reads the window once through `heldEvents`, keeping `H`,
@@ -117,24 +124,54 @@ Validation wording was amended to match in its own `chore(plans)` commit before 
   catch: `dist`'s `AgentSessionError` is a different class from `src`'s, so the error-mapping
   test feeds the CLI's `formatError` errors built from `src`, and compares the two
   `ERROR_CODES` lists.
-- **Stdout capture**: every function export is called with fixture arguments, from a table
-  that must succeed; unlisted exports get a fallback call. Async iterables are drained. A
-  mutation (a `process.stdout.write` in `buildResumePack`) made the test fail.
+- **No-output check**: every function export must have an argument entry and must not throw.
+  Async iterables are drained. `process.stdout/stderr.write` and
+  `console.log/error/warn/info/debug` are all captured. Mutations (a `process.stdout.write`,
+  then a `console.error`, in `buildResumePack`) made it fail.
+- **Consumer type check**: `test/consumer/consumer.ts` imports only the package entry and the
+  `render` subpath, and uses every exported name with `api.md`'s signature.
+  `bun run check:types` compiles it with NodeNext resolution against `dist/`, and CI runs it
+  after the build. Removing `dist/src/render/index.d.ts` made it fail. It found one existing
+  mismatch: `events()` takes no `limit`/`newestLast` (#15). The name audit now requires the
+  `type`/`export interface|type|class` qualifier.
 - **`tail`'s footer** gains `resume-pack <session>`, deferred from `pan`. A test runs it as
   printed for an `<s8>`, a shared `<s8>` (full uuid), a path, and `--all --tz`.
-- **Evidence**: `bun run check` and `bun run build` are clean. `bun run test` was run twice in
-  full:
-  - Run 1: 273/274. The one failure was the known `pan` perf bound (cold table build 4.34 s
-    against 4 s, load average ~14 on 8 cores).
-  - Run 2: 274/274.
-  - The perf project alone, run afterwards: 11/11.
+- **Review round** (PR #14). The rulings went into `docs(specs): resume-pack review rulings`
+  and two small follow-ups (the layout module's name; the fixed lines past the newest message),
+  ahead of the fixes. `test/resume-review.test.ts` has one test per finding, and all 7 failed
+  against the pre-fix source.
+  1. **The budget bounds rendered bytes.** 600 short messages at `--budget 6000` used to print
+     44.6k; they now print under 6k of layers. A property test runs five sessions (control
+     characters, quotes, backslashes, long messages, a long summary) at budgets from 1 to 50k.
+     It asserts layers ≤ `used`, `used` ≤ budget (unless only the newest message is left), and
+     output ≤ budget + header + footer + newest message + the fixed lines. It also checks that
+     `budget:` prints the counted cost.
+  2. The tools layer is labeled `tools C (results D)`.
+  3. A window past the last uses resume-pack's own grammar.
+  4. + 8. `budget: 0` means no budget, and the continuation carries `--budget 0`. The test has
+     more than 12,000 omitted chars.
+  5. The specs show the quoted `omitted:` form.
+  6. The no-output check now covers stderr too, and every listed export must run without
+     throwing.
+  7. The consumer type check, compiled against `dist/`.
+  `oneLine`/`targetCut` moved from `render.ts` to `truncate.ts` (re-exported, so importers are
+  unchanged) so the cost of a tools row matches its printed cut.
+- **Evidence (after the review round)**: `bun run check`, `bun run build` and
+  `bun run check:types` are clean. `bun run test` was run twice in full:
+  - Both runs: 281/282. Each had the same one perf failure, the `pan` plan's cold table build
+    on the 200 MB file (4.54 s, then 5.62 s, against 4 s), at load average 15–17 on 8 cores.
+    That test does not exercise this plan's code.
+  - The perf project alone, right after: 11/11.
+- **Evidence (first pass)**: 273/274, then 274/274; the one miss was the same perf bound.
 - The header still says `(title pending)`, as every command does today (deferred below).
 
 ## Follow-ups
 
 - Deferred to [`sessions-and-recall`](sessions-and-recall.md): the `resume-pack` header's
   `(title pending)` gets the session title, and `recall`, `RecallResult`, `sessionStats` and
-  `findAcross` get exported. `test/api.test.ts` exempts those names only while that plan is not
-  `done`.
+  `findAcross` get exported, and join `test/consumer/consumer.ts` with their spec'd signatures.
+  `test/api.test.ts` exempts those names only while that plan is not `done`.
+- Issue [#15](https://github.com/JarvusInnovations/agent-session-axi/issues/15): `events()`
+  takes no `limit`/`newestLast`, unlike `api.md`'s `ListOpts`.
 - Tracked as: [`skill-and-hook`](skill-and-hook.md) builds hook mode on `buildResumePack` +
   `renderResumePack`, or on `resumePackCommand([<session>, "--budget", "6000"], io)`.

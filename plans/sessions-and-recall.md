@@ -51,7 +51,7 @@ cross-session `find` (`--project`/`--all`), the term index, and `recall`.
    precedence instead of `(pending)` (deferred from [`ids-and-show`](ids-and-show.md)).
    The `resume-pack` header (`src/output/resume.ts`, `(title pending)` today) gets the same
    title, and `recall`, `RecallResult`, `sessionStats` and `findAcross` are exported from the
-   package entry: `test/api.test.ts` exempts them from the `api.md` export audit only while this
+   package entry and used in `test/consumer/consumer.ts` with their spec'd signatures: `test/api.test.ts` exempts them from the `api.md` export audit only while this
    plan is not `done` (deferred from [`resume-pack-library`](resume-pack-library.md)).
 8. `find`'s footer gains the `find "<phrase>" --all` hint (cli.md#find example) once
    cross-session scope runs, and `find` without `<session>` stops failing with the
