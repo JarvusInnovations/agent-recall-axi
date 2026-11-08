@@ -5,8 +5,11 @@
  *
  *   bun scripts/build-cli.ts            # write the bundle (bun run build:bundle)
  *   bun scripts/build-cli.ts --check    # fail if the committed bundle is stale (bun run check:bundle)
+ *   bun scripts/build-cli.ts --stamp 0.1.0   # a release build: stamp exactly this version (RELEASING.md)
  *
- * The version is stamped from `git describe`. Committing the bundle moves the sha (and a CI
+ * The version is stamped from `git describe`, or from `--stamp` for the release commit: the
+ * release tag lands on main's merge commit, which develop never reaches, so `git describe` on
+ * develop cannot name the release. Committing the bundle moves the sha (and a CI
  * checkout may lack tags), so --check replaces the one stamped literal on both sides before
  * comparing: a commit that only moves the sha passes, any other byte change fails.
  */
@@ -35,6 +38,19 @@ export function stampVersion(): string {
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string };
   const sha = git(["rev-parse", "--short", "HEAD"]);
   return sha ? `${pkg.version}-g${sha}` : pkg.version;
+}
+
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/;
+
+/** The `--stamp <version>` (or `--stamp=<version>`) argument, validated; undefined when absent. */
+export function stampArg(argv: string[]): string | undefined {
+  const i = argv.findIndex((a) => a === "--stamp" || a.startsWith("--stamp="));
+  if (i < 0) return undefined;
+  const value = argv[i]!.includes("=") ? argv[i]!.slice("--stamp=".length) : argv[i + 1];
+  if (!value || !RELEASE_VERSION.test(value)) {
+    throw new Error(`--stamp takes a release version like 0.1.0 or 0.2.0-rc.1 (no leading v), got ${JSON.stringify(value ?? "")}`);
+  }
+  return value;
 }
 
 /** The stamped literal as esbuild compiles src/version.ts (`VERSION = true ? "<v>" : readVersion()`). */
@@ -91,7 +107,15 @@ export function bundleMatches(generated: string, committed: string): boolean {
 if (import.meta.main) {
   const check = process.argv.includes("--check");
   const rel = relative(process.cwd(), OUTFILE);
-  const generated = await buildBundle(stampVersion(), !check);
+  let stamp: string | undefined;
+  try {
+    stamp = stampArg(process.argv.slice(2));
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exit(2);
+  }
+  const version = stamp ?? stampVersion();
+  const generated = await buildBundle(version, !check);
   if (check) {
     let committed: string;
     try {
@@ -106,6 +130,6 @@ if (import.meta.main) {
     }
     console.log(`${rel} is up to date`);
   } else {
-    console.log(`Wrote ${rel} (${generated.length} bytes)`);
+    console.log(`Wrote ${rel} (${generated.length} bytes, version ${version})`);
   }
 }

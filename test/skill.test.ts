@@ -8,7 +8,7 @@ import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildBundle, bundleMatches, normalizeVersion, OUTFILE } from "../scripts/build-cli.js";
+import { buildBundle, bundleMatches, normalizeVersion, OUTFILE, stampArg } from "../scripts/build-cli.js";
 import { commandReference, SKILL_MD, spliceSkill } from "../scripts/build-skill.js";
 import { COMMAND_GROUPS, type CommandGroup } from "../src/reference.js";
 import { FIXTURE_ROOT } from "./fixtures/build.js";
@@ -68,6 +68,18 @@ describe("the committed bundle", () => {
     const doubled = `${committed}\nVERSION = true ? "x" : readVersion();`;
     expect(() => normalizeVersion(doubled)).toThrow(/found 2/);
     expect(normalizeVersion(committed).length).toBeLessThan(committed.length + 20);
+  });
+
+  it("--stamp sets the release version exactly and refuses anything else (RELEASING.md)", async () => {
+    expect(stampArg([])).toBeUndefined();
+    expect(stampArg(["--check"])).toBeUndefined();
+    expect(stampArg(["--stamp", "0.1.0"])).toBe("0.1.0");
+    expect(stampArg(["--stamp=0.2.0-rc.1"])).toBe("0.2.0-rc.1");
+    for (const bad of [["--stamp"], ["--stamp", "v0.1.0"], ["--stamp=0.1"], ["--stamp", "0.1.0-g1234567"]]) expect(() => stampArg(bad), bad.join(" ")).toThrow(/--stamp takes a release version/);
+    // a release-stamped build is still the committed bundle as far as check:bundle is concerned
+    const released = await buildBundle("0.1.0", false);
+    expect(released).toContain('VERSION = true ? "0.1.0" : readVersion()');
+    expect(bundleMatches(released, committedBundle())).toBe(true);
   });
 
   it("check:bundle fails after a one-line source change and passes again on the unchanged tree", () => {
