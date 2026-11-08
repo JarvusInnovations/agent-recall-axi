@@ -1,5 +1,5 @@
 ---
-status: planned
+status: in-progress
 depends: [sessions-and-recall, resume-pack-library]
 specs:
   - specs/architecture.md
