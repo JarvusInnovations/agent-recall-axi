@@ -1,4 +1,4 @@
-/** `sessions` (specs/cli.md#sessions). Minimal schema for now: no stats, title pending. */
+/** `sessions` (specs/cli.md#sessions): sessions in scope with their stats, most recently active first. */
 import { AxiError } from "axi-sdk-js";
 import { hintName, sharedShorts } from "../lib/ids.js";
 import { sessionListing, type SessionInfo } from "../lib/session.js";
@@ -7,32 +7,38 @@ import { formatAgo, formatMonthDayMinute } from "../lib/time.js";
 import { findCommand, SESSIONS_FIELDS } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
-import { renderDocument } from "../output/render.js";
+import { DEFAULT_HEAD, headCut, oneLine, renderDocument } from "../output/render.js";
 import { BIN, carry, collapseHome, parseRange, shellPath, unreadableNote, zoneOf, type Io } from "./common.js";
-
-/** Titles land with sessions-and-recall; until then the column says so instead of guessing. */
-export const TITLE_PENDING = "(pending)";
+import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
 
 type Field = (typeof SESSIONS_FIELDS)[number];
+
+/** `live`: `last` within 5 minutes of now (data-model.md#session). */
+const LIVE_MS = 5 * 60 * 1000;
+export const isLive = (last: string, now: Date) => Math.abs(now.getTime() - Date.parse(last)) <= LIVE_MS;
+
+/** A title cell: one line, cut to the row head (data-model.md#session); empty when there is none. */
+export function titleCell(title: string | undefined): string {
+  return title === undefined ? "" : headCut(oneLine(title).trim(), DEFAULT_HEAD).text;
+}
 
 function parseFields(text: string | undefined): Field[] {
   if (text === undefined) return [];
   const names = text.split(",").map((s) => s.trim()).filter(Boolean);
   const bad = names.filter((n) => !(SESSIONS_FIELDS as readonly string[]).includes(n));
-  if (bad.length) {
-    throw new AxiError(`unknown field: ${bad.join(", ")}`, "VALIDATION_ERROR", [
-      `fields: ${SESSIONS_FIELDS.join(", ")} (turns, calls, compactions, humans, lines, live arrive with sessions-and-recall)`,
-    ]);
+  if (bad.length || names.length === 0) {
+    throw new AxiError(`unknown field: ${bad.join(", ") || "(empty)"}`, "VALIDATION_ERROR", [`fields: ${SESSIONS_FIELDS.join(", ")}`]);
   }
-  return names as Field[];
+  return [...new Set(names)] as Field[];
 }
 
-export function sessionRow(s: SessionInfo, tz: string, now: Date, extra: readonly string[]): Record<string, string | number> {
-  const row: Record<string, string | number> = {
+export function sessionRow(s: SessionInfo, tz: string, now: Date, extra: readonly string[]): Record<string, string | number | boolean> {
+  const row: Record<string, string | number | boolean> = {
     id: s.short,
     started: s.started ? formatMonthDayMinute(new Date(s.started), tz) : "",
     last: `${formatMonthDayMinute(new Date(s.last), tz)} (${formatAgo(new Date(s.last), now)})`,
-    title: TITLE_PENDING,
+    turns: s.turns,
+    title: titleCell(s.title),
   };
   for (const f of extra) {
     switch (f) {
@@ -46,13 +52,23 @@ export function sessionRow(s: SessionInfo, tz: string, now: Date, extra: readonl
         row.project = s.project ? collapseHome(s.project.cwd) : "";
         break;
       case "bytes":
-        row.bytes = s.bytes;
+      case "lines":
+      case "calls":
+      case "compactions":
+      case "humans":
+        row[f] = s[f];
+        break;
+      case "live":
+        row.live = isLive(s.last, now);
         break;
       case "kind":
         row.kind = s.kind;
         break;
       case "parent":
         row.parent = s.parent ? s.parent.slice(0, 8) : "";
+        break;
+      case "model":
+        row.model = s.model ?? "";
         break;
     }
   }
@@ -73,11 +89,15 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   const subagents = getBool(p, "subagents");
   const limit = getNumber(p, "limit") ?? 20;
   const extra = [...(subagents ? (["kind", "parent"] as Field[]) : []), ...fields.filter((f) => !(subagents && (f === "kind" || f === "parent")))];
+  const jsonOut = await jsonOutTarget("sessions", p, io);
 
   const scope: Scope = { cwd: io.cwd, env: io.env, subagents };
   if (all) scope.project = "all";
   else if (project !== undefined) scope.project = project;
-  const listing = await sessionListing(scope, { ...(range.from instanceof Date ? { from: range.from } : {}), ...(range.to instanceof Date ? { to: range.to } : {}), limit });
+  const window = { ...(range.from instanceof Date ? { from: range.from } : {}), ...(range.to instanceof Date ? { to: range.to } : {}) };
+  const listing = await sessionListing(scope, { ...window, limit: 0, cache: { env: io.env } });
+  const every = listing.sessions;
+  const shownSessions = limit > 0 ? every.slice(0, limit) : every;
 
   const scopeFlag = all ? " --all" : project !== undefined ? ` --project ${shellPath(project)}` : "";
   const header: Record<string, unknown> = {};
@@ -90,21 +110,41 @@ export async function sessionsCommand(args: string[], io: Io): Promise<string> {
   const skipped = unreadableNote(listing);
   if (skipped.count) header.unreadable = skipped.count;
   const help: string[] = [];
-  if (listing.sessions.length === 0) {
+  let out: string;
+  if (shownSessions.length === 0) {
     header.sessions = `0 sessions in ${where}${range.from || range.to ? " in that time window" : ""}`;
     if (!listing.scope.all) help.push(`Run \`${BIN} sessions --all${carry(p)}\` to list every project's sessions`);
     if (skipped.help) help.push(skipped.help);
-    return renderDocument(header, help);
+    out = renderDocument(header, help);
+  } else {
+    header.count = `${shownSessions.length} of ${listing.matching}`;
+    header.sessions = shownSessions.map((s) => sessionRow(s, tz, io.now, extra));
+    const top = shownSessions[0]!;
+    const name = hintName(top, await sharedShorts(listing.scope));
+    help.push(`Run \`${BIN} turns ${name}${scopeFlag}${carry(p)}\` for one row per prompt of ${top.short}`);
+    if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}${scopeFlag}${carry(p)}\` for a cold-start pack of ${top.short}`);
+    help.push(`Run \`${BIN} find "<phrase>"${scopeFlag}${carry(p)}\` to search these sessions`);
+    if (shownSessions.length < listing.matching) {
+      help.push(`Run \`${BIN} sessions${scopeFlag}${rangeFlags(p)} --limit 0${subagents ? " --subagents" : ""}${fields.length ? ` --fields ${fields.join(",")}` : ""}${carry(p)}\` for all ${listing.matching} sessions`);
+    }
+    if (skipped.help) help.push(skipped.help);
+    out = renderDocument(header, help);
   }
-  header.count = `${listing.sessions.length} of ${listing.matching}`;
-  header.sessions = listing.sessions.map((s) => sessionRow(s, tz, io.now, extra));
-  const top = listing.sessions[0]!;
-  const name = hintName(top, await sharedShorts(listing.scope));
-  help.push(`Run \`${BIN} tail ${name}${scopeFlag}${carry(p)}\` for the last rows of ${top.short}`);
-  if (!fields.includes("path")) help.push(`Run \`${BIN} sessions${scopeFlag} --fields path${carry(p)}\` for each session's file path`);
-  if (listing.sessions.length < listing.matching) {
-    help.push(`Run \`${BIN} sessions${scopeFlag} --limit 0${carry(p)}\` for all ${listing.matching} sessions`);
+  if (!jsonOut) return out;
+  const path = await writeJsonOut(jsonOut, async (j) => {
+    await j.begin({ count: every.length }, "sessions");
+    for (const s of every) await j.item({ ...s, live: isLive(s.last, io.now) });
+    await j.end();
+  });
+  return withJsonOutLine(out, path);
+}
+
+/** `--since`/`--from`/`--to` as given, for the paging hint. */
+function rangeFlags(p: ReturnType<typeof parseFlags>): string {
+  let out = "";
+  for (const f of ["since", "from", "to"]) {
+    const v = getString(p, f);
+    if (v !== undefined) out += ` --${f} ${shellPath(v)}`;
   }
-  if (skipped.help) help.push(skipped.help);
-  return renderDocument(header, help);
+  return out;
 }

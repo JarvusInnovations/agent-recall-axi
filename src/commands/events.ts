@@ -2,7 +2,8 @@
 import { AxiError } from "axi-sdk-js";
 import { formatId } from "../lib/ids.js";
 import type { EventId, Session } from "../lib/model.js";
-import { listEvents, type ListOpts, type Listing } from "../lib/events.js";
+import { events, listEvents, type ListOpts, type Listing } from "../lib/events.js";
+import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
 import { findCommand, ROW_FIELDS, type RowField } from "../reference.js";
 import { getBool, getNumber, getString, parseFlags, type Parsed } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
@@ -141,6 +142,7 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   const fields = parseRowFields(getString(p, "fields"));
   const window = windowFlag(p);
   scopeOf("events", p, io);
+  const jsonOut = await jsonOutTarget("events", p, io);
   const ref = p.positionals[0]!;
   const session = await sessionFromArg("events", ref, p, io);
   const opts: ListOpts = { limit, cache: { env: io.env } };
@@ -150,7 +152,16 @@ export async function eventsCommand(args: string[], io: Io): Promise<string> {
   if (range.to) opts.to = range.to;
   const notice = await rewriteNotice(session, io, tz);
   const listing = await withNotice(notice, () => listEvents(session, opts));
-  return render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  const out = render({ label: "events", parsed: p, explicitLimit: getNumber(p, "limit"), listing, session, hint: await sessionHint("events", ref, session, p, io), notice, fields, tz, head, defaultKinds: !kinds, full, limit });
+  if (!jsonOut) return out;
+  // --json-out (cli.md#conventions): every matching event of the range, uncapped, streamed.
+  const { limit: _limit, ...uncapped } = opts;
+  const path = await writeJsonOut(jsonOut, async (j) => {
+    await j.begin({ session: session.id }, "events");
+    for await (const ev of events(session, uncapped)) await j.item(ev);
+    await j.end();
+  });
+  return withJsonOutLine(out, path);
 }
 
 export async function tailCommand(args: string[], io: Io): Promise<string> {

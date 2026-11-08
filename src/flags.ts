@@ -68,6 +68,10 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
         validFlagsLine(command, specs.filter((s) => !s.planned)),
       ]);
     }
+    if (spec.value === "optional") {
+      flags.set(name, inline ?? true);
+      continue;
+    }
     if (spec.value === "boolean") {
       if (inline !== undefined) throw new AxiError(`--${name} takes no value`, "USAGE", [usageLine(command)]);
       flags.set(name, true);

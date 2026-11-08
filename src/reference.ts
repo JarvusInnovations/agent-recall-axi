@@ -7,7 +7,8 @@
 export const DESCRIPTION =
   "Read, search and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
 
-export type FlagValue = "string" | "number" | "boolean";
+/** `optional`: a bare flag (true) or `--name=value` only; the next argument is never taken as its value. */
+export type FlagValue = "string" | "number" | "boolean" | "optional";
 
 export interface FlagSpec {
   /** Without leading dashes. */
@@ -63,7 +64,7 @@ const WINDOW: FlagSpec = { name: "window", value: "string", arg: "<k|last|all>",
 export const ROW_FIELDS = ["authority", "size", "tool", "target", "result", "call", "error"] as const;
 export type RowField = (typeof ROW_FIELDS)[number];
 const FIELDS: FlagSpec = { name: "fields", value: "string", arg: "<a,b>", describe: `extra columns: ${ROW_FIELDS.join(", ")}` };
-const JSON_OUT: FlagSpec = { name: "json-out", value: "string", arg: "[=path]", describe: "write the uncapped result as JSON", planned: "sessions-and-recall" };
+const JSON_OUT: FlagSpec = { name: "json-out", value: "optional", arg: "[=path]", describe: "also write the complete, uncapped result as JSON to path (bare: an owner-only temp file); the output names it" };
 const PROJECT: FlagSpec = { name: "project", value: "string", arg: "<p>", describe: "a project path, encoded dir name, or unique cwd substring" };
 const ALL: FlagSpec = { name: "all", value: "boolean", describe: "every project under the log root" };
 const REF_PROJECT: FlagSpec = { ...PROJECT, describe: "resolve <session>/<id> in this project (a path, encoded dir name, or unique cwd substring)" };
@@ -144,8 +145,8 @@ const FIND_FLAGS: FlagSpec[] = [
   FULL,
   FIELDS,
   { name: "deep", value: "boolean", describe: "also search persisted-output files (slow)" },
-  { ...REF_PROJECT, describe: "resolve <session> in this project (a path, encoded dir name, or unique cwd substring)" },
-  { ...REF_ALL, describe: "resolve <session> across every project" },
+  { ...REF_PROJECT, describe: "without <session>: search this project; with one, resolve it there (a path, encoded dir name, or unique cwd substring)" },
+  { ...REF_ALL, describe: "without <session>: search every project (default --since 90d); with one, resolve it anywhere" },
   { ...WINDOW, describe: "search one compaction window: a 0-based index, last, k.. (k to the end) or all" },
   JSON_OUT,
 ];
@@ -153,7 +154,7 @@ const FIND_FLAGS: FlagSpec[] = [
 export const TOOLS_FIELDS = ["result_id", "error", "files"] as const;
 export type ToolsField = (typeof TOOLS_FIELDS)[number];
 
-export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "kind", "parent"] as const;
+export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"] as const;
 
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
@@ -161,7 +162,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       {
         name: "sessions",
-        usage: "sessions [--project <p> | --all] [--since <span>] [--from <when>] [--to <when>] [--limit <n>] [--subagents] [--fields <a,b>]",
+        usage: "sessions [--project <p> | --all] [--since <span>] [--from <when>] [--to <when>] [--limit <n>] [--subagents] [--fields <a,b>] [--json-out[=path]]",
         summary: "sessions in scope, most recently active first",
         status: "available",
         flags: [
@@ -179,7 +180,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "turns",
-        usage: "turns <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--project <p> | --all]",
+        usage: "turns <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--project <p> | --all] [--json-out[=path]]",
         summary: "one row per human prompt: events, calls and how the turn ended",
         status: "available",
         args: [SESSION_ARG],
@@ -203,7 +204,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       {
         name: "events",
-        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
+        usage: "events <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all] [--json-out[=path]]",
         summary: "rows of a session in file order; newest last unless --from is given",
         status: "available",
         args: [SESSION_ARG],
@@ -282,7 +283,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       {
         name: "human",
-        usage: "human <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--budget <chars>] [--full] [--rows] [--project <p> | --all]",
+        usage: "human <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--budget <chars>] [--full] [--rows] [--project <p> | --all] [--json-out[=path]]",
         summary: "every human message (typed, queued, slash commands, answers), verbatim",
         status: "available",
         args: [SESSION_ARG],
@@ -302,7 +303,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "tools",
-        usage: "tools <session> [--name <tool>] [--file <pattern>] [--errors] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--fields <a,b>] [--project <p> | --all]",
+        usage: "tools <session> [--name <tool>] [--file <pattern>] [--errors] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--fields <a,b>] [--project <p> | --all] [--json-out[=path]]",
         summary: "tool calls with their result status folded in",
         status: "available",
         args: [SESSION_ARG],
@@ -357,17 +358,37 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       {
         name: "find",
         usage:
-          "find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b|all>] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--context <n>] [--before <n>] [--after <n>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all] [--deep]",
-        summary: "search a session by phrase, file, tool or kind; each hit says why it matched",
+          "find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b|all>] [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--context <n>] [--before <n>] [--after <n>] [--limit <n>] [--head <n>] [--full] [--fields <a,b>] [--project <p> | --all] [--deep] [--json-out[=path]]",
+        summary: "search a session, the project or every project by phrase, file, tool or kind; each hit says why it matched",
         status: "available",
         args: [
           `${SESSION_ARG} (with one positional, it is the session when it has that form, else the phrase)`,
           "<phrase>: case-insensitive substring of row text, call inputs and (through its call) a tool's output",
         ],
         flags: FIND_FLAGS,
-        examples: ['find latest "redirect"', "find 7a2f1c3e --file '*.env' --context 0", 'find 7a2f1c3e --tool bash "test" --since 1h', "find 7a2f1c3e --regex 'redir\\w+' --deep"],
+        examples: ['find "redirect"', 'find "redirect" --all', 'find latest "redirect"', "find 7a2f1c3e --file '*.env' --context 0", 'find 7a2f1c3e --tool bash "test" --since 1h', "find 7a2f1c3e --regex 'redir\\w+' --deep"],
       },
-      { name: "recall", usage: "recall <phrase> [--since <span>]", summary: "have I dealt with this before? across every project", status: { planned: "sessions-and-recall" } },
+      {
+        name: "recall",
+        usage: "recall <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all] [--limit <n>] [--json-out[=path]]",
+        summary: "have I dealt with this before? what the human and the agent said, and the calls made, across every project, by session",
+        status: "available",
+        args: ["<phrase>: case-insensitive substring of human and agent text and call inputs (tool output is find's: find \"<phrase>\" --all)"],
+        flags: [
+          { name: "regex", value: "boolean", describe: "the phrase is a JavaScript regular expression (flags iu); scans, never the index" },
+          { name: "file", value: "string", arg: "<pattern>", describe: "calls touching these files: a substring, or a glob when it has * ? or [" },
+          { name: "tool", value: "string", arg: "<name>", describe: "calls of this tool (case-insensitive substring)" },
+          { name: "kind", value: "string", arg: "<a,b>", describe: "only these H or C kinds (human, human.queued, human.slash, human.answer, assistant, thinking, call, summary)", default: "every H and C kind but thinking" },
+          { ...SINCE, default: "90d" },
+          { name: "from", value: "string", arg: "<when>", describe: "events at or after this time" },
+          { name: "to", value: "string", arg: "<when>", describe: "events before this time" },
+          { ...PROJECT, describe: "only this project (a path, encoded dir name, or unique cwd substring)" },
+          { ...ALL, describe: "every project under the log root (the default)" },
+          LIMIT("20"),
+          JSON_OUT,
+        ],
+        examples: ['recall "redirect loop"', 'recall "staging.env" --since 1y', 'recall "migration" --project ~/src/widget --kind human'],
+      },
     ],
   },
   {
