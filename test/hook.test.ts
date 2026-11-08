@@ -358,7 +358,7 @@ describe("hook review fixes", () => {
     const r = await hook(b, ["install", "--scope", "project"], bin);
     expect(r.exitCode).toBe(0);
     const quoted = `'${bin}'`;
-    expect(r.stdout).toContain(`command: "${quoted}"`);
+    expect(r.stdout).toContain(`command: ${quoted}\n`);
     const claude = commands(join(b.project, ".claude", "settings.json"));
     expect(claude).toEqual([quoted]);
     expect(commands(join(b.project, ".codex", "hooks.json"))).toEqual([quoted]);
