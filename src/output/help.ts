@@ -1,7 +1,7 @@
 /** `--help` text, top level and per command, rendered from src/reference.ts. */
 import { COMMAND_GROUPS, DESCRIPTION, GLOBAL_FLAGS, findCommand, type CommandDoc, type FlagSpec } from "../reference.js";
 
-const BIN = "agent-session-axi";
+import { BIN } from "../invocation.js";
 
 function statusNote(c: CommandDoc): string {
   return c.status === "available" ? "" : ` (planned: ${c.status.planned})`;

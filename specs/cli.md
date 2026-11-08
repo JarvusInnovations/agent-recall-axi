@@ -48,6 +48,11 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - A hint names a session by its `<s8>` only when no other session in scope shares those 8
   characters; otherwise by its full id (`tail <uuid>`, `show <id> --session <uuid>`), so every
   hint resolves as printed.
+- Hints and suggested commands name the tool `agent-session-axi`. Run from the skill bundle,
+  which is not on `PATH`, they name it by the shim's path instead (`~/` for the home directory,
+  with only the rest shell-quoted when it needs quoting, `~/'my skills/…'`, so the `~` still
+  expands; the same for every path a hint carries), unless `agent-session-axi` on `PATH` resolves to that shim or bundle; the
+  npm bin is on `PATH` by installation and keeps the bare name.
 - `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
   (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
   `--head`, `--full` and the bounding `--to`, so the next page shows the same view of the range.
@@ -111,8 +116,15 @@ help[5]:
   human message, and `none in the last 4M` when the read stopped at that bound.
 - **Hook mode.** When stdin is not a TTY and carries a SessionStart hook payload (JSON with
   `session_id` and `source`), the home view adapts: `source: compact` or `resume` prints
-  `resume-pack <that session> --budget 6000` instead of the listing; `startup`/`clear` print the
+  `resume-pack <that session> --budget 6000` instead of the listing (under the same `bin` and
+  `description` header, then the pack's exact bytes); `startup`/`clear` print the
   listing above. This is how an agent that just lost its context gets it back without asking.
+  The read of stdin is bounded so the home view never hangs on a pipe nobody writes to: it
+  stops as soon as the bytes read parse as one JSON object, at end of input, at 64 KB, when no
+  byte has arrived within 200 ms, or 1 s after the first byte. Anything else prints the listing,
+  never an error: an empty or non-JSON stdin, a payload without `source` or `session_id`, a
+  `session_id` that is not a session id, and one that does not resolve in the working
+  directory's scope (another agent's session, for instance).
 
 ---
 
@@ -606,15 +618,92 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 ## `hook`
 
 ```
-agent-session-axi hook install [--scope user|project] [--agent claude|codex|opencode]
-agent-session-axi hook status  [--scope …]
-agent-session-axi hook uninstall [--scope …]
+agent-session-axi hook install   [--scope user|project] [--agent claude|codex|opencode]
+agent-session-axi hook status    [--scope user|project]
+agent-session-axi hook uninstall [--scope user|project]
 ```
 
 Explicit opt-in registration of the SessionStart hook that runs the home view (and, in hook mode,
-the resume pack after a compaction). Built on the SDK's install/status/uninstall helpers; project
-scope is the default for a repo that wants it, user scope for a bot host. Idempotent; repairs a
-moved binary path. Never installed by any other command.
+the resume pack after a compaction). The one command that writes outside the cache
+(`behaviors/privacy.md`); never installed by any other command.
+
+- **Scope**: `user` (the default) writes each agent's user config, which suits a bot host and a
+  person who wants it everywhere; `project` writes the per-repository config under the working
+  directory, for a repo that wants it, and nothing outside it.
+- **Targets**, user scope: Claude Code `$CLAUDE_CONFIG_DIR/settings.json` (default
+  `~/.claude/settings.json`), a `SessionStart` entry; Codex `$CODEX_HOME/hooks.json` (default
+  `~/.codex/hooks.json`) plus `[features] hooks = true` in `$CODEX_HOME/config.toml`; OpenCode
+  the managed plugin `$XDG_CONFIG_HOME/opencode/plugins/axi-agent-session-axi.js` (default
+  `~/.config/opencode/…`). Project scope: `.claude/settings.json`, `.codex/hooks.json` and
+  `.opencode/plugins/axi-agent-session-axi.js` under the working directory. Codex reads its
+  feature flag only from the user's `config.toml`, which a project install never writes: it
+  reports `codex_features: not set (needs [features] hooks = true in <path>; run hook install
+  --scope user or set it yourself)` unless the flag is already on. `--agent` installs one of
+  the three; without it all three. `status` and `uninstall` always cover all three.
+- **The command** the hook runs is the running binary: the skill shim
+  (`…/skills/agent-session-axi/scripts/agent-session-axi`, or the bundle beside it when the
+  shim is not executable) when it runs from the skill bundle, else the npm bin; as the bare name
+  `agent-session-axi` when that name on `PATH` resolves to the same file, else its absolute
+  path. Claude Code and Codex run it through a shell, so their entries hold it shell-quoted
+  (`'/opt/my tools/…/agent-session-axi'`); the OpenCode plugin spawns it without a shell and
+  holds it raw. The entrypoint must be one of the forms this tool installs (a file named
+  `agent-session-axi`, `agent-session-axi.js` or `agent-session-axi.mjs`); anything else,
+  including a source checkout's `.ts`, is `VALIDATION_ERROR` naming the built bin and the shim.
+- **Which entries are ours**: a `SessionStart` hook whose command, split into shell words, is
+  exactly one word that this tool could have written: the bare name, or an absolute path whose
+  last segment is one of the three names above, quoted or not. A command with any other word
+  (a wrapper with arguments, a pipeline, another tool) is never modified or removed, whatever it
+  contains. The OpenCode plugin is ours only when its first line is the SDK's managed marker for
+  `agent-session-axi`.
+- **Idempotent**: an install that changes nothing rewrites nothing (file bytes unchanged) and
+  says so; our entry with another command (the binary moved) is rewritten in place (path
+  repair), and a second entry of ours is removed. `uninstall` removes only our entries (and a
+  group, `SessionStart` array or `hooks` object it left empty) and our plugin; every other hook,
+  group, key and setting stays as it was, and a plugin file without the marker is left in place
+  and reported.
+- **Writes** are atomic and keep the file as it was written: a temp file in the target's
+  directory, renamed over the target (through a symlink, onto the file it points at), with the
+  target's mode; JSON keeps its indentation (two spaces for a new file) and every key; TOML gets
+  one line added or changed and nothing else. After writing, the file is read back and our entry
+  must be there (install) or gone (uninstall), or the target is an `error:`.
+- **Codex `config.toml`**: `features` may be absent or a plain `[features]` table. Declared any
+  other way (a `features.` dotted key or `features = { … }` inline table at the top level, a
+  `[features.<sub>]` or `[[features]]` header, two `[features]` headers) or with a `hooks` value
+  other than `true`/`false`, the Codex target is an `error:` and neither Codex file is written.
+- `AGENT_SESSION_AXI_DISABLE_HOOKS=1` makes `install` a no-op that says so (exit 0), for a host
+  or CI that must never gain a hook.
+
+```
+hook: installed (user scope)
+command: agent-session-axi
+targets[3]{agent,path,state}:
+  claude,~/.claude/settings.json,added
+  codex,~/.codex/hooks.json,added
+  opencode,~/.config/opencode/plugins/axi-agent-session-axi.js,added
+codex_features: ~/.codex/config.toml (hooks = true)
+help[2]:
+  Run `agent-session-axi hook status` to check it
+  Run `agent-session-axi hook uninstall` to remove it
+```
+
+- `install` states per target: `added`, `updated` (the command or timeout was repaired),
+  `unchanged`, or `unmanaged (left in place)` for an OpenCode plugin file it did not write;
+  the first line is `hook: installed (<scope> scope)`, or `hook: already installed
+  (<scope> scope; no changes)` when nothing changed. `command:` is the command as the Claude
+  Code and Codex entries hold it. `codex_features` is printed when Codex is a target.
+- `status` states per target: `installed`, `stale` (ours, with a command other than the one
+  `install` would write now), `absent`, or `error: <message>`; the first line is `hook:
+  installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`, with the scope,
+  and `codex_features:` reports the user flag. It writes nothing. The footer suggests `hook
+  install` when any target is not `installed`, else `hook uninstall`.
+- `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first
+  line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`.
+- A file that cannot be read or parsed, or whose shape is not what the agent reads (the JSON
+  root or its `hooks` not a plain object, `SessionStart` present but not an array), is not
+  overwritten: the target's state is `error: <message>`, the others proceed, and the command
+  exits 1 after printing the table.
+- Footer hints carry `--scope` when it was given. Exit 0 for every other outcome, including
+  no-ops.
 
 ## `cache`
 
@@ -659,8 +748,8 @@ agent-session-axi update [--check]
 Shadows the SDK's built-in self-updater so the tool never contacts a registry
 (`behaviors/privacy.md`). Print-only: reports the running version and the two ways to update,
 `npx skills update agent-session-axi` for a skill install and `npm i -g agent-session-axi@latest`
-for an npm install, choosing the first line by how the running binary was installed (inside a
-`skills/` directory → skill first). `--check` is accepted and prints the same text; exit 0.
+for an npm install, choosing the first line by how the running binary was installed (run from
+the skill bundle, as the hints decide it (`#conventions`), → skill first). `--check` is accepted and prints the same text; exit 0.
 
 ```
 update: agent-session-axi 0.3.1 (skill install)

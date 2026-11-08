@@ -8,7 +8,9 @@ import { renderHelp } from "./output/render.js";
 import { BIN, type Io } from "./commands/common.js";
 import { usageLine } from "./flags.js";
 import { eventsCommand, tailCommand } from "./commands/events.js";
-import { homeCommand } from "./commands/home.js";
+import { homeView } from "./commands/home.js";
+import { hookCommand } from "./commands/hook.js";
+import type { StdinLike } from "./hook.js";
 import { runFind } from "./commands/find.js";
 import { sessionsCommand } from "./commands/sessions.js";
 import { showCommand } from "./commands/show.js";
@@ -55,8 +57,10 @@ export interface MainIo {
   cwd?: string;
   env?: Record<string, string | undefined>;
   now?: Date;
-  /** The entrypoint path used to infer the install channel; default process.argv[1]. */
+  /** The entrypoint path used to infer the install channel and the hook command; default process.argv[1]. */
   entrypoint?: string;
+  /** Where the home view reads a SessionStart payload (hook mode); none unless given (bin passes process.stdin). */
+  stdin?: () => StdinLike | undefined;
 }
 
 function planned(name: string, plan: string): AxiCliCommand<undefined> {
@@ -101,13 +105,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   commands.recall = (a) => recallCommand(a, ctx);
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
+  // The only command that writes outside the cache, and only when invoked (cli.md#hook).
+  commands.hook = (a) => hookCommand(a, { ...ctx, ...(io.entrypoint ? { entrypoint: io.entrypoint } : {}) });
 
   await runAxiCli({
     description: DESCRIPTION,
     version: VERSION,
     argv: args,
     topLevelHelp: renderTopLevelHelp(),
-    home: () => homeCommand(ctx),
+    home: () => homeView(ctx, io.stdin?.()),
     commands,
     getCommandHelp: (name) => renderCommandHelp(name),
     formatError,

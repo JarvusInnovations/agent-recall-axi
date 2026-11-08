@@ -6,6 +6,7 @@
  * pass. Indexed and scanned answers are the same by construction: the index covers exactly the
  * texts the matcher tests.
  */
+import { BIN } from "../invocation.js";
 import { readFile, stat } from "node:fs/promises";
 import { AgentSessionError } from "./errors.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
@@ -271,7 +272,7 @@ export async function recall(phrase: string, opts: RecallOpts = {}): Promise<Rec
   if (bad.length) {
     throw new AgentSessionError(`recall searches what the human and the agent said and the calls it made; ${bad.join(", ")} ${bad.length === 1 ? "is" : "are"} not among them`, "VALIDATION_ERROR", [
       `kinds recall takes: ${[...SEARCHABLE].join(", ")}`,
-      'Run `agent-session-axi find "<phrase>" --all --kind <kinds>` to search tool output and injected text',
+      `Run \`${BIN} find "<phrase>" --all --kind <kinds>\` to search tool output and injected text`,
     ]);
   }
   if (!phrase) throw new AgentSessionError("recall needs a phrase", "VALIDATION_ERROR", ['e.g. recall("redirect loop")']);

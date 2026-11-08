@@ -7,6 +7,29 @@ import { findCommand } from "../reference.js";
 import { DEFAULT_HEAD, headCut, oneLine, renderDocument } from "../output/render.js";
 import { BIN, collapseHome, unreadableNote, type Io } from "./common.js";
 import { titleCell } from "./sessions.js";
+import { AxiError } from "axi-sdk-js";
+import { parseHookPayload, readHookStdin, RESUME_SOURCES, type StdinLike } from "../hook.js";
+import { resumePackCommand } from "./resume-pack.js";
+
+/** The budget of the pack hook mode prints after a compaction or resume. */
+export const HOOK_BUDGET = 6000;
+
+/**
+ * The no-argument entry: hook mode when stdin carries a SessionStart payload whose source lost
+ * the agent's context (`compact`, `resume`), else the listing. A payload it cannot act on, or a
+ * session that does not resolve here, prints the listing (never an error).
+ */
+export async function homeView(io: Io, stdin?: StdinLike): Promise<string> {
+  const payload = parseHookPayload(await readHookStdin(stdin));
+  if (payload && RESUME_SOURCES.has(payload.source)) {
+    try {
+      return await resumePackCommand([payload.session_id, "--budget", String(HOOK_BUDGET)], io);
+    } catch (err) {
+      if (!(err instanceof AgentSessionError || err instanceof AxiError)) throw err;
+    }
+  }
+  return homeCommand(io);
+}
 
 const HOME_LIMIT = 5;
 

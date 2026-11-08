@@ -32,6 +32,14 @@ the public-repo scrub gate.
    real-world markers (`/home/<user>/`, `/Users/<user>/`, `@…\.(com|us)` emails, uuid literals
    outside fixtures) and fails on hits.
 5. Release notes via the `release-flow` skill; version bump to 0.1.0.
+6. Stamp the release into the skill bundle (deferred from `skill-and-hook`):
+   `scripts/build-cli.ts` stamps `git describe --tags --match 'v[0-9]*'` without the `v` (else
+   `<package.json version>-g<sha>`), so the bundle committed on `main` only reports `0.1.0` if
+   it is rebuilt (`bun run build:bundle`) after the tag exists. `check:bundle` ignores the
+   stamped literal, so this is a release step, not a CI failure. Settle the order (tag, rebuild,
+   commit, move the tag, or stamp from `package.json` once the release sets it) and write it
+   into `RELEASING.md`. Fill in the README's skill-channel section, which `skill-and-hook` left
+   at install and build basics.
 
 ## Validation
 

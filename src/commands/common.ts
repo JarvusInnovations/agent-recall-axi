@@ -12,7 +12,8 @@ import type { Session } from "../lib/model.js";
 import { parseWindow, type WindowSel } from "../lib/windows.js";
 import { getBool, getString, usageLine, type Parsed } from "../flags.js";
 
-export const BIN = "agent-session-axi";
+import { BIN, pathWord } from "../invocation.js";
+export { BIN };
 
 export interface Io {
   cwd: string;
@@ -76,9 +77,9 @@ export function shellArg(value: string): string {
   return /^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** A path as it should appear inside a suggested command: home-collapsed, quoted when needed. */
+/** A path as it should appear inside a suggested command: home-collapsed, quoted when needed, `~/` unquoted. */
 export function shellPath(path: string): string {
-  return shellArg(collapseHome(path));
+  return pathWord(path);
 }
 
 /** The resolution scope a command's `--project`/`--all` set (cli.md#conventions). */

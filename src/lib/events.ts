@@ -2,6 +2,7 @@
  * Rows of one session over visible kinds (specs/api.md#reading). File order is the order; time
  * filters select, never sort (principles.md#file-order-is-the-truth-timestamps-are-evidence).
  */
+import { BIN } from "../invocation.js";
 import { AgentSessionError } from "./errors.js";
 import { comparePosition, formatId } from "./ids.js";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -275,7 +276,7 @@ function beyondEnd(session: Session, id: EventId, lines: number): AgentSessionEr
   return new AgentSessionError(
     `${formatId(id)} is beyond the end of the session (${lines} line${lines === 1 ? "" : "s"})`,
     "NOT_FOUND",
-    [`Run \`agent-session-axi tail ${session.short}\` for the last rows of this session`],
+    [`Run \`${BIN} tail ${session.short}\` for the last rows of this session`],
     { lines },
   );
 }
@@ -620,14 +621,14 @@ function selectBlock(id: EventId, evs: Event[]): Event[] {
   const entryId = formatId({ session: id.session, seq: id.seq });
   if (evs.length === 0) {
     throw new AgentSessionError(`${formatId(id)} does not exist: ${entryId} yields no events`, "NOT_FOUND", [
-      `Run \`agent-session-axi show ${entryId}\` for the entry itself`,
+      `Run \`${BIN} show ${entryId}\` for the entry itself`,
     ]);
   }
   const hit = evs.find((e) => e.id.block === id.block);
   if (hit) return [hit];
   const ids = evs.map((e) => formatId(e.id));
   const what = evs.length === 1 ? `${entryId} is a single event; its id is ${ids[0]}` : `the blocks of ${entryId} are ${ids.join(", ")}`;
-  throw new AgentSessionError(`${formatId(id)} does not exist: ${what}`, "NOT_FOUND", ids.map((i) => `Run \`agent-session-axi show ${i}\``));
+  throw new AgentSessionError(`${formatId(id)} does not exist: ${what}`, "NOT_FOUND", ids.map((i) => `Run \`${BIN} show ${i}\``));
 }
 
 export type PointerAccess = { followable: true; real: string } | { followable: false; reason: string };
