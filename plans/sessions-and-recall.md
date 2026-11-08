@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 pr: 16
 depends: [find, views]
 specs:
@@ -135,10 +135,12 @@ and `docs(specs): the resume pack carries the session title`:
   `sessions-index.json` accelerates the home view only: its `summary`/`modified` are used while
   `fileMtime` matches, and never for counts.
 - **Home view**: main sessions ordered by mtime (as `latest` resolves). Each row comes from cached
-  stats (an append of up to 8 MB extends them), else the index, else the mtime with a 1 MB head
-  read for the title and an empty `turns` cell. `last_human` is a 4 MB backward read; its line is
-  numbered from the nearest point the cache knows (the mirror's end or a table checkpoint), or
-  by a newline count from the file start. While `resume-pack` was planned, the first hint was
+  stats (extensions share one 8 MB budget across the listing), else the mtime, with
+  `custom-title.json`, the matching index entry or a 1 MB head read for the title, and an empty
+  `turns` cell. `last_human` is a 4 MB backward read; its line is numbered from the nearest point
+  the cache knows (the mirror's end or a table checkpoint). With no such point it prints without
+  an id and the `tail` hint offers ids. (The first pass counted newlines from the file start;
+  the review withdrew that.) While `resume-pack` was planned, the first hint was
   `human <latest> --window last`; since #14 merged it is `resume-pack <latest>`.
 - **Cross-session `find`/`recall`** read every main and subagent session in scope, newest mtime
   first, and skip a file last modified before the window's start. An id bound without a session
@@ -176,14 +178,44 @@ and `docs(specs): the resume pack carries the session title`:
   garbage from token collection. Filed as #18.
 - Evidence on the final tree: `bun run check`, `bun run build` and `bun run check:types` are
   clean. `bun run test` passed twice in full, 30 files and 329/329 each.
+- **Review round (PR #16).** The rulings went into `docs(specs): review rulings for sessions and
+  recall` and `docs(specs): which --json-out exports share the view's read`, ahead of the fixes.
+  `test/sessions-review.test.ts` has one test per finding a test can observe; all 11 failed
+  against the pre-fix code.
+  1. Term-index tokens are stored sorted, so the record keeps no word order.
+  2. `--json-out=path` is validated before any read and opened `O_NOFOLLOW`. The open handle must
+     be a regular file the user owns before it is truncated. A failed write removes the partial
+     file.
+  3. The cold home view never counts a file from its start, and a perf case covers a cold 64 MB
+     latest session.
+  4. The term index carries its own identity. It extends from its own seq through the table's
+     checkpoints after another command has extended the table.
+  5. The `turns`, `tools`, `find` and cross-session `find` exports stream during the view's read,
+     and `human` streams from `events()`.
+  6. Only the id fields become printed ids.
+  7. Single-session headers take a cheap, cache-free title, `(untitled)` when there is none. This
+     closes #17 by fix.
+  8. This plan's measurement note is below.
+  9. privacy.md lists what the cache holds, including what the term index exposes.
+  10. A cross-session search under `--all` widens with `--since 1y`.
+  11. The space form `--json-out out.json` gets a targeted error.
+  12. The home title order now matches the code.
+  13. An empty last title entry falls through to the next source, and a `--regex` recall rewrites
+      no record.
+  14. api.md lists the extra exports, and candidate titles use the `sessions` cut.
+
+  Not observable through a test: the 8 MB budget is shared across the listing (a library test
+  covers it), and a failed write removes the partial file (by inspection).
+- Evidence after the review round: `bun run check`, `bun run build` and `bun run check:types` are
+  clean, and the unit project passes 327/327. The full suite was not run locally (about 700 MB of
+  disk free); CI is the gate. `test/home-perf.test.ts` alone, three cases, ran twice: once all
+  green, once with one miss of 8 ms against a 347 ms floor-based bound, at load average about 14.
 - Rebased onto develop after #14 merged, keeping both sides of each conflict (exports, cli
   wiring, fixture builder). Absorbed #14's deferrals: the real title in the `resume-pack` header
   (`ResumePack.title`), and the new exports in `test/api.test.ts` and `test/consumer/consumer.ts`.
 
 ## Follow-ups
 
-- Issue [#17](https://github.com/JarvusInnovations/agent-session-axi/issues/17): single-session
-  headers still print `(title pending)`; a deterministic title there costs a whole-file pass.
 - Issue [#18](https://github.com/JarvusInnovations/agent-session-axi/issues/18): a cold `recall`
   of a 200 MB session peaks at about 165 MB RSS (young-generation churn in token collection).
 - Tracked as: the plan's 20-copy `recall` measurement on real copies (not hard links) needs a
