@@ -52,6 +52,10 @@
       "types": "./dist/src/lib/index.d.ts",
       "import": "./dist/src/lib/index.js"
     },
+    "./render": {
+      "types": "./dist/src/render/index.d.ts",
+      "import": "./dist/src/render/index.js"
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/src/lib/index.js",
