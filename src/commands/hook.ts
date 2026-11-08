@@ -241,7 +241,6 @@ function parseAgent(p: ReturnType<typeof parseFlags>): Agent | undefined {
 }
 
 const SUBCOMMANDS = ["install", "status", "uninstall"] as const;
-type Sub = (typeof SUBCOMMANDS)[number];
 
 export async function hookCommand(args: string[], io: HookIo): Promise<string> {
   const doc = findCommand("hook");
@@ -321,8 +320,10 @@ function install(scope: Scope, agent: Agent | undefined, home: string, io: HookI
   });
   const body: Record<string, unknown> = {};
   const changed = rows.some((r) => r.state === "added" || r.state === "updated") || watched.some((p) => before.get(p) !== read(p));
-  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope, no changes)`;
-  body.command = command;
+  body.hook = changed ? `installed (${scope} scope)` : `already installed (${scope} scope; no changes)`;
+  // What was written: the SDK's full install resolves PATH itself.
+  const written = chosen.map((r) => installedCommand(r.agent, read(r.path))).find((c) => c !== undefined);
+  body.command = written ?? command;
   body.targets = rows;
   if (chosen.some((r) => r.agent === "codex")) {
     const err = errors.get(targets.codexConfig);
