@@ -94,7 +94,16 @@ Claude Code, Codex and OpenCode at user or project scope, and hook mode for the 
 
 ## Notes
 
-(at closeout)
+- **Step 0 (hook payload path), recorded before step 1.** `installSessionStartHooks` (axi-sdk-js
+  0.1.14) writes the resolved binary itself as the hook `command` (an absolute path, or the bare
+  name when it is on `PATH` and resolves to the same file), with no wrapper, for Claude Code and
+  Codex. Installed into a scratch home and project and run the way Claude Code runs a hook
+  (`sh -c "<command>"` with a JSON payload carrying `session_id`, `transcript_path` and
+  `source: compact` on stdin), the process received the payload byte for byte. Hook mode
+  therefore rides the SDK install; no custom `ManagedHookSpec` is needed. The OpenCode plugin the
+  SDK writes spawns the command with stdin ignored, so under OpenCode the home view always sees
+  an empty stdin and prints the listing. `test/hook.test.ts` repeats this through the exact
+  command string the install wrote.
 
 ## Follow-ups
 
