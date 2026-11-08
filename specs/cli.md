@@ -25,8 +25,10 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   `--limit`, budget or head cut, the id fields the library returns (`id`, `result`, `call`,
   `turn`, `first`, `continueTo`, `summary`, `compaction`) as printed (`7a2f1c3e:418`) and
   everything else as stored (a call input is never rewritten), times as ISO-8601 UTC, streamed to
-  the file item by item as the command reads (never held whole, and never a second read of the
-  logs). A given path is resolved against the working directory and opened before any log is
+  the file item by item (never held whole). A command whose view already reads every matching item
+  (`turns`, `tools`, `find`, a cross-session `find`) writes the export during that one read; one
+  whose view reads only part of the log (`events`' newest rows, `human`'s budget) reads it once
+  more for the export. A given path is resolved against the working directory and opened before any log is
   read: created owner-only (`0600`) or truncated, never through a symlink, and refused
   (`VALIDATION_ERROR`) when it is not a regular file owned by the current user or its directory
   does not exist. The temp file is `<command>.json`, created exclusively in a new owner-only
