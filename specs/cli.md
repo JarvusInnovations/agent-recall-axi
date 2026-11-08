@@ -48,6 +48,10 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - A hint names a session by its `<s8>` only when no other session in scope shares those 8
   characters; otherwise by its full id (`tail <uuid>`, `show <id> --session <uuid>`), so every
   hint resolves as printed.
+- Hints and suggested commands name the tool `agent-session-axi`. Run from the skill bundle,
+  which is not on `PATH`, they name it by the shim's path instead (`~` for the home directory,
+  quoted when needed), unless `agent-session-axi` on `PATH` resolves to that shim or bundle; the
+  npm bin is on `PATH` by installation and keeps the bare name.
 - `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
   (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
   `--head`, `--full` and the bounding `--to`, so the next page shows the same view of the range.
@@ -111,8 +115,15 @@ help[5]:
   human message, and `none in the last 4M` when the read stopped at that bound.
 - **Hook mode.** When stdin is not a TTY and carries a SessionStart hook payload (JSON with
   `session_id` and `source`), the home view adapts: `source: compact` or `resume` prints
-  `resume-pack <that session> --budget 6000` instead of the listing; `startup`/`clear` print the
+  `resume-pack <that session> --budget 6000` instead of the listing (under the same `bin` and
+  `description` header, then the pack's exact bytes); `startup`/`clear` print the
   listing above. This is how an agent that just lost its context gets it back without asking.
+  The read of stdin is bounded so the home view never hangs on a pipe nobody writes to: it
+  stops as soon as the bytes read parse as one JSON object, at end of input, at 64 KB, when no
+  byte has arrived within 200 ms, or 1 s after the first byte. Anything else prints the listing,
+  never an error: an empty or non-JSON stdin, a payload without `source` or `session_id`, a
+  `session_id` that is not a session id, and one that does not resolve in the working
+  directory's scope (another agent's session, for instance).
 
 ---
 
@@ -606,15 +617,66 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 ## `hook`
 
 ```
-agent-session-axi hook install [--scope user|project] [--agent claude|codex|opencode]
-agent-session-axi hook status  [--scope …]
-agent-session-axi hook uninstall [--scope …]
+agent-session-axi hook install   [--scope user|project] [--agent claude|codex|opencode]
+agent-session-axi hook status    [--scope user|project]
+agent-session-axi hook uninstall [--scope user|project]
 ```
 
 Explicit opt-in registration of the SessionStart hook that runs the home view (and, in hook mode,
-the resume pack after a compaction). Built on the SDK's install/status/uninstall helpers; project
-scope is the default for a repo that wants it, user scope for a bot host. Idempotent; repairs a
-moved binary path. Never installed by any other command.
+the resume pack after a compaction). Built on the SDK's install/status/uninstall helpers with
+marker `agent-session-axi`. Never installed by any other command.
+
+- **Scope**: `user` (the default) writes each agent's home-directory config, which suits a bot
+  host and a person who wants it everywhere; `project` writes the per-repository config under the
+  working directory, for a repo that wants it.
+- **Targets** (`--scope user` / `--scope project`): Claude Code `~/.claude/settings.json` /
+  `.claude/settings.json` (a `SessionStart` entry); Codex `~/.codex/hooks.json` /
+  `.codex/hooks.json`, plus `[features] hooks = true` in the user's `~/.codex/config.toml` (Codex
+  reads it only there, so a project install sets it too); OpenCode the managed plugin
+  `~/.config/opencode/plugins/axi-agent-session-axi.js` / `.opencode/plugins/axi-agent-session-axi.js`.
+  `--agent` installs one of the three; without it all three are installed. `status` and
+  `uninstall` always cover all three.
+- **The command** the hook runs is the running binary: the skill shim
+  (`…/skills/agent-session-axi/scripts/agent-session-axi`) when it runs from the skill bundle,
+  else the npm bin; as the bare name `agent-session-axi` when that name on `PATH` resolves to the
+  same file, else its absolute path. Run from a source checkout (a `.ts` entrypoint) `install` is
+  `VALIDATION_ERROR` naming the build and the shim, since a hook cannot run TypeScript.
+- **Idempotent**: an install that changes nothing rewrites nothing (file bytes unchanged) and
+  says so; an entry whose command differs (the binary moved) is rewritten in place (path repair).
+  `uninstall` removes only marker-matched entries and the managed plugin; every other hook,
+  group and setting stays as it was, and an OpenCode plugin file without the managed marker is
+  left in place and reported.
+- `AGENT_SESSION_AXI_DISABLE_HOOKS=1` makes `install` a no-op that says so (exit 0), for a host
+  or CI that must never gain a hook.
+
+```
+hook: installed (user scope)
+command: agent-session-axi
+targets[3]{agent,path,state}:
+  claude,~/.claude/settings.json,added
+  codex,~/.codex/hooks.json,added
+  opencode,~/.config/opencode/plugins/axi-agent-session-axi.js,added
+codex_features: ~/.codex/config.toml (hooks = true)
+help[2]:
+  Run `agent-session-axi hook status` to check it
+  Run `agent-session-axi hook uninstall` to remove it
+```
+
+- `install` states per target: `added`, `updated` (the command or timeout was repaired),
+  `unchanged`, or `unmanaged (left in place)` for an OpenCode plugin file it did not write; the first line is `hook: installed (<scope> scope)`, or `hook: already installed
+  (<scope> scope; no changes)` when every target is `unchanged`. `codex_features` is printed when
+  Codex is a target.
+- `status` states per target: `installed`, `stale` (installed with a command other than the one
+  `install` would write now), or `absent`; the first line is `hook: installed`, `hook: stale`,
+  `hook: partly installed` or `hook: not installed`, with the scope, and `codex_features:` reports
+  the user flag (`hooks = true` or `not set`). It writes nothing. The footer suggests `hook
+  install` when any target is not `installed`, else `hook uninstall`.
+- `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first
+  line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`.
+- A settings file that cannot be read or parsed is not overwritten: the target's state is
+  `error: <message>`, the others proceed, and the command exits 1 after printing the table.
+- Footer hints carry `--scope` when it was given. Exit 0 for every other outcome, including
+  no-ops.
 
 ## `cache`
 

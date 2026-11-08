@@ -247,6 +247,33 @@ Two channels from one source, both committed to the same tag:
    comparison, and CI fails when it or `SKILL.md` is stale. The skill's examples invoke the shim
    by resolved path (never a bare name, since the bundle is not on `PATH`).
 
+### The skill bundle
+
+- `scripts/build-cli.ts` (`bun run build:bundle`; `--check` is `bun run check:bundle`) runs
+  esbuild on `bin/agent-session-axi.ts` (so the bundle keeps the version fast path) with
+  `bundle`, `platform: node`, `target: node22`, `format: esm`, `legalComments: none`, a shebang
+  banner and a "generated, do not edit" line, and writes the bundle mode 755. esbuild is pinned to
+  an exact version so the bytes are reproducible.
+- The version is stamped at build time: `git describe --tags --match 'v[0-9]*'` without its
+  leading `v`, else `<package.json version>-g<short sha>`. `src/version.ts` returns the stamp
+  when it is defined and reads `package.json` otherwise (the npm channel). `--check` replaces the
+  one stamped literal on both sides with a placeholder before comparing, so a commit that only
+  moves the sha passes and any other byte change fails.
+- The bundle reads nothing at run time but the logs and its cache: no `package.json`, no
+  `node_modules`, no file beside it except, for hints, the existence of the shim.
+- The shim `scripts/agent-session-axi` is bash: it resolves its own symlinks (so a link to it on
+  `PATH` works) and `exec`s `node` on the sibling `.mjs` with the arguments.
+- `scripts/build-skill.ts` (`bun run build:skill`; `--check` is `bun run check:skill`) splices
+  the command reference generated from `COMMAND_GROUPS` (each group a heading, each command its
+  usage and summary, prefixed `scripts/agent-session-axi`) between
+  `<!-- BEGIN GENERATED: command-reference -->` and `<!-- END GENERATED: command-reference -->`;
+  the prose outside the markers is hand-written and never touched, and missing markers fail the
+  build.
+- `SKILL.md` frontmatter carries `name` and a trigger-shaped `description`; the body states the
+  privacy rule near the top, that every command is run as `scripts/agent-session-axi` relative to
+  the skill's own directory (never on `PATH`), the zoom ladder, the exploration loop, and both
+  install paths. The skill directory holds only `SKILL.md` and `scripts/`.
+
 Both channels are required, not optional: bots install this tool with `npx skills add` on hosts
 that may not reach the npm registry at cold start, and a memory tool has to work exactly then. The
 npm channel serves interactive installs and `npx -y`; the committed bundle serves the bots. The
@@ -262,8 +289,11 @@ graph. A test measures the fast path against the `node -e` floor in the same pro
 
 `hook install|status|uninstall` wraps the SDK's `installSessionStartHooks` /
 `sessionStartHookStatus` / `uninstallSessionStartHooks` with `marker: "agent-session-axi"`, user or
-project scope, Claude Code, Codex and OpenCode targets. The hook command is the resolved binary
-(or the skill shim when installed from the skill). In hook mode the home view reads the payload on
+project scope, Claude Code, Codex and OpenCode targets (`cli.md#hook`). The hook command is the
+resolved binary (or the skill shim when installed from the skill). The SDK's install writes all
+three targets, so `--agent` installs one through the same SDK primitives it is built on
+(`computeSessionStartHookUpdate`, `computeCodexConfigUpdate`, and the SDK's own plugin source),
+and a test holds that the three single-agent installs write the same bytes as one full install. In hook mode the home view reads the payload on
 stdin and prints a resume pack after a compaction (`cli.md#home-view-no-arguments`). Nothing
 installs a hook except `hook install`.
 
@@ -284,7 +314,12 @@ generic (`widget`, `example.test`); no names, hosts, or paths from any real sess
 `.github/workflows/ci.yml`: `bun install --frozen-lockfile`, `bun run check` (tsc), `bun run build`,
 `bun run test`, `bun run check:skill`, `bun run check:bundle`, then a smoke test of the built bin
 with `--version`, `--help`, and `sessions --project /nonexistent` asserting exit 1,
-`code: NO_SESSIONS`, and no stack trace. Node 22.x, `fetch-depth: 0`.
+`code: NO_SESSIONS`, and no stack trace. Node 22.x, `fetch-depth: 0`. A second job checks out the
+repository fresh and, before anything is installed (`node` only: no `bun install`, no
+`node_modules`), copies the committed skill directory out of the checkout and runs it through
+its shim: `--version`, then `tail`, `find` and `resume-pack` against the committed fixtures, each
+with a fresh cache. It then installs and builds, runs the same commands through `dist/`, and
+fails unless the outputs match byte for byte.
 
 ## Principles
 
