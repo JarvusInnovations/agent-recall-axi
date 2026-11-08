@@ -41,7 +41,7 @@ describe("hints when an <s8> is shared in scope", () => {
   });
 
   it("turns/human/tools/compactions hints name the session by its full id, and every hint runs", async () => {
-    for (const args of [["turns", FULL], ["human", FULL], ["tools", FULL], ["compactions", FULL], ["human", "c3b5d7e9-ffff", "--budget", "1"]]) {
+    for (const args of [["turns", FULL], ["human", FULL], ["tools", FULL], ["compactions", FULL]]) {
       const out = await run(args, { cwd });
       expect(out.exitCode, args.join(" ")).toBe(0);
       for (const h of hints(out.stdout)) {

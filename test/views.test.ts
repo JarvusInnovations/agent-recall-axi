@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decode } from "@toon-format/toon";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { imageResultSession, panSession, QUEUED_PROMPT } from "./fixtures/build.js";
+import { farSummarySession, imageResultSession, panSession, QUEUED_PROMPT } from "./fixtures/build.js";
 import { fx, run } from "./helpers/run.js";
 import {
   AUTHORITY,
@@ -31,6 +31,7 @@ import { formatId } from "../src/lib/ids.js";
 const tmp = mkdtempSync(join(tmpdir(), "asa-views-"));
 const panFile = join(tmp, "e1000021-0000-4000-8000-000000000000.jsonl");
 const imageFile = join(tmp, "e4000024-0000-4000-8000-000000000000.jsonl");
+const farFile = join(tmp, "e8000028-0000-4000-8000-000000000000.jsonl");
 let caches = 0;
 const freshCache = () => ({ env: { XDG_CACHE_HOME: join(tmp, `cache-${++caches}`) } });
 let pan: Session;
@@ -38,6 +39,7 @@ let pan: Session;
 beforeAll(async () => {
   writeFileSync(panFile, panSession());
   writeFileSync(imageFile, imageResultSession());
+  writeFileSync(farFile, farSummarySession());
   pan = await openSession(panFile);
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -94,11 +96,12 @@ describe("turns", () => {
     expect(ts[0]).toMatchObject({ queued: 2, calls: 1, ended: "stop" });
   });
 
-  it("a boundary-less summary is a boundary: turn 0 ends in compaction", async () => {
-    const r = await run(["turns", fx("compaction-legacy")]);
+  it("a boundary-less summary with events before it is a boundary: its turn ends in compaction", async () => {
+    const r = await run(["turns", farFile]);
     expect(table(r.stdout, "turns").map((t) => [t.prompt, t.ended])).toEqual([
-      ["(session start)", "compaction"],
-      ["pick up where we left off", "stop"],
+      ["start the flange work", "compaction"],
+      ["keep going", "compaction"],
+      ["now the second half", "stop"],
     ]);
   });
 
@@ -281,8 +284,10 @@ describe("compactions", () => {
   });
 
   it("a boundary-less summary is listed with trigger unknown", async () => {
-    expect(table((await run(["compactions", fx("compaction-legacy")])).stdout, "compactions")).toEqual([
-      { id: "a7000007:1", t: "13:40:02", trigger: "unknown", pre: "", post: "", summary: "a7000007:1", window: 1 },
+    const rows = table((await run(["compactions", farFile])).stdout, "compactions");
+    expect(rows.map(({ t: _t, ...r }) => r)).toEqual([
+      { id: "e8000028:3", trigger: "auto", pre: "500.0k", post: "20.0k", summary: "", window: 1 },
+      { id: "e8000028:9", trigger: "unknown", pre: "", post: "", summary: "e8000028:9", window: 2 },
     ]);
   });
 
