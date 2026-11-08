@@ -469,7 +469,7 @@ Default `--window last`, `--budget 16000`, `--tools 10`, `--claims 3`.
 session: 7a2f1c3e fix auth redirect loop
 window: 1 (last; windows 0..1)
 budget: 5.8k of 16.0k used
-layers: summary C, human H (verbatim), tools D, claims C
+layers: summary C; human H (verbatim); tools D; claims C
 days: 2026-11-07..2026-11-08
 tz: America/New_York
 summary:
@@ -503,8 +503,9 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 
 - **Header**: `session:`, then `window: <k> (last; windows 0..<n>)` (`(windows 0..<n>)` when `k`
   is not the last, `only window 0` for a session with one), `budget: <used> of <limit> used`
-  (sizes as in `row-format.md#sizes`), `layers:` naming each layer's authority class (TOON has
-  no comments, so the classes ride on this one line; the summary is named only when present),
+  (sizes as in `row-format.md#sizes`), `layers:` naming each layer's authority class, `;`
+  between layers (TOON has no comments, so the classes ride on this one line; the summary is
+  named only when present),
   then `day:`/`days:` and `tz:` for the one time column every layer shares, and `omitted:` last.
 - **Layers**: `summary:` is a block (`id`, `t`, `text`), printed only when the window opens with
   one (`behaviors/context-windows.md`); it is `C` text, cut at 4,000 chars with the house marker
