@@ -392,11 +392,10 @@ function noteEntry(stats: StatsState, entry: Entry, seq: number, offset: number,
     const model = (entry.raw?.message as { model?: unknown } | undefined)?.model;
     if (typeof model === "string" && model) stats.model = model;
   } else if (type === "custom-title") {
-    const v = entry.raw?.customTitle;
-    if (typeof v === "string" && v.trim()) stats.custom = { seq, offset, length };
+    // The last entry wins even when empty (a cleared title): reading it back then falls through.
+    if (typeof entry.raw?.customTitle === "string") stats.custom = { seq, offset, length };
   } else if (type === "ai-title") {
-    const v = entry.raw?.aiTitle;
-    if (typeof v === "string" && v.trim()) stats.ai = { seq, offset, length };
+    if (typeof entry.raw?.aiTitle === "string") stats.ai = { seq, offset, length };
   }
 }
 

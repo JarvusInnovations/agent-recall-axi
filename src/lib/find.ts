@@ -571,7 +571,7 @@ export interface FindListing {
 }
 
 /** A bounded result for a renderer: the first `limit` hits with context, and the total. */
-export async function findListing(session: Session, q: FindQuery): Promise<FindListing> {
+export async function findListing(session: Session, q: FindQuery, onHit?: (hit: Hit) => Promise<void>): Promise<FindListing> {
   const limit = q.limit ?? 20;
   const stats: FindStats = { lines: 0, malformed: 0, hits: 0 };
   const hits: Hit[] = [];
@@ -579,6 +579,8 @@ export async function findListing(session: Session, q: FindQuery): Promise<FindL
   let shownRows: Set<string> | undefined;
   const { limit: _drop, ...rest } = q;
   for await (const hit of find(session, rest, stats)) {
+    // Every hit, past the limit too, for a caller streaming the whole result (--json-out).
+    if (onHit) await onHit(hit);
     if (limit === 0 || hits.length < limit) {
       hits.push(hit);
       continue;
@@ -707,7 +709,7 @@ export interface AcrossListing {
 }
 
 /** A bounded cross-session result for a renderer: the first `limit` hits (default 20) and the totals. */
-export async function findAcrossListing(scope: Scope, q: AcrossQuery): Promise<AcrossListing> {
+export async function findAcrossListing(scope: Scope, q: AcrossQuery, onHit?: (hit: ScopedHit) => Promise<void>): Promise<AcrossListing> {
   compileQuery(q);
   const from = acrossFrom(q);
   const limit = q.limit ?? 20;
@@ -730,6 +732,7 @@ export async function findAcrossListing(scope: Scope, q: AcrossQuery): Promise<A
     out.matching += hits.length;
     let shown: Set<string> | undefined;
     for (const hit of hits) {
+      if (onHit) await onHit({ ...hit, session });
       if (limit === 0 || out.hits.length < limit) {
         out.hits.push({ ...hit, session });
         continue;

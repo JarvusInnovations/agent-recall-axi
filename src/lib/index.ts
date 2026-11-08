@@ -60,5 +60,5 @@ export { buildResumePack, DEFAULT_RESUME_BUDGET, DEFAULT_RESUME_CLAIMS, DEFAULT_
 // view's cheap listing, cross-session find and recall
 export { cachedStats, sessionStats, type SessionStats, type TitleSource } from "./stats.js";
 export { homeListing, lastHumanOf, type HomeListing, type HomeSession, type LastHuman } from "./home.js";
-export { findAcross, findAcrossListing, scopeSessions, type AcrossListing, type AcrossQuery, type ScopedHit } from "./find.js";
+export { findAcross, findAcrossListing, scopeSessions, type AcrossListing, type AcrossQuery, type ScopedHit, type ScopedSession, type ScopeSessions } from "./find.js";
 export { recall, RECALL_KINDS, tokens, type IndexState, type Recall, type RecallOpts, type RecallResult } from "./recall.js";

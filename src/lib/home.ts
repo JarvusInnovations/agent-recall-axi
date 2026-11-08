@@ -11,12 +11,10 @@ import { claudeCode } from "./adapters/claude-code/index.js";
 import { readSessionsIndex, type IndexEntry } from "./adapters/claude-code/sessions.js";
 import type { CacheOpts } from "./cache/store.js";
 import { AUTHORITY, type Event, type Session } from "./model.js";
-import { countNewlinesBetween, readLines, readLinesBackward } from "./reader.js";
+import { countNewlinesBetween, readLinesBackward } from "./reader.js";
 import { resolveScope, type ResolvedScope, type Scope } from "./scope.js";
-import { cachedStats, customTitleFile, knownLineStart } from "./stats.js";
+import { cachedStats, customTitleFile, headHuman, knownLineStart } from "./stats.js";
 
-/** How far into a file's head the fallback title looks for the first human event. */
-const HEAD_TITLE_BYTES = 1 << 20;
 /** How far back from the end `last_human` looks. */
 export const LAST_HUMAN_BYTES = 4 << 20;
 /** The most appended bytes worth indexing to use cached stats. */
@@ -37,6 +35,8 @@ export interface HomeSession {
 
 export interface LastHuman {
   event?: Event;
+  /** Whether the event's id is real: the cache gave its line number. */
+  numbered: boolean;
   /** No H event in the read span: `none` (the file start was reached) or `bound` (the 4 MB limit). */
   missing?: "none" | "bound";
 }
@@ -53,42 +53,27 @@ export interface HomeListing {
   shared: Set<string>;
 }
 
-/** The first `human` event within the file's first megabyte. */
-async function headHuman(session: Session): Promise<string | undefined> {
-  const ctx = newContext(session);
-  try {
-    // Small blocks: the first prompt is usually in the first few lines, and a 1 MB buffer per row costs GC.
-    for await (const line of readLines(session.path, { blockSize: 64 << 10 })) {
-      if (line.offset > HEAD_TITLE_BYTES) break;
-      const entry = claudeCode.parse(line);
-      if (!entry) continue;
-      const ev = claudeCode.classify(entry, ctx).find((e) => e.kind === "human");
-      if (ev) return ev.text;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
-
-/** The newest H-class event in the last 4 MB, its line numbered by a newline count before it. */
+/**
+ * The newest H-class event in the last 4 MB, read backwards. Its line is numbered from the nearest
+ * point the cache knows; when the cache knows none, it is not numbered (`numbered: false`, the
+ * event's seq meaningless): the home view never reads or counts a whole file.
+ */
 export async function lastHumanOf(session: Session, opts: { bound?: number; cache?: CacheOpts } = {}): Promise<LastHuman> {
   const bound = opts.bound ?? LAST_HUMAN_BYTES;
   const { size } = await stat(session.path);
   const probe = newContext(session);
   for await (const bl of readLinesBackward(session.path, 256 << 10)) {
-    if (size - bl.offset > bound) return { missing: "bound" };
+    if (size - bl.offset > bound) return { missing: "bound", numbered: false };
     const entry = claudeCode.parse({ seq: 1, offset: bl.offset, text: bl.text, partial: bl.partial });
     if (!entry) continue;
     if (!claudeCode.classify(entry, probe).some((e) => AUTHORITY[e.kind] === "H")) continue;
-    // Numbered from the nearest line the cache knows, so only the bytes after it are counted.
     const known = await knownLineStart(session.path, bl.offset, opts.cache ?? {});
-    const seq = known.seq + (await countNewlinesBetween(session.path, known.offset, bl.offset, 4 << 20));
+    const seq = known ? known.seq + (await countNewlinesBetween(session.path, known.offset, bl.offset, 4 << 20)) : 1;
     const real = claudeCode.parse({ seq, offset: bl.offset, text: bl.text, partial: bl.partial })!;
     const evs = claudeCode.classify(real, newContext(session)).filter((e) => AUTHORITY[e.kind] === "H");
-    return { event: evs[evs.length - 1]! };
+    return { event: evs[evs.length - 1]!, numbered: known !== undefined };
   }
-  return { missing: "none" };
+  return { missing: "none", numbered: false };
 }
 
 /** The home rows of a scope: main sessions by file mtime, newest first (as `latest` resolves). */
@@ -118,9 +103,11 @@ export async function homeListing(scope: Scope, opts: { limit?: number; cache?: 
   found.sort((a, b) => (a.mtime === b.mtime ? (a.s.id < b.s.id ? 1 : a.s.id > b.s.id ? -1 : 0) : b.mtime - a.mtime));
   const indexes = new Map<string, Map<string, IndexEntry>>();
   const sessions: HomeSession[] = [];
+  // Extending cached stats over appends spends one budget across the whole listing.
+  const budget = { left: STATS_APPEND };
   for (const { s, mtime } of found.slice(0, limit)) {
     const mtimeIso = new Date(mtime).toISOString();
-    const stats = await cachedStats(s, { cache: opts.cache ?? {}, maxAppend: STATS_APPEND }).catch(() => undefined);
+    const stats = await cachedStats(s, { cache: opts.cache ?? {}, budget }).catch(() => undefined);
     if (stats) {
       const row: HomeSession = { session: s, mtime: mtimeIso, last: stats.last, turns: stats.turns, source: "stats" };
       if (stats.title !== undefined) row.title = stats.title;
@@ -141,6 +128,6 @@ export async function homeListing(scope: Scope, opts: { limit?: number; cache?: 
   }
   const out: HomeListing = { scope: resolved, total: found.length + unreadable, unreadable, sessions, shared };
   if (firstUnreadable) out.firstUnreadable = firstUnreadable;
-  if (sessions[0]) out.lastHuman = await lastHumanOf(sessions[0].session, { cache: opts.cache ?? {} }).catch(() => ({ missing: "none" as const }));
+  if (sessions[0]) out.lastHuman = await lastHumanOf(sessions[0].session, { cache: opts.cache ?? {} }).catch(() => ({ missing: "none" as const, numbered: false }));
   return out;
 }

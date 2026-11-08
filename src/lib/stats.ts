@@ -6,7 +6,9 @@
  * `custom-title.json`) on demand: the cache never holds its text.
  */
 import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { readSessionsIndex, type IndexEntry } from "./adapters/claude-code/sessions.js";
+import { readLines } from "./reader.js";
 import { newContext } from "./adapters/adapter.js";
 import { claudeCode } from "./adapters/claude-code/index.js";
 import { formatId } from "./ids.js";
@@ -117,23 +119,25 @@ async function loadMirror(path: string, opts: CacheOpts): Promise<Mirror | undef
 
 /**
  * The line count the cache knows at a byte offset at or before `offset` (the mirror's end, or the
- * nearest table checkpoint), so a caller counts newlines only from there. `{ seq: 1, offset: 0 }`
- * when the cache knows nothing that still matches the file.
+ * nearest table checkpoint, line 1 included), so a caller counts newlines only from there.
+ * Undefined when the cache knows nothing that still matches the file: the line cannot be numbered
+ * without reading the file from its start.
  */
-export async function knownLineStart(path: string, offset: number, cache: CacheOpts = {}): Promise<{ seq: number; offset: number }> {
-  let best = { seq: 1, offset: 0 };
+export async function knownLineStart(path: string, offset: number, cache: CacheOpts = {}): Promise<{ seq: number; offset: number } | undefined> {
+  if (offset === 0) return { seq: 1, offset: 0 };
+  let best: { seq: number; offset: number } | undefined;
   try {
     const rec = statsPath(cacheDir(cache), path);
     if (await ownedRecord(rec)) {
       const m = JSON.parse(await readFile(rec, "utf8")) as unknown;
-      if (isMirror(m, path) && m.end <= offset && (await tableMatches(m as unknown as OffsetTable, path))) best = { seq: m.seq + 1, offset: m.end };
+      if (isMirror(m, path) && m.end <= offset && m.end > 0 && (await tableMatches(m as unknown as OffsetTable, path))) best = { seq: m.seq + 1, offset: m.end };
     }
   } catch {
     // no usable mirror
   }
   const table = await loadTable(path, cache);
   if (table) {
-    for (const cp of [...table.checkpoints, table.tail]) if (cp.offset <= offset && cp.offset > best.offset) best = { seq: cp.seq, offset: cp.offset };
+    for (const cp of [...table.checkpoints, table.tail]) if (cp.offset <= offset && (!best || cp.offset > best.offset)) best = { seq: cp.seq, offset: cp.offset };
   }
   return best;
 }
@@ -162,6 +166,51 @@ export async function customTitleFile(session: Session): Promise<string | undefi
   } catch {
     return undefined;
   }
+}
+
+/** How far into a file's head the cheap title looks for the first human event. */
+export const HEAD_TITLE_BYTES = 1 << 20;
+
+/** The first `human` event within the file's first megabyte (small read blocks: it is usually near the top). */
+export async function headHuman(session: Session): Promise<string | undefined> {
+  const ctx = newContext(session);
+  try {
+    for await (const line of readLines(session.path, { blockSize: 64 << 10 })) {
+      if (line.offset > HEAD_TITLE_BYTES) break;
+      const entry = claudeCode.parse(line);
+      if (!entry) continue;
+      const ev = claudeCode.classify(entry, ctx).find((e) => e.kind === "human");
+      if (ev) return ev.text;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/** The `sessions-index.json` entry for a session, only while its `fileMtime` matches the file. */
+export async function indexEntry(session: Session, mtimeMs?: number): Promise<IndexEntry | undefined> {
+  const dir = session.kind === "main" ? (session.project?.dir ?? dirname(session.path)) : undefined;
+  if (!dir) return undefined;
+  const e = (await readSessionsIndex(dir)).get(session.id);
+  if (e?.fileMtime === undefined) return undefined;
+  let mtime = mtimeMs;
+  if (mtime === undefined) {
+    try {
+      mtime = (await stat(session.path)).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+  return Math.trunc(e.fileMtime) === Math.trunc(mtime) ? e : undefined;
+}
+
+/**
+ * The title a single-session header prints (cli.md#conventions): the cheap sources only, so it
+ * depends on the file and its sidecar, never the cache. Undefined means `(untitled)`.
+ */
+export async function headerTitle(session: Session): Promise<string | undefined> {
+  return (await customTitleFile(session)) ?? (await indexEntry(session))?.summary ?? (await headHuman(session));
 }
 
 /** The title by precedence (data-model.md#session), read back from its source line. */
@@ -241,9 +290,10 @@ export async function sessionStats(session: Session, opts: StatsOpts = {}): Prom
 
 /**
  * Stats without a whole-file pass (the home view): the mirror, or an existing table extended over
- * an append of at most `maxAppend` bytes. Undefined when neither is at hand.
+ * its appended bytes when they fit `budget.left` (which the extension spends; default 8 MB).
+ * Undefined when neither is at hand.
  */
-export async function cachedStats(session: Session, opts: StatsOpts & { maxAppend?: number } = {}): Promise<SessionStats | undefined> {
+export async function cachedStats(session: Session, opts: StatsOpts & { maxAppend?: number; budget?: { left: number } } = {}): Promise<SessionStats | undefined> {
   const cache = opts.cache ?? {};
   let st;
   try {
@@ -253,7 +303,13 @@ export async function cachedStats(session: Session, opts: StatsOpts & { maxAppen
   }
   const m = await loadMirror(session.path, cache);
   if (m) return build(session, m, st.size, st.mtime);
-  const table = await ensureTable(session, { ...cache, build: false, maxAppend: opts.maxAppend ?? 8 << 20 });
+  const budget = opts.budget ?? { left: opts.maxAppend ?? 8 << 20 };
+  const existing = await loadTable(session.path, cache);
+  if (!existing) return undefined;
+  const need = Math.max(0, st.size - existing.end);
+  if (need > budget.left) return undefined;
+  budget.left -= need;
+  const table = await ensureTable(session, { ...cache, build: false, maxAppend: need });
   if (!table) return undefined;
   return statsFromTable(session, table, cache);
 }

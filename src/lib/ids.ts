@@ -8,6 +8,7 @@ import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentSessionError } from "./errors.js";
+import { head, oneLine } from "../output/truncate.js";
 import type { EventId, Session } from "./model.js";
 import { resolveScope, type ResolvedScope, type Scope } from "./scope.js";
 import { openSession } from "./session.js";
@@ -156,11 +157,16 @@ async function byPrefix(prefix: string, scope: Scope): Promise<Session> {
   );
 }
 
-/** A title as one line, cut to the row head (data-model.md#session). */
+/**
+ * A title as one line, cut to the row head (data-model.md#session): the same cut a `sessions`
+ * title cell gets (truncation.md's marks and protected spans), so a candidate reads like its row.
+ */
 function titleHead(title: string): string {
-  const line = title.replace(/(\r?\n)+/g, " ").trim();
-  return line.length > 200 ? `${line.slice(0, 200)}…` : line;
+  return head(oneLine(title).trim(), TITLE_HEAD).text;
 }
+
+/** The row head a title is cut to (truncation.md#caps). */
+const TITLE_HEAD = 200;
 
 /**
  * The `<s8>`s that more than one session in scope shares. A hint may name such a session only by
