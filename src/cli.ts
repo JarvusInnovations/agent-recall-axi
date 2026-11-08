@@ -16,6 +16,7 @@ import { updateCommand } from "./commands/update.js";
 import { panCommand } from "./commands/pan.js";
 import { cacheCommand } from "./commands/cache.js";
 import { compactionsCommand, humanCommand, toolsCommand, turnsCommand } from "./commands/views.js";
+import { resumePackCommand } from "./commands/resume-pack.js";
 
 const USAGE_CODES = new Set(["USAGE", "UNKNOWN_FLAG", "VALIDATION_ERROR"]);
 
@@ -93,6 +94,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   commands.human = (a) => humanCommand(a, ctx);
   commands.tools = (a) => toolsCommand(a, ctx);
   commands.compactions = (a) => compactionsCommand(a, ctx);
+  // The cold-start pack (plan resume-pack-library).
+  commands["resume-pack"] = (a) => resumePackCommand(a, ctx);
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
 
