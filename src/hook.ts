@@ -26,7 +26,8 @@ export const HOOK_READ_LIMITS: ReadLimits = { firstByteMs: 200, totalMs: 1000, m
 /** The sources after which the agent has lost its context: print the resume pack. */
 export const RESUME_SOURCES = new Set(["compact", "resume"]);
 
-const SESSION_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$|^[0-9a-f]{8,}$/i;
+/** A full session uuid: a prefix, a path, a flag or `latest` never reaches resume-pack. */
+const SESSION_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 /** A SessionStart payload with a usable `session_id` and `source`, or undefined. */
 export function parseHookPayload(text: string | undefined): HookPayload | undefined {
@@ -40,7 +41,6 @@ export function parseHookPayload(text: string | undefined): HookPayload | undefi
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const v = value as Record<string, unknown>;
   if (typeof v.session_id !== "string" || typeof v.source !== "string") return undefined;
-  // Only a session id goes on to resume-pack: never a path, a flag or a reference like `latest`.
   if (!SESSION_ID.test(v.session_id)) return undefined;
   const out: HookPayload = { session_id: v.session_id.toLowerCase(), source: v.source };
   if (typeof v.transcript_path === "string") out.transcript_path = v.transcript_path;
@@ -58,6 +58,7 @@ export type StdinLike = Readable & { isTTY?: boolean };
 export function readHookStdin(stdin: StdinLike | undefined, limits: ReadLimits = HOOK_READ_LIMITS): Promise<string | undefined> {
   if (!stdin || stdin.isTTY) return Promise.resolve(undefined);
   return new Promise((resolveText) => {
+    const chunks: Buffer[] = [];
     let text = "";
     let bytes = 0;
     let done = false;
@@ -82,9 +83,11 @@ export function readHookStdin(stdin: StdinLike | undefined, limits: ReadLimits =
     };
     const onData = (chunk: Buffer | string) => {
       if (total === undefined) total = setTimeout(() => finish(text || undefined), limits.totalMs);
-      const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
-      text += s;
+      const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+      chunks.push(buf);
+      bytes += buf.length;
+      // Decoded whole each time, so a character split across chunks is never mangled.
+      text = Buffer.concat(chunks).toString("utf8");
       if (bytes >= limits.maxBytes) return finish(text);
       if (text.trimEnd().endsWith("}")) {
         try {
