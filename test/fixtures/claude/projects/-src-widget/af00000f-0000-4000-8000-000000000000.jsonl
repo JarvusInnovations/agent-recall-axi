@@ -1,0 +1,22 @@
+{"type":"ai-title","note":"ai-title bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"custom-title","note":"custom-title bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"last-prompt","note":"last-prompt bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"mode","note":"mode bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"permission-mode","note":"permission-mode bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"atis-latch","note":"atis-latch bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"bridge-session","note":"bridge-session bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"api-request","note":"api-request bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"api-request-blob","note":"api-request-blob bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"api-request-shape","note":"api-request-shape bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"file-history-snapshot","note":"file-history-snapshot bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"file-history-delta","note":"file-history-delta bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"queue-operation","note":"queue-operation bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"session-owner","note":"session-owner bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"tools-used","note":"tools-used bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"pr-link","note":"pr-link bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"frame-link","note":"frame-link bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"history-suppression","note":"history-suppression bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"artifact-publish","note":"artifact-publish bookkeeping","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"widget-telemetry","note":"a type the adapter does not know","sessionId":"af00000f-0000-4000-8000-000000000000"}
+{"type":"user","message":{"role":"user","content":"truncated mid-write
+{"parentUuid":null,"isSidechain":false,"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["WidgetTool"]},"uuid":"af00000f-0000-4000-8000-000000000001","timestamp":"2026-11-07T13:40:02.000Z","userType":"external","entrypoint":"cli","cwd":"/src/widget","sessionId":"af00000f-0000-4000-8000-000000000000","version":"2.1.0","gitBranch":"main"}

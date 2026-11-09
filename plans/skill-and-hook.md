@@ -1,0 +1,154 @@
+---
+status: done
+depends: [sessions-and-recall, resume-pack-library]
+specs:
+  - specs/architecture.md
+  - specs/cli.md
+  - specs/behaviors/privacy.md
+issues: [1]
+pr: 19
+---
+
+# Plan: Skill bundle and session hook
+
+## Scope
+
+The second distribution channel and the ambient integration: the esbuild single-file bundle
+committed under `skills/agent-session-axi/scripts/` with its shim, `SKILL.md` with a generated
+command reference, `--check` drift gates in CI for both, `hook install|status|uninstall` for
+Claude Code, Codex and OpenCode at user or project scope, and hook mode for the home view
+(resume pack after `compact`/`resume`).
+
+## Implements
+
+- `specs/architecture.md#build-and-distribution` (channel 2), `#session-hook`.
+- `specs/cli.md#hook`, `#home-view-no-arguments` (hook mode).
+- `specs/behaviors/privacy.md` — the skill states the rule; hook installs only on explicit command.
+
+## Approach
+
+0. **Prove the hook payload path first.** Install the SDK's SessionStart hook into a scratch
+   settings file, run the installed command string the way Claude Code does (JSON payload with
+   `session_id`, `transcript_path`, `source: compact` on stdin), and record whether the home view
+   process receives it. If it does, hook mode rides the SDK install. If the SDK's command wrapping
+   drops stdin, register our own `ManagedHookSpec` via `computeSessionStartHookUpdate` with a
+   command that reads stdin, and keep the SDK helpers for status/uninstall. Write the finding into
+   this plan's Notes before step 1 begins.
+1. `scripts/build-cli.ts` (from the axi-skills templates): esbuild `src/cli-bundle-entry.ts` →
+   `skills/agent-session-axi/scripts/agent-session-axi.mjs`, `platform: node`, `target: node22`,
+   `format: esm`, shebang banner, version stamped from `git describe`; `--check` normalizes the
+   version literal out of both sides before comparing. Executable bit committed; `.gitattributes`
+   marks the bundle `linguist-generated`.
+2. Shim `skills/agent-session-axi/scripts/agent-session-axi`: three-line bash `exec node
+   "$(dirname "$0")/agent-session-axi.mjs" "$@"`.
+3. `cliInvocation()`: resolved path for emitted examples; bare `agent-session-axi` only when it is
+   on `PATH` and resolves to the running executable.
+4. `scripts/build-skill.ts`: splice `COMMAND_GROUPS` into `SKILL.md` between
+   `<!-- BEGIN/END GENERATED: command-reference -->`; prose hand-written: trigger-shaped
+   frontmatter (`description` written for "what was I doing / have I dealt with this / what did
+   the human ask"), the privacy sentence, the zoom ladder, the exploration loop, and both install
+   paths.
+5. `commands/hook.ts`: wrap SDK `installSessionStartHooks`/`sessionStartHookStatus`/
+   `uninstallSessionStartHooks` with `marker: "agent-session-axi"`, `--scope`, `--agent`;
+   idempotent; path repair; `AGENT_SESSION_AXI_DISABLE_HOOKS=1` honored (tests set it).
+6. `src/hook.ts`: detect a SessionStart payload on non-TTY stdin (`session_id`, `source`,
+   `transcript_path`); home prints `resume-pack <session> --budget 6000` for `compact`/`resume`,
+   the listing otherwise; falls back to the listing when the payload is unparsable.
+7. CI: `check:bundle`, `check:skill`; a job that runs the committed bundle on a fresh checkout
+   with `node` only (no `bun install`) against the fixtures.
+
+## Validation
+
+- [x] Step 0 recorded in Notes: a reproducible test shows whether the SDK-installed command
+      receives the SessionStart stdin payload; hook mode is wired through whichever path the
+      test proved, and a fixture test pipes `source: compact` through that exact command string.
+- [x] `bun run build:bundle` produces a single `.mjs` with no `import` of a bare package name
+      (grep); `node skills/agent-session-axi/scripts/agent-session-axi.mjs --version` works in a
+      checkout with `node_modules` removed; the shim runs the same.
+- [x] `check:bundle` passes right after a build, fails after a one-line source change, and
+      passes again across a commit that changed only the git sha (version normalization).
+- [x] `SKILL.md` has frontmatter `name`, `description`; the generated region matches
+      `COMMAND_GROUPS`; `check:skill` fails when a command summary changes without regeneration;
+      every example in the skill uses the resolved path form, not a bare binary name.
+- [x] `hook install --scope project` adds the Claude Code `SessionStart` entry, the Codex hook and
+      the OpenCode plugin under the project; `hook status` reports all three; running twice is a
+      no-op (file bytes unchanged); `hook uninstall` removes only marker-matched entries and leaves
+      a pre-existing unrelated hook intact (fixture settings file).
+- [x] Hook mode: piping `{"session_id":"<fixture>","source":"compact"}` into the home view prints
+      a resume pack for that session with `budget: … of 6k`; `source: startup` prints the listing;
+      garbage on stdin prints the listing.
+- [x] No command other than `hook install` writes to any settings file (test wraps the fixture
+      home dir and asserts no writes).
+- [x] The fresh-checkout CI job runs `tail`, `find`, `resume-pack` via the bundle against fixtures
+      and matches the `dist/` outputs byte-for-byte.
+- [ ] `npx skills add` dry run: the skill directory contains only `SKILL.md`, `scripts/`, and
+      nothing that depends on the repo root at runtime.
+
+## Risks / unknowns
+
+- **Hook payload path** — settled by Approach step 0 before any other work in this plan; the
+  custom `ManagedHookSpec` is the fallback, not an open design question.
+- **Bundle reproducibility** — esbuild output must be deterministic across machines for the drift
+  gate; pin esbuild exactly and build in CI with the same Node major.
+- **`.mjs` and SDK auto-install** — the SDK's filename heuristic never auto-installs hooks for a
+  `.mjs` entry, which is the behavior we want; do not pass `hooks:` options.
+
+## Notes
+
+- **Step 0 (hook payload path), recorded before step 1.** `installSessionStartHooks` (axi-sdk-js
+  0.1.14) writes the resolved binary itself as the hook `command` (an absolute path, or the bare
+  name when it is on `PATH` and resolves to the same file), with no wrapper, for Claude Code and
+  Codex. Installed into a scratch home and project and run the way Claude Code runs a hook
+  (`sh -c "<command>"` with a JSON payload carrying `session_id`, `transcript_path` and
+  `source: compact` on stdin), the process received the payload byte for byte. Hook mode
+  therefore rides the SDK install; no custom `ManagedHookSpec` is needed. The OpenCode plugin the
+  SDK writes spawns the command with stdin ignored, so under OpenCode the home view always sees
+  an empty stdin and prints the listing. `test/hook.test.ts` repeats this through the exact
+  command string the install wrote.
+- **Specs settled first** (`docs(specs)` commit): user is the default scope; the per-scope
+  targets (a project install still sets Codex's user-level `[features] hooks = true`, the only
+  place Codex reads it); `--agent`; the hook command; output, states and exit codes;
+  `AGENT_SESSION_AXI_DISABLE_HOOKS`; the bounded stdin read and every listing fallback in hook
+  mode; hints naming the shim path off `PATH`; the bundle build, shim and CI job.
+- **Approach deviations** (Validation unchanged): the esbuild entry is `bin/agent-session-axi.ts`
+  itself (no `src/cli-bundle-entry.ts`), so the bundle keeps the version fast path; the shim
+  resolves its own symlinks, so it is a few lines longer than the template; `cliInvocation()`
+  (`src/invocation.ts`) changes hints only when running from the bundle, and the npm bin keeps the
+  bare name, which is what keeps bundle and `dist/` output byte-identical with the shim on `PATH`.
+- **The SDK's install/status/uninstall are not used for settings** (review round 1): they
+  match entries by a substring of the marker, write commands unquoted and files non-atomically,
+  append a second `[features]` table to some Codex configs, replace a non-array `SessionStart`,
+  and ignore `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `XDG_CONFIG_HOME`. `src/commands/hook-settings.ts`
+  owns the merges: exact one-word ownership, shell-quoting, shape checks, a read-back after each
+  write, atomic writes that keep indentation, mode and keys, and a features-table check on the
+  Codex config. The SDK still generates the OpenCode plugin source (into a throwaway home; its
+  command line is then set) and resolves the PATH-portable command.
+- **Review round 1 (on PR #19)**: the findings above plus `~/` kept outside quotes in hint
+  paths, the `update` channel decided by `bundleShim()`, a shim that ignores `CDPATH` and checks
+  for node 22+, module-path comments stripped from the bundle, `privacy.md` naming `hook install`
+  as the one write outside the cache, project scope no longer writing the user's Codex config,
+  and wall-clock asserts moved to `test/hook-perf.test.ts` (perf project). `@toon-format/toon` is
+  still bundled twice (the SDK depends on `^2.1.0`, this package on `^4.4.0`); deduping would
+  need the SDK to move.
+- **esbuild reads `tsconfig.json`** (`strict` adds `"use strict"` to each module), so the bundle
+  depends on it as well as on `bin/`, `src/` and the lockfile. The check:bundle test copies it.
+- **Hook mode prints the pack under the SDK's `bin`/`description` home header**, since the SDK
+  owns the home view's header. The spec says so.
+- **Home view perf**: the bin opens stdin only when fd 0 is a pipe, socket or file. An
+  interleaved comparison with `develop`'s build showed the same median. The 64 MB `home-perf`
+  case was flaky on a heavily loaded dev host and passed in CI.
+- **Validation "`npx skills add` dry run"** stays unchecked: the real command needs the
+  registry. The substance is covered by the copy-out test (`test/skill.test.ts`: the directory
+  holds only `SKILL.md` and `scripts/`, and the copy runs with no `node_modules` above it) and by
+  the `skill-bundle` CI job. A real install is in `plans/first-publish.md`'s Validation.
+- The fresh-checkout criterion is verified by the `skill-bundle` job passing on PR #19 and by a
+  local simulation on a fresh clone.
+
+## Follow-ups
+
+- Issue [#21](https://github.com/JarvusInnovations/agent-session-axi/issues/21): make the
+  installed hook command portable (absolute paths in committed project settings, `npx -y`
+  installs). Paths with spaces and `CLAUDE_CONFIG_DIR` (#20) were fixed in review round 1.
+- Deferred to `first-publish`: stamping the release version into the committed bundle (rebuild
+  with `bun run build:bundle` once the `v*` tag exists, so the skill reports the npm version),
+  and filling in the README's skill-channel section.

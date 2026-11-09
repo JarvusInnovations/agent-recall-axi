@@ -1,0 +1,82 @@
+import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { FIXTURE_ROOT } from "./fixtures/build.js";
+import { run } from "./helpers/run.js";
+
+/** Every `Run \`agent-session-axi …\`` hint in an output, as argv. */
+function hints(out: string): string[][] {
+  return [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+}
+
+const cwd = "/src/sprocket";
+const FULL = "c3b5d7e9-ffff-4000-8000-000000000000";
+
+describe("hints when an <s8> is shared in scope", () => {
+  it("events/tail hints name the session by its full id, and every hint runs", async () => {
+    const tail = await run(["tail", "c3b5d7e9-ffff", "1"], { cwd });
+    expect(tail.exitCode).toBe(0);
+    const hs = hints(tail.stdout);
+    expect(hs.length).toBeGreaterThan(0);
+    expect(tail.stdout).toContain(`prev c3b5d7e9:2 --session ${FULL}`);
+    expect(tail.stdout).toContain(`show c3b5d7e9:2 --session ${FULL}`);
+    for (const h of hs) {
+      const r = await run(h, { cwd });
+      expect(r.exitCode, h.join(" ")).toBe(0);
+    }
+  });
+
+  it("sessions (`turns <uuid>`) and the home view (`tail <uuid>`) hint the full id for a shared <s8>", async () => {
+    // The home view's latest is the newest file: make it one of the two that share c3b5d7e9.
+    const root = mkdtempSync(join(tmpdir(), "asa-hints-"));
+    cpSync(join(FIXTURE_ROOT, "projects", "-src-sprocket"), join(root, "projects", "-src-sprocket"), { recursive: true });
+    const dir = join(root, "projects", "-src-sprocket");
+    const old = new Date("2026-11-06T12:00:00.000Z");
+    for (const f of readdirSync(dir)) if (f.endsWith(".jsonl")) utimesSync(join(dir, f), old, old);
+    const t = new Date("2026-11-07T13:59:00.000Z");
+    utimesSync(join(dir, `${FULL}.jsonl`), t, t);
+    const env = { CLAUDE_CONFIG_DIR: root };
+    try {
+      for (const args of [["sessions"], []]) {
+        const out = await run(args, { cwd, env });
+        const tail = hints(out.stdout).find((h) => h[0] === (args.length ? "turns" : "tail"))!;
+        expect(tail[1], args.join(" ")).toMatch(/^c3b5d7e9-(0000|ffff)-4000-8000-000000000000$/);
+        expect((await run(tail, { cwd, env })).exitCode).toBe(0);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("an ambiguous id suggests --session <uuid> per candidate", async () => {
+    const r = await run(["show", "c3b5d7e9:1"], { cwd });
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toMatch(/^code: AMBIGUOUS_SESSION$/m);
+    expect(r.stdout).not.toContain("more characters");
+    for (const id of ["c3b5d7e9-0000-4000-8000-000000000000", FULL]) expect(r.stdout).toContain(`--session ${id}`);
+  });
+
+  it("turns/human/tools/compactions hints name the session by its full id, and every hint runs", async () => {
+    for (const args of [["turns", FULL], ["human", FULL], ["tools", FULL], ["compactions", FULL]]) {
+      const out = await run(args, { cwd });
+      expect(out.exitCode, args.join(" ")).toBe(0);
+      for (const h of hints(out.stdout)) {
+        expect(h.join(" "), args.join(" ")).not.toMatch(/(^| )c3b5d7e9( |$)/);
+        const r = await run(h, { cwd });
+        expect(r.exitCode, h.join(" ")).toBe(0);
+      }
+    }
+    // Scope flags ride on every hint, so it resolves where this one did.
+    const scoped = await run(["turns", "c2a4e6f1", "--project", "/src/sprocket"], { cwd: "/src/widget" });
+    for (const h of hints(scoped.stdout)) {
+      expect(h, h.join(" ")).toContain("--project");
+      expect((await run(h, { cwd: "/src/widget" })).exitCode, h.join(" ")).toBe(0);
+    }
+  });
+
+  it("a unique <s8> stays short", async () => {
+    const r = await run(["tail", "c2a4e6f1", "1"], { cwd });
+    expect(r.stdout).toContain("prev c2a4e6f1:2 --limit 1`");
+  });
+});

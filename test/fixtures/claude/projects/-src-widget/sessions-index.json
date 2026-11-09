@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "a1000001-0000-4000-8000-000000000000",
+      "fullPath": "/fixture-root/projects/-src-widget/a1000001-0000-4000-8000-000000000000.jsonl",
+      "firstPrompt": "fixture",
+      "messageCount": 5,
+      "created": "2026-11-07T13:40:00.000Z",
+      "modified": "2026-11-07T13:40:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/src/widget",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "a2000002-0000-4000-8000-000000000000",
+      "fullPath": "/fixture-root/projects/-src-widget/a2000002-0000-4000-8000-000000000000.jsonl",
+      "firstPrompt": "fixture",
+      "messageCount": 4,
+      "created": "2026-11-07T13:40:00.000Z",
+      "modified": "2026-11-07T13:40:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/src/widget",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "a3000003-0000-4000-8000-000000000000",
+      "fullPath": "/fixture-root/projects/-src-widget/a3000003-0000-4000-8000-000000000000.jsonl",
+      "firstPrompt": "fixture",
+      "messageCount": 10,
+      "created": "2026-11-07T13:40:00.000Z",
+      "modified": "2026-11-07T13:40:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/src/widget",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "deadbeef-0000-4000-8000-000000000000",
+      "fullPath": "/fixture-root/projects/-src-widget/deadbeef-0000-4000-8000-000000000000.jsonl",
+      "firstPrompt": "a session whose file is gone",
+      "messageCount": 2,
+      "created": "2026-11-07T13:40:00.000Z",
+      "modified": "2026-11-07T13:40:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/src/widget",
+      "isSidechain": false
+    }
+  ],
+  "originalPath": "/src/widget"
+}
