@@ -5,7 +5,7 @@ import { COMMAND_GROUPS, DESCRIPTION } from "./reference.js";
 import { VERSION } from "./version.js";
 import { renderCommandHelp, renderTopLevelHelp } from "./output/help.js";
 import { renderHelp } from "./output/render.js";
-import { BIN, type Io } from "./commands/common.js";
+import { BIN, shellArg, type Io } from "./commands/common.js";
 import { usageLine } from "./flags.js";
 import { eventsCommand, tailCommand } from "./commands/events.js";
 import { homeView } from "./commands/home.js";
@@ -104,8 +104,10 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   // Cross-project memory (plan sessions-and-recall).
   commands.search = (a) => recallCommand(a, ctx);
   // The pre-rename verb: one corrected call, not a guess (cli.md#search-phrase).
-  commands.recall = () => {
-    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search "<phrase>"\` to search every project`, usageLine("search")]);
+  commands.recall = (a) => {
+    // Carry the phrase and flags over, so the correction is one paste, not a rewrite.
+    const carried = a.length ? a.map(shellArg).join(" ") : '"<phrase>"';
+    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search ${carried}\` to search every project`, usageLine("search")]);
   };
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
