@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.2.0" : readVersion();
+    VERSION = true ? "0.2.1" : readVersion();
   }
 });
 
@@ -7548,7 +7548,7 @@ function status(ctx, io) {
   });
   const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
   const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
-  const body = { hook: `${word} (${ctx.scope} scope)` };
+  const body = { hook: `${word} (${ctx.scope} scope${failed ? "; see errors" : ""})` };
   if (seen.size === 1) body.command = [...seen][0];
   else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
@@ -9988,8 +9988,9 @@ async function main(argv = process.argv.slice(2), io = {}) {
   commands.compactions = (a) => compactionsCommand(a, ctx);
   commands["resume-pack"] = (a) => resumePackCommand(a, ctx);
   commands.search = (a) => recallCommand(a, ctx);
-  commands.recall = () => {
-    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search "<phrase>"\` to search every project`, usageLine("search")]);
+  commands.recall = (a) => {
+    const carried = a.length ? a.map(shellArg).join(" ") : '"<phrase>"';
+    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search ${carried}\` to search every project`, usageLine("search")]);
   };
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
   commands.hook = (a) => hookCommand(a, { ...ctx, ...io.entrypoint ? { entrypoint: io.entrypoint } : {} });

@@ -146,6 +146,8 @@ describe("events", () => {
     expect(exitCode).toBe(2);
     expect(stdout).toMatch(/^error: "?recall is now `search`"?$/m);
     expect(stdout).toContain("agent-recall-axi search");
+    const carried = await run(["recall", "flange gasket", "--since", "1y"]);
+    expect(carried.stdout).toContain("Run `agent-recall-axi search 'flange gasket' --since 1y` to search every project");
   });
 
   it("tools prints four default columns; --fields t adds the time", async () => {
