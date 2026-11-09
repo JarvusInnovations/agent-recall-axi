@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.1.1" : readVersion();
+    VERSION = true ? "0.1.2" : readVersion();
   }
 });
 
@@ -2255,7 +2255,7 @@ var init_reference = __esm({
       JSON_OUT
     ];
     TOOLS_FIELDS = ["result_id", "error", "files"];
-    SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"];
+    SESSIONS_FIELDS = ["started", "uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"];
     HOOK_SCOPES = ["user", "project"];
     HOOK_AGENTS = ["claude", "codex", "opencode"];
     HOOK_SCOPE = { name: "scope", value: "string", arg: "<user|project>", describe: "user: each agent's home config; project: this directory's", default: "user" };
@@ -6229,13 +6229,15 @@ function parseFields(text) {
 function sessionRow(s, tz, now, extra) {
   const row = {
     id: s.short,
-    started: s.started ? formatMonthDayMinute(new Date(s.started), tz) : "",
     last: `${formatMonthDayMinute(new Date(s.last), tz)} (${formatAgo(new Date(s.last), now)})`,
     turns: s.turns,
     title: titleCell(s.title)
   };
   for (const f of extra) {
     switch (f) {
+      case "started":
+        row.started = s.started ? formatMonthDayMinute(new Date(s.started), tz) : "";
+        break;
       case "uuid":
         row.uuid = s.id;
         break;

@@ -140,11 +140,11 @@ agent-session-axi sessions [--project <p> | --all] [--since <span>] [--from <whe
 
 Sessions in scope, most recently active first.
 
-Default schema: `sessions[N]{id,started,last,turns,title}` — `id` is `<s8>`; `started` and `last`
-are `MM-DD HH:MM` plus, for `last`, a relative suffix (`11-07 14:02 (3m ago)`); `turns` is the
-human-prompt count; `title` per `data-model.md#session`.
+Default schema: `sessions[N]{id,last,turns,title}` — four columns (AXI §2) — `id` is `<s8>`; `last`
+is `MM-DD HH:MM` plus a relative suffix (`11-07 14:02 (3m ago)`); `turns` is the human-prompt
+count; `title` per `data-model.md#session`.
 
-Extra fields: `uuid`, `path`, `project`, `bytes`, `lines`, `calls`, `compactions`, `humans`,
+Extra fields: `started` (`MM-DD HH:MM`), `uuid`, `path`, `project`, `bytes`, `lines`, `calls`, `compactions`, `humans`,
 `live`, `kind`, `parent`, `model`.
 
 - Default `--limit 20`. Default time window: none (all sessions in scope); `--since 7d` is the
