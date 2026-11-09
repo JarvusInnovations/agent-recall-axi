@@ -49,15 +49,21 @@ export async function homeCommand(io: Io): Promise<string> {
   const body: Record<string, unknown> = {};
   const cache = { env: io.env };
   let listing: HomeListing;
-  let none = false;
   try {
     listing = await homeListing({ cwd: io.cwd, env: io.env }, { limit: HOME_LIMIT, cache });
     body.project = `${collapseHome(listing.scope.projects[0]!.cwd)} (${listing.total} session${listing.total === 1 ? "" : "s"})`;
   } catch (err) {
     if (!(err instanceof AgentSessionError) || err.code !== "NO_SESSIONS") throw err;
-    none = true;
+    // This is what the SessionStart hook injects, so it stays scoped to the working directory
+    // (AXI §7): another project's sessions are context the agent did not ask for.
     body.project = `none for ${collapseHome(io.cwd)}`;
-    listing = await homeListing({ cwd: io.cwd, env: io.env, project: "all" }, { limit: HOME_LIMIT, cache });
+    body.sessions = "none in this directory";
+    return renderDocument(body, [
+      `Run \`${BIN} sessions --all\` for the newest sessions across every project`,
+      `Run \`${BIN} sessions --project <path>\` for one project's sessions`,
+      `Run \`${BIN} recall "<phrase>"\` to search every project`,
+      `Run \`${BIN} --help\` for the full command list`,
+    ]);
   }
   const skipped = unreadableNote(listing);
   if (skipped.count) body.unreadable = skipped.count;
@@ -71,20 +77,18 @@ export async function homeCommand(io: Io): Promise<string> {
   body.sessions = listing.sessions.map((s) => ({
     id: s.session.short,
     last: `${formatMonthDayMinute(new Date(s.last), tz)} (${formatAgo(new Date(s.last), io.now)})`,
-    turns: s.turns ?? "",
+    turns: s.turns ?? "?",
     title: titleCell(s.title),
   }));
   const latest = listing.sessions[0]!.session;
   body.latest = latest.short;
   body.last_human = lastHumanLine(listing, tz, io.now);
   const name = hintName(latest, listing.shared);
-  const scope = none ? " --all" : "";
-  if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}${scope}\` for a cold-start pack of the latest session`);
-  else help.push(`Run \`${BIN} human ${name} --window last${scope}\` for what the human asked in the latest session's live window`);
+  if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}\` for a cold-start pack of the latest session`);
+  else help.push(`Run \`${BIN} human ${name} --window last\` for what the human asked in the latest session's live window`);
   const unnumbered = listing.lastHuman?.event !== undefined && !listing.lastHuman.numbered;
-  help.push(`Run \`${BIN} tail ${name}${scope}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
-  if (none) help.push(`Run \`${BIN} sessions --project <path>\` for one project's sessions`);
-  else help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
+  help.push(`Run \`${BIN} tail ${name}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
+  help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
   help.push(`Run \`${BIN} recall "<phrase>"\` to search every project`);
   if (skipped.help) help.push(skipped.help);
   help.push(`Run \`${BIN} --help\` for the full command list, or \`${BIN} <command> --help\` for usage on any command`);
