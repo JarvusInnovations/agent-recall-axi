@@ -1,9 +1,11 @@
 ---
-status: in-progress
+status: done
+done: 2026-11-09
 depends: [main-default]
 specs:
   - specs/cli.md
   - specs/behaviors/errors.md
+pr: 29
 ---
 
 # Plan: Close the AXI conformance gaps found in catalog admission review
@@ -42,13 +44,21 @@ renamed-flag message. **Out:** session-end hooks, and `sessions`' fifth default 
 
 ## Validation
 
-- [ ] Unit: home in a cwd with no sessions prints `none in this directory`, no other project's ids,
+- [x] Unit: home in a cwd with no sessions prints `none in this directory`, no other project's ids,
       4 hints, and each runnable hint exits 0 from there; cold rows carry `turns: ?`.
-- [ ] Unit: a hook install with an unparseable settings file headlines `partly installed (...; see
+- [x] Unit: a hook install with an unparseable settings file headlines `partly installed (...; see
       errors)` and exits 1; uninstall's footer names `hook status` and `hook install` with the scope.
-- [ ] Unit: `-n 3` fails as `unknown flag -n` with `use --limit` and no `--n`; an unknown command is a
+- [x] Unit: `-n 3` fails as `unknown flag -n` with `use --limit` and no `--n`; an unknown command is a
       VALIDATION_ERROR whose hint names `agent-session-axi --help`.
-- [ ] Unit: the bin in hook mode with a silent or partial stdin, from a cwd with no sessions, prints
+- [x] Unit: the bin in hook mode with a silent or partial stdin, from a cwd with no sessions, prints
       the scoped home view.
-- [ ] check, check:types, check:skill, check:bundle and check:scrub pass, and CI is green, including the
+- [x] check, check:types, check:skill, check:bundle and check:scrub pass, and CI is green, including the
       perf project.
+
+## Notes
+
+- One hook test (`a held-open silent pipe ...`) runs from a cwd with no sessions and had relied on the
+  cross-project fallback to show rows. It now accepts the scoped empty state, which is still the home
+  view and not an error, and that is what the test is about.
+- The perf project's wall-clock budgets failed locally before and after this change on a heavily loaded
+  host. The last box is checked on CI's result, not the local run.
