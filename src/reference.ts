@@ -5,7 +5,7 @@
  * honest about what runs today. Leaf module: types and data only.
  */
 export const DESCRIPTION =
-  "Read, search and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
+  "Agent memory across your session history: search, read and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
 
 /** `optional`: a bare flag (true) or `--name=value` only; the next argument is never taken as its value. */
 export type FlagValue = "string" | "number" | "boolean" | "optional";

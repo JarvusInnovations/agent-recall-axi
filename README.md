@@ -1,10 +1,12 @@
 # agent-recall-axi
 
-Read, search and pan/zoom through AI agent session logs from the terminal, with token-efficient
-[TOON](https://toonformat.dev) output for the agents that read them. Claude Code's
+Agent memory across your session history: search, read and pan/zoom through AI agent session logs
+from the terminal, with token-efficient [TOON](https://toonformat.dev) output for the agents that
+read them. Claude Code's
 `~/.claude/projects/**/*.jsonl` is the first supported format; the reader is an event model with
 adapters, so another agent's logs are a new adapter file, not a rewrite. An
-[AXI](https://github.com/kunchenguid/axi) tool by Jarvus Innovations. MIT.
+[AXI](https://github.com/kunchenguid/axi) tool by Jarvus Innovations. MIT. (Formerly published as
+`agent-session-axi`.)
 
 **Privacy: reads local files only; sends nothing.** Session logs hold everything a human typed;
 this tool never opens a network connection, never modifies a log, and writes only its own
@@ -52,7 +54,7 @@ turns <session>               one row per human prompt
 events | tail | around | next | prev        rows with stable ids          (pan)
 show <id>                     one entry, whole; --full follows persisted outputs   (zoom)
 find [<session>] <phrase> --file <glob> --tool <name> --kind human …     (many ways in)
-recall <phrase>               "have I dealt with this before?" across every project
+search <phrase>               "have I dealt with this before?" across every project
 human <session>               what the human said, verbatim
 resume-pack <session>         the cold-start block: human text, last tool calls, last claims
 ```
