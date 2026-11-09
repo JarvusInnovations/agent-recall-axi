@@ -4,7 +4,7 @@ done: 2026-11-08
 depends: [first-release]
 specs:
   - specs/architecture.md
-pr: TBD
+pr: 28
 ---
 
 # Plan: `main` as the default branch
