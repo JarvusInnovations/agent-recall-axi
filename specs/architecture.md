@@ -272,8 +272,8 @@ Two channels from one source, both committed to the same tag:
 - **Release stamp.** `release-publish` tags `main`'s merge commit, which `develop` never
   reaches, so `git describe` on `develop` cannot name a release. The release version is
   therefore stamped explicitly: before the Release PR merges, a commit on `develop` rebuilds the
-  bundle with `--stamp <version>`, so the tree at the tag (and `develop`, which `npx skills add`
-  installs from) reports the release version. `release-validate.yml` fails a `Release: vX.Y.Z`
+  bundle with `--stamp <version>`, so the tree at the tag (and `main`, the default branch, which
+  `npx skills add` installs from) reports the release version. `release-validate.yml` fails a `Release: vX.Y.Z`
   PR whose committed bundle does not print `X.Y.Z`, and `publish-npm.yml` repeats the check at the
   tag before publishing. Between releases a rebuilt bundle reports `<package.json version>-g<sha>`
   (a development build). The order is in `RELEASING.md`.
@@ -330,6 +330,17 @@ slash command; `hook_success` and `stop_hook_summary`; an `isMeta` skill body; a
 block; `thinking` blocks; a subagent file under `subagents/`; every silent entry type; a malformed
 line; out-of-order timestamps; a `sessions-index.json`; and a second project directory. All text is
 generic (`widget`, `example.test`); no names, hosts, or paths from any real session appear.
+
+## Branches
+
+`main` is the default branch and the release target: it holds exactly what was last released, so
+`npx skills add JarvusInnovations/agent-session-axi` installs a released, stamped bundle and never
+an unreleased development build. Work merges to `develop`; only the `Release: v*` PR from
+`develop` (or a `hotfix/*` branch) merges to `main`. Because `main` is the default, PR tools open
+against it first, so two workflows keep the flow: `main-guard.yml`, a required check on PRs into
+`main`, fails any head other than `develop` or `hotfix/*`; `main-retarget.yml`
+(`pull_request_target`, API calls only, never checks out the PR's code) moves any other PR onto
+`develop` on open and says so.
 
 ## CI
 
