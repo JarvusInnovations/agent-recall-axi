@@ -1,10 +1,10 @@
 {
-  "name": "agent-session-axi",
+  "name": "agent-recall-axi",
   "type": "module",
   "scripts": {
-    "build": "tsc && chmod +x dist/bin/agent-session-axi.js",
+    "build": "tsc && chmod +x dist/bin/agent-recall-axi.js",
     "check": "tsc --noEmit",
-    "dev": "bun bin/agent-session-axi.ts",
+    "dev": "bun bin/agent-recall-axi.ts",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "build:skill": "bun scripts/build-skill.ts",
@@ -30,17 +30,17 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JarvusInnovations/agent-session-axi.git"
+    "url": "git+https://github.com/JarvusInnovations/agent-recall-axi.git"
   },
   "bin": {
-    "agent-session-axi": "dist/bin/agent-session-axi.js"
+    "agent-recall-axi": "dist/bin/agent-recall-axi.js"
   },
   "engines": {
     "node": ">=22"
   },
   "files": [
     "dist",
-    "skills/agent-session-axi",
+    "skills/agent-recall-axi",
     "LICENSE",
     "README.md"
   ],
