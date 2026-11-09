@@ -143,7 +143,7 @@ stream with a bounded window:
 
 ## Cache
 
-Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-recall-axi/`; a cache left at the former `agent-session-axi/` location is never read (it is rebuilt on demand) and `cache clear` deletes it too
+Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-recall-axi/`
 (default `~/.cache/agent-recall-axi/`), owner-only. Per file, keyed by its absolute path, it stores:
 an identity record for rewrite detection (byte length, the first line's hash once that line is
 complete, and the last complete line's byte offset, length and hash), a line-offset

@@ -666,14 +666,6 @@ the resume pack after a compaction). The one command that writes outside the cac
   (a wrapper with arguments, a pipeline, another tool) is never modified or removed, whatever it
   contains. The OpenCode plugin is ours only when its first line is the SDK's managed marker for
   `agent-recall-axi`.
-- **Migration from the former name.** The tool was published as `agent-session-axi` before
-  `agent-recall-axi`. Entries written under that name are ours too: the same one-word rule with
-  `agent-session-axi` (bare, `.js`, `.mjs`), and the plugin `axi-agent-session-axi.js` whose first
-  line is the managed marker for `agent-session-axi`. `status` shows such an entry as `stale`;
-  `install` rewrites it to the current command in place (the Claude Code and Codex entries) and
-  removes the former plugin file after writing the new one, so an upgraded user never runs both;
-  `uninstall` removes both names' entries. `AGENT_SESSION_AXI_DISABLE_HOOKS=1` is honoured as well
-  as `AGENT_RECALL_AXI_DISABLE_HOOKS=1`.
 - **Idempotent**: an install that changes nothing rewrites nothing (file bytes unchanged) and
   says so; our entry with another command (the binary moved) is rewritten in place (path
   repair), and a second entry of ours is removed. `uninstall` removes only our entries (and a

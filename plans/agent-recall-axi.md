@@ -26,8 +26,8 @@ before the catalog entry (kunchenguid/axi#266) merges and the name spreads into 
   and that would suggest a wrapper for the Recall.ai API.
 - **Verb.** The CLI verb `recall` becomes `search`, the verb agents guess first, which also avoids
   `agent-recall-axi recall`. A typed `recall` gets a targeted hint.
-- **Migration.** Hooks installed under the former name are recognized and repaired in place, and the
-  former OpenCode plugin is removed.
+- **No in-tool migration.** The tool is installed only on the maintainer's own two machines, so the
+  move to the new name is done by hand there after release. Nothing in the code knows the former name.
 - **Columns.** Every default table is four columns or fewer, except `find` and `search`, where the
   catalog entry records a justified principle 2 exception:
   - `turns` drops `events` and `calls` (`--full`).
@@ -51,17 +51,14 @@ before the catalog entry (kunchenguid/axi#266) merges and the name spreads into 
 ## Approach
 
 Rename mechanically across src, test, scripts, the skill and workflows; plans/ stays as historical
-record. `FORMER_NAME` joins the ownership sets in `hook-settings.ts`, so `withOurEntry` repairs a former
-entry in place and drops duplicates. Install removes `axi-agent-session-axi.js` when its marker
-matches. The `recall` verb gets a registered handler that throws VALIDATION_ERROR with the hint.
+record. The `recall` verb gets a registered handler that throws VALIDATION_ERROR with the hint.
 Schemas are trimmed at their render sites, and the dropped columns move behind `--full`/`--fields`.
 
 ## Validation
 
 - [ ] Unit: `search` matches what `recall` returned; `recall` fails VALIDATION_ERROR with the hint.
-- [ ] Unit: install over a former-name entry (Claude, Codex, OpenCode) leaves exactly one current
-      entry per agent and no former plugin; status shows former entries as `stale`; uninstall
-      removes them; the former disable env var is honoured.
+- [ ] After release: on both machines, uninstall the old hooks, skill and npm package and install the
+      new ones by hand.
 - [ ] Unit: the trimmed default schemas print, and each dropped column comes back through its flag.
 - [ ] check, check:types, check:skill, check:bundle and check:scrub pass, and CI is green.
 - [ ] The repo is renamed on GitHub, the package is published as `agent-recall-axi`, and
