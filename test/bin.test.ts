@@ -64,9 +64,9 @@ describe("built bin", () => {
     for (const args of [["update"], ["update", "--check"]]) {
       const r = runBin(args, ["--import", helper("block-network.mjs")]);
       expect(r.status).toBe(0);
-      expect(r.stdout).toMatch(/^update: agent-session-axi /m);
-      expect(r.stdout).toContain("npx skills update agent-session-axi");
-      expect(r.stdout).toContain("npm i -g agent-session-axi@latest");
+      expect(r.stdout).toMatch(/^update: agent-recall-axi /m);
+      expect(r.stdout).toContain("npx skills update agent-recall-axi");
+      expect(r.stdout).toContain("npm i -g agent-recall-axi@latest");
       expect(/NETWORK_ATTEMPTS (.*)/.exec(r.stderr)![1]).toBe("[]");
     }
     const help = runBin(["--help"]);

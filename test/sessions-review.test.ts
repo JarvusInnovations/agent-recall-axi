@@ -31,8 +31,8 @@ describe("1. the term index keeps no word order", () => {
   it("its tokens are stored sorted, whatever order the text wrote them in", async () => {
     const box = sandbox("terms-order");
     writeFileSync(join(box.dir, "d9000039-0000-4000-8000-000000000000.jsonl"), human("my zeta password is hunter2 alpha", 1));
-    await run(["recall", "zeta", "--since", "1y"], { env: box.env, now: NOW });
-    const dir = join(box.cache, "agent-session-axi", "terms");
+    await run(["search", "zeta", "--since", "1y"], { env: box.env, now: NOW });
+    const dir = join(box.cache, "agent-recall-axi", "terms");
     const rec = JSON.parse(readFileSync(join(dir, readdirSync(dir)[0]!), "utf8")) as { terms: Array<[string, number[]]> };
     const toks = rec.terms.map(([t]) => t);
     expect(toks).toEqual([...toks].sort());
@@ -64,7 +64,7 @@ describe("3. the cold home view never counts a file from its start", () => {
     writeFileSync(join(box.dir, "d9100039-0000-4000-8000-000000000000.jsonl"), human("first", 1) + human("the last prompt", 2));
     const cold = await run([], { env: box.env, now: NOW });
     expect(body(cold.stdout).last_human).toBe('13:12:00 "the last prompt"');
-    expect(cold.stdout).toContain("Run `agent-session-axi tail d9100039` for the last 20 rows with their ids");
+    expect(cold.stdout).toContain("Run `agent-recall-axi tail d9100039` for the last 20 rows with their ids");
     await run(["sessions"], { env: box.env, now: NOW });
     const warm = await run([], { env: box.env, now: NOW });
     expect(body(warm.stdout).last_human).toBe('d9100039:2 13:12:00 "the last prompt"');
@@ -89,15 +89,15 @@ describe("4. the term index survives another command extending the table", () =>
     // One session, so the header's index state is that session's own.
     writeGenerated(box.root, recallSessions().slice(0, 1));
     const opts = { env: box.env, now: NOW };
-    expect(body((await run(["recall", "sprocket rebalance", "--since", "1y"], opts)).stdout).index).toBe("none");
+    expect(body((await run(["search", "sprocket rebalance", "--since", "1y"], opts)).stdout).index).toBe("none");
     const path = join(box.root, "projects", "-src-gadget", "d1000031-0000-4000-8000-000000000000.jsonl");
     appendFileSync(path, human("another sprocket rebalance", 30, "2026-11-07T10:05:00.000Z"));
     await run(["sessions", "--all"], opts);
-    const r = await run(["recall", "sprocket rebalance", "--since", "1y"], opts);
+    const r = await run(["search", "sprocket rebalance", "--since", "1y"], opts);
     expect(body(r.stdout).index).toBe("partial");
     expect((body(r.stdout).sessions as Array<{ id: string; hits: number }>)[0]).toMatchObject({ id: "d1000031", hits: 3 });
     // Extended, not rebuilt: the record still holds the tokens it had and gained the new line's.
-    const dir = join(box.cache, "agent-session-axi", "terms");
+    const dir = join(box.cache, "agent-recall-axi", "terms");
     const rec = JSON.parse(readFileSync(join(dir, readdirSync(dir)[0]!), "utf8")) as { terms: Array<[string, number[]]> };
     expect(new Map(rec.terms).get("another")).toEqual([6]);
   });
@@ -142,7 +142,7 @@ describe("10. cross-session find widens even with an explicit window", () => {
     const box = sandbox("widen");
     writeGenerated(box.root, recallSessions());
     const r = await run(["find", "nothing like this", "--all", "--since", "30d"], { env: box.env, now: NOW });
-    expect(r.stdout).toContain("Run `agent-session-axi find 'nothing like this' --all --since 1y`");
+    expect(r.stdout).toContain("Run `agent-recall-axi find 'nothing like this' --all --since 1y`");
   });
 });
 
@@ -169,12 +169,12 @@ describe("15. titles and record hygiene", () => {
     const box = sandbox("regex-norewrite");
     writeGenerated(box.root, recallSessions());
     const opts = { env: box.env, now: NOW };
-    await run(["recall", "sprocket", "--since", "1y"], opts);
-    const base = join(box.cache, "agent-session-axi");
+    await run(["search", "sprocket", "--since", "1y"], opts);
+    const base = join(box.cache, "agent-recall-axi");
     const stamp = () => ["index", "terms"].flatMap((d) => readdirSync(join(base, d)).map((f) => `${d}/${f}:${statSync(join(base, d, f)).mtimeMs}`)).sort();
     const before = stamp();
     await new Promise((r) => setTimeout(r, 20));
-    const re = await run(["recall", "sprocket\\s+rebalance", "--regex", "--since", "1y"], opts);
+    const re = await run(["search", "sprocket\\s+rebalance", "--regex", "--since", "1y"], opts);
     expect((body(re.stdout).sessions as unknown[]).length).toBe(3);
     expect(stamp()).toEqual(before);
   });

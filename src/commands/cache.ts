@@ -19,16 +19,17 @@ export async function cacheCommand(args: string[], io: Io): Promise<string> {
   if (sub !== "status" && sub !== "clear") {
     throw new AxiError(`unknown cache subcommand ${sub}`, "USAGE", [usageLine("cache")]);
   }
-  // Flags are per subcommand: status takes none, clear takes the scope.
-  const flags = sub === "clear" ? (findCommand("cache")!.flags ?? []) : [];
+  // Flags are per subcommand: status takes --full, clear takes the scope.
+  const all = findCommand("cache")!.flags ?? [];
+  const flags = all.filter((f) => (sub === "status" ? f.name === "full" : f.name !== "full"));
   const p = parseFlags(`cache ${sub}`, args.slice(1), flags);
   if (p.help) return renderCommandHelp("cache") ?? "";
   if (p.positionals.length) throw new AxiError(`cache ${sub} takes no arguments`, "USAGE", [usageLine("cache")]);
   const opts = { env: io.env };
-  return sub === "status" ? status(opts) : clear(p, io, opts);
+  return sub === "status" ? status(opts, getBool(p, "full")) : clear(p, io, opts);
 }
 
-async function status(opts: { env: Io["env"] }): Promise<string> {
+async function status(opts: { env: Io["env"] }, full: boolean): Promise<string> {
   const s = await cacheStatus(opts);
   const dir = collapseHome(s.dir);
   if (!s.exists) {
@@ -37,11 +38,10 @@ async function status(opts: { env: Io["env"] }): Promise<string> {
   const header: Record<string, unknown> = { cache: dir, size: formatSize(s.size), tracked: `${s.tracked} file${s.tracked === 1 ? "" : "s"}` };
   header.count = `${s.indexed.length} indexed`;
   if (s.indexed.length) {
+    // {session,state,path} by default (AXI §2); --full adds the index details.
     header.indexed = s.indexed.map((f) => ({
       session: claudeCode.sessionForPath(f.path).short,
-      lines: f.lines,
-      checkpoints: f.checkpoints,
-      size: f.size < 1000 ? f.size : formatSize(f.size),
+      ...(full ? { lines: f.lines, checkpoints: f.checkpoints, size: f.size < 1000 ? f.size : formatSize(f.size) } : {}),
       state: f.state,
       path: collapseHome(f.path),
     }));

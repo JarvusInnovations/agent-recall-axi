@@ -41,7 +41,7 @@ describe("home view", () => {
     expect(helpLines(r.stdout)).toHaveLength(5);
     // Cold: no cached stats, so turns is unknown (`?`) and the title comes from the file's head.
     expect(rows[0]).toMatchObject({ turns: "?", title: expect.stringMatching(/^session 7 step 0: /) });
-    for (const h of helpLines(r.stdout).map((l) => /`agent-session-axi ([^`]*)`/.exec(l)![1]!)) {
+    for (const h of helpLines(r.stdout).map((l) => /`agent-recall-axi ([^`]*)`/.exec(l)![1]!)) {
       if (h.includes("<")) continue;
       expect((await run(h.split(" "), { env: box.env, now: NOW })).exitCode, h).toBe(0);
     }
@@ -86,7 +86,7 @@ describe("home view", () => {
     expect(r.stdout).toContain("sessions --all");
     expect(r.stdout).toContain("sessions --project <path>");
     // Every runnable hint works from here.
-    for (const h of helpLines(r.stdout).map((l) => /`agent-session-axi ([^`]*)`/.exec(l)![1]!)) {
+    for (const h of helpLines(r.stdout).map((l) => /`agent-recall-axi ([^`]*)`/.exec(l)![1]!)) {
       if (h.includes("<")) continue;
       expect((await run(h.split(" "), { env: box.env, now: NOW, cwd: "/elsewhere" })).exitCode, h).toBe(0);
     }

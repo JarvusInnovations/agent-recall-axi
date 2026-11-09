@@ -46,7 +46,7 @@ export function formatError(error: unknown): { output: string; exitCode: number 
   return {
     output: `${encode({ error: `unexpected failure: ${message}`, code: "INTERNAL_ERROR" })}\n${renderHelp([
       "Re-run with --debug for details on stderr",
-      "File an issue at https://github.com/JarvusInnovations/agent-session-axi/issues",
+      "File an issue at https://github.com/JarvusInnovations/agent-recall-axi/issues",
     ])}\n`,
     exitCode: 1,
   };
@@ -102,7 +102,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   // The cold-start pack (plan resume-pack-library).
   commands["resume-pack"] = (a) => resumePackCommand(a, ctx);
   // Cross-project memory (plan sessions-and-recall).
-  commands.recall = (a) => recallCommand(a, ctx);
+  commands.search = (a) => recallCommand(a, ctx);
+  // The pre-rename verb: one corrected call, not a guess (cli.md#search-phrase).
+  commands.recall = () => {
+    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search "<phrase>"\` to search every project`, usageLine("search")]);
+  };
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
   // The only command that writes outside the cache, and only when invoked (cli.md#hook).

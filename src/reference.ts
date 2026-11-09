@@ -151,7 +151,7 @@ const FIND_FLAGS: FlagSpec[] = [
   JSON_OUT,
 ];
 
-export const TOOLS_FIELDS = ["result_id", "error", "files"] as const;
+export const TOOLS_FIELDS = ["t", "result_id", "error", "files"] as const;
 export type ToolsField = (typeof TOOLS_FIELDS)[number];
 
 export const SESSIONS_FIELDS = ["started", "uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"] as const;
@@ -188,7 +188,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       {
         name: "turns",
         usage: "turns <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--project <p> | --all] [--json-out[=path]]",
-        summary: "one row per human prompt: events, calls and how the turn ended",
+        summary: "one row per human prompt and how the turn ended",
         status: "available",
         args: [SESSION_ARG],
         flags: [
@@ -197,7 +197,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           SINCE,
           WINDOW,
           { name: "limit", value: "number", arg: "<n>", describe: "turns to show, newest last; 0 = no cap", default: "30" },
-          { name: "full", value: "boolean", describe: "lift the prompt head cap and the row cap" },
+          { name: "full", value: "boolean", describe: "lift the prompt head cap and the row cap, and add the events and calls columns" },
           REF_PROJECT,
           REF_ALL,
           JSON_OUT,
@@ -376,8 +376,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: ['find "redirect"', 'find "redirect" --all', 'find latest "redirect"', "find 7a2f1c3e --file '*.env' --context 0", 'find 7a2f1c3e --tool bash "test" --since 1h', "find 7a2f1c3e --regex 'redir\\w+' --deep"],
       },
       {
-        name: "recall",
-        usage: "recall <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all] [--limit <n>] [--json-out[=path]]",
+        name: "search",
+        usage: "search <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all] [--limit <n>] [--json-out[=path]]",
         summary: "have I dealt with this before? what the human and the agent said, and the calls made, across every project, by session",
         status: "available",
         args: ["<phrase>: case-insensitive substring of human and agent text and call inputs (tool output is find's: find \"<phrase>\" --all)"],
@@ -394,7 +394,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           LIMIT("20"),
           JSON_OUT,
         ],
-        examples: ['recall "redirect loop"', 'recall "staging.env" --since 1y', 'recall "migration" --project ~/src/widget --kind human'],
+        examples: ['search "redirect loop"', 'search "staging.env" --since 1y', 'search "migration" --project ~/src/widget --kind human'],
       },
     ],
   },
@@ -416,15 +416,16 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         name: "cache",
-        usage: "cache status | cache clear [--project <p> | --all]",
+        usage: "cache status [--full] | cache clear [--project <p> | --all]",
         summary: "the disposable derived cache: where it is, what is indexed, how to clear it",
         status: "available",
         args: ["status: the directory, its size, every indexed session and its state", "clear: delete the cache (with --project, only that project's records)"],
         flags: [
+          { name: "full", value: "boolean", describe: "add each record's lines, checkpoints and size (status only)" },
           { name: "project", value: "string", arg: "<p>", describe: "clear only this project's session records (clear only)" },
           { name: "all", value: "boolean", describe: "clear the whole cache, the default (clear only)" },
         ],
-        examples: ["cache status", "cache clear", "cache clear --project ~/src/widget"],
+        examples: ["cache status", "cache status --full", "cache clear", "cache clear --project ~/src/widget"],
       },
       {
         name: "update",

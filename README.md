@@ -1,4 +1,4 @@
-# agent-session-axi
+# agent-recall-axi
 
 Read, search and pan/zoom through AI agent session logs from the terminal, with token-efficient
 [TOON](https://toonformat.dev) output for the agents that read them. Claude Code's
@@ -8,8 +8,8 @@ adapters, so another agent's logs are a new adapter file, not a rewrite. An
 
 **Privacy: reads local files only; sends nothing.** Session logs hold everything a human typed;
 this tool never opens a network connection, never modifies a log, and writes only its own
-disposable cache under `~/.cache/agent-session-axi/`, plus, only when you run
-`agent-session-axi hook install`, the agent settings files that command names (`hook uninstall`
+disposable cache under `~/.cache/agent-recall-axi/`, plus, only when you run
+`agent-recall-axi hook install`, the agent settings files that command names (`hook uninstall`
 reverts it). The rule is [`specs/behaviors/privacy.md`](specs/behaviors/privacy.md).
 
 Agents that run for days need to read their own and each other's sessions: after a context
@@ -24,21 +24,21 @@ Two channels ship the same tool from the same tag; you need only one.
 **npm**, for interactive use (Node 22 or newer):
 
 ```sh
-npm i -g agent-session-axi          # puts agent-session-axi on PATH
-npx -y agent-session-axi --version  # or run it without installing
+npm i -g agent-recall-axi          # puts agent-recall-axi on PATH
+npx -y agent-recall-axi --version  # or run it without installing
 ```
 
 **Skill**, for agents and bots, and it works offline:
 
 ```sh
-npx skills add JarvusInnovations/agent-session-axi        # this project (-g for every project)
+npx skills add JarvusInnovations/agent-recall-axi        # this project (-g for every project)
 ```
 
 The skill directory holds `SKILL.md` and `scripts/`: a committed, self-contained bundle
-(`agent-session-axi.mjs`, every dependency inlined) and a bash shim beside it. It needs `node` 22
+(`agent-recall-axi.mjs`, every dependency inlined) and a bash shim beside it. It needs `node` 22
 or newer and nothing else: no registry, no `npm install`, no `node_modules`, so a bot on a host
 that cannot reach npm at cold start still has its memory. The shim is not on `PATH`; run it by
-its path, for example `~/.claude/skills/agent-session-axi/scripts/agent-session-axi tail latest`,
+its path, for example `~/.claude/skills/agent-recall-axi/scripts/agent-recall-axi tail latest`,
 and the tool's own hints name that same path. `SKILL.md` tells the agent when to reach for it.
 The bundle reports the release it was cut from (`--version`): the default branch is `main`, which
 holds only released trees. Contributors: PRs go to `develop`; one opened against `main` is moved
@@ -62,20 +62,20 @@ of the file, and every listing ends with the exact command to move backward, for
 Going down the ladder for one session:
 
 ```sh
-agent-session-axi sessions                   # this project's sessions, newest first
-agent-session-axi turns 7a2f1c3e             # one row per human prompt in that session
-agent-session-axi tail 7a2f1c3e              # its last rows
-agent-session-axi around 7a2f1c3e:418        # the rows on either side of one entry
-agent-session-axi show 7a2f1c3e:418 --full   # that entry whole, persisted output included
+agent-recall-axi sessions                   # this project's sessions, newest first
+agent-recall-axi turns 7a2f1c3e             # one row per human prompt in that session
+agent-recall-axi tail 7a2f1c3e              # its last rows
+agent-recall-axi around 7a2f1c3e:418        # the rows on either side of one entry
+agent-recall-axi show 7a2f1c3e:418 --full   # that entry whole, persisted output included
 ```
 
 A `<session>` is a path, a uuid, an 8+ character prefix, or `latest`. After a compaction,
-`agent-session-axi resume-pack latest` is the one command to run. `agent-session-axi --help`
+`agent-recall-axi resume-pack latest` is the one command to run. `agent-recall-axi --help`
 lists every command, and `<command> --help` its flags.
 
 ## The session hook
 
-`agent-session-axi hook install` registers a SessionStart hook for Claude Code, Codex and
+`agent-recall-axi hook install` registers a SessionStart hook for Claude Code, Codex and
 OpenCode (`--scope project` for one repository, `--agent` for one agent). At session start it
 shows the project's sessions; after a compaction or a resume it prints a resume pack.
 `hook status` shows where it is installed and `hook uninstall` removes only this tool's entries.

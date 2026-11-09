@@ -212,7 +212,10 @@ export async function turnsCommand(args: string[], io: Io): Promise<string> {
   header.turns = kept.map((t) => {
     const prompt = t.prompt ? headCut(oneLine(t.prompt.text), head) : { text: "(session start)", cut: false };
     if (prompt.cut) cut++;
-    return { id: formatId(t.id), t: time.format(t as unknown as Event), prompt: prompt.text, events: t.events, calls: t.calls, ended: t.ended };
+    // Four columns by default (AXI §2); --full adds the counts.
+    const row: Record<string, string | number> = { id: formatId(t.id), t: time.format(t as unknown as Event), prompt: prompt.text, ended: t.ended };
+    if (full) Object.assign(row, { events: t.events, calls: t.calls });
+    return row;
   });
   const first = kept[0]!;
   const last = kept[kept.length - 1]!;
@@ -315,7 +318,7 @@ function parseToolsFields(text: string | undefined): ToolsField[] {
   return [...new Set(names)] as ToolsField[];
 }
 
-function toolsField(c: ToolCall, f: ToolsField): string | boolean {
+function toolsField(c: ToolCall, f: Exclude<ToolsField, "t">): string | boolean {
   switch (f) {
     case "result_id":
       return c.call.result ? formatId(c.call.result) : "";
@@ -398,8 +401,9 @@ export async function toolsCommand(args: string[], io: Io): Promise<string> {
         cut++;
         firstCut ??= ev.id;
       }
-      const row: Record<string, string | boolean> = { id: formatId(ev.id), t: time.format(ev), tool: ev.tool ?? "?", target: target.text, result: renderStatus(ev.status) };
-      for (const f of fields) row[f] = toolsField(c, f);
+      // Four columns by default (AXI §2): order lives in the ids; --fields t adds the time.
+      const row: Record<string, string | boolean> = { id: formatId(ev.id), tool: ev.tool ?? "?", target: target.text, result: renderStatus(ev.status) };
+      for (const f of fields) row[f] = f === "t" ? time.format(ev) : toolsField(c, f);
       return row;
     });
     parts.push(encode(header));
@@ -425,7 +429,7 @@ async function toolBlock(c: ToolCall, session: Session, fmt: (ev: Event) => stri
   const doc: Doc = { id: formatId(ev.id), t: fmt(ev), tool: ev.tool ?? "?" };
   if (ev.target !== undefined) doc.target = ev.target;
   doc.result = renderStatus(ev.status);
-  for (const f of fields) doc[f] = toolsField(c, f);
+  for (const f of fields) if (f !== "t") doc[f] = toolsField(c, f);
   if (ev.input !== undefined) doc.input = ev.input;
   const r = c.result;
   if (r) {
@@ -488,9 +492,9 @@ export async function compactionsCommand(args: string[], io: Io): Promise<string
   };
   const parts: string[] = [];
   if (!full) {
+    // Four columns by default (AXI §2); trigger and token counts are in --full.
     header.compactions = list.map((b) => {
-      const m = b.compaction.meta ?? {};
-      return { id: formatId(b.compaction.id), t: time.format(b.compaction), trigger: typeof m.trigger === "string" ? m.trigger : "unknown", pre: tokens(m.pre_tokens), post: tokens(m.post_tokens), summary: summaryId(b), window: b.opens };
+      return { id: formatId(b.compaction.id), t: time.format(b.compaction), summary: summaryId(b), window: b.opens };
     });
     parts.push(encode(header));
   } else {

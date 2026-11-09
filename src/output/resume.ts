@@ -1,6 +1,6 @@
 /**
  * The resume pack's TOON (specs/cli.md#resume-pack-session): the one renderer the `resume-pack`
- * command and the `agent-session-axi/render` subpath share, so a library caller gets the CLI's
+ * command and the `agent-recall-axi/render` subpath share, so a library caller gets the CLI's
  * exact bytes for the same pack.
  */
 import { encode } from "@toon-format/toon";
@@ -81,7 +81,6 @@ export function renderResumePack(pack: ResumePack, opts: RenderResumeOpts): stri
   parts.push(renderBlockList("human", pack.human.map((m) => ({ id: formatId(m.id), t: time.format(m), kind: m.kind, text: m.text }))));
   const rows = pack.tools.map((ev) => ({
     id: formatId(ev.id),
-    t: time.format(ev),
     tool: ev.tool ?? "?",
     target: ev.target !== undefined ? targetCut(ev, TARGET_HEAD).text : "",
     result: renderStatus(ev.status),

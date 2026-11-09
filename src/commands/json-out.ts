@@ -135,7 +135,7 @@ export async function openJsonOut(target: JsonOutTarget): Promise<JsonSink> {
   let path = target.path;
   let tempDir: string | undefined;
   if (!path) {
-    tempDir = await mkdtemp(join(target.tmp, "agent-session-axi-"));
+    tempDir = await mkdtemp(join(target.tmp, "agent-recall-axi-"));
     await chmod(tempDir, 0o700);
     path = join(tempDir, `${target.command.replace(/[^\w-]/g, "-")}.json`);
   }

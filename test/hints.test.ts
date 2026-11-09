@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_ROOT } from "./fixtures/build.js";
 import { run } from "./helpers/run.js";
 
-/** Every `Run \`agent-session-axi …\`` hint in an output, as argv. */
+/** Every `Run \`agent-recall-axi …\`` hint in an output, as argv. */
 function hints(out: string): string[][] {
-  return [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+  return [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
 }
 
 const cwd = "/src/sprocket";

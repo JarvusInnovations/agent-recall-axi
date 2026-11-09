@@ -1,6 +1,6 @@
 /**
  * `resume-pack <session>` (specs/cli.md#resume-pack-session): a thin rendering of
- * buildResumePack through the same renderResumePack the `agent-session-axi/render` subpath
+ * buildResumePack through the same renderResumePack the `agent-recall-axi/render` subpath
  * exports, so the CLI and a library caller print the same bytes.
  */
 import { AxiError } from "axi-sdk-js";

@@ -174,7 +174,7 @@ describe("the offset table on a 200 MB session (plan pan)", () => {
     expect(warm.ms).toBeLessThan(budget());
     const session = await openSession(big);
     const eid = { session: session.short, seq: lines - 2 };
-    const seeked = await show(session, eid, { cache: { dir: join(cacheHome, "agent-session-axi") } });
+    const seeked = await show(session, eid, { cache: { dir: join(cacheHome, "agent-recall-axi") } });
     const cold = await showFromStart(session, eid);
     expect(JSON.stringify({ ...seeked, session: undefined })).toBe(JSON.stringify({ ...cold, session: undefined }));
   }, 120_000);

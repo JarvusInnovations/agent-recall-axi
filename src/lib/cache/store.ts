@@ -4,7 +4,7 @@
  * (specs/behaviors/id-stability.md#append-only-is-assumed). The line-offset table lives beside it
  * (`index.ts`) and is discarded here when a rewrite is detected.
  *
- * The cache lives under `$XDG_CACHE_HOME/agent-session-axi/` (default `~/.cache/…`), owner-only,
+ * The cache lives under `$XDG_CACHE_HOME/agent-recall-axi/` (default `~/.cache/…`), owner-only,
  * and is never required: every failure to read or write it is swallowed and the caller behaves as
  * if it were absent. Nothing here writes anywhere else, and session files are only read.
  */
@@ -22,12 +22,12 @@ export interface CacheOpts {
   now?: Date;
 }
 
-/** `$XDG_CACHE_HOME/agent-session-axi`, else `~/.cache/agent-session-axi`. */
+/** `$XDG_CACHE_HOME/agent-recall-axi`, else `~/.cache/agent-recall-axi`. */
 export function cacheDir(opts: CacheOpts = {}): string {
   if (opts.dir) return opts.dir;
   const env = opts.env ?? process.env;
   const base = env.XDG_CACHE_HOME && env.XDG_CACHE_HOME.length ? env.XDG_CACHE_HOME : join(homedir(), ".cache");
-  return join(base, "agent-session-axi");
+  return join(base, "agent-recall-axi");
 }
 
 /** What the cache remembers about one file, keyed by its absolute path. */

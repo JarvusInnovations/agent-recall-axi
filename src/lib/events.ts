@@ -31,7 +31,7 @@ export interface ListOpts {
   newestLast?: boolean;
   /** One compaction window (`k`, `last`, `k..`); default `all` (behaviors/context-windows.md). */
   window?: WindowSel;
-  /** Where the derived cache lives (default: `$XDG_CACHE_HOME/agent-session-axi`). */
+  /** Where the derived cache lives (default: `$XDG_CACHE_HOME/agent-recall-axi`). */
   cache?: CacheOpts;
 }
 

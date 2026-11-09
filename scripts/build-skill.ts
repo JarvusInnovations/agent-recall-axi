@@ -1,6 +1,6 @@
 /**
  * Splice the command reference generated from COMMAND_GROUPS (src/reference.ts) into
- * skills/agent-session-axi/SKILL.md between its markers (specs/architecture.md#the-skill-bundle).
+ * skills/agent-recall-axi/SKILL.md between its markers (specs/architecture.md#the-skill-bundle).
  * The prose outside the markers is hand-written and never touched.
  *
  *   bun scripts/build-skill.ts            # rewrite the generated region (bun run build:skill)
@@ -11,9 +11,9 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COMMAND_GROUPS, type CommandGroup } from "../src/reference.js";
 
-export const SKILL_MD = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "agent-session-axi", "SKILL.md");
+export const SKILL_MD = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "agent-recall-axi", "SKILL.md");
 /** How SKILL.md invokes the tool: the shim, relative to the skill's own directory. */
-export const SKILL_INVOCATION = "scripts/agent-session-axi";
+export const SKILL_INVOCATION = "scripts/agent-recall-axi";
 export const REGION = "command-reference";
 
 export function commandReference(groups: CommandGroup[] = COMMAND_GROUPS): string {

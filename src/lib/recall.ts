@@ -270,8 +270,8 @@ export async function recall(phrase: string, opts: RecallOpts = {}): Promise<Rec
   if (opts.since && opts.from) throw new AgentSessionError("since and from both set the start; pass one", "USAGE", ["recall(phrase, { since }) or { from }"]);
   const bad = (opts.kinds ?? []).filter((k) => !SEARCHABLE.has(k));
   if (bad.length) {
-    throw new AgentSessionError(`recall searches what the human and the agent said and the calls it made; ${bad.join(", ")} ${bad.length === 1 ? "is" : "are"} not among them`, "VALIDATION_ERROR", [
-      `kinds recall takes: ${[...SEARCHABLE].join(", ")}`,
+    throw new AgentSessionError(`search covers what the human and the agent said and the calls it made; ${bad.join(", ")} ${bad.length === 1 ? "is" : "are"} not among them`, "VALIDATION_ERROR", [
+      `kinds search takes: ${[...SEARCHABLE].join(", ")}`,
       `Run \`${BIN} find "<phrase>" --all --kind <kinds>\` to search tool output and injected text`,
     ]);
   }
