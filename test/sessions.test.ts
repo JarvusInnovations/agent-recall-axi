@@ -73,10 +73,20 @@ describe("titles follow the precedence", () => {
 });
 
 describe("sessions: the full schema", () => {
+  it("defaults to four columns; --fields started adds the start time back (AXI §2)", async () => {
+    const plain = await run(["sessions", "--limit", "3"]);
+    expect(plain.stdout).toContain("{id,last,turns,title}:");
+    expect(plain.stdout).not.toContain("started");
+    const r = await run(["sessions", "--limit", "3", "--fields", "started"]);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("{id,last,turns,title,started}:");
+    for (const row of table(r.stdout, "sessions")) expect(String(row.started)).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
   it("--fields calls,compactions,humans,live,bytes,lines all populate", async () => {
     const r = await run(["sessions", "--limit", "0", "--fields", "calls,compactions,humans,live,bytes,lines,model"]);
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("{id,started,last,turns,title,calls,compactions,humans,live,bytes,lines,model}");
+    expect(r.stdout).toContain("{id,last,turns,title,calls,compactions,humans,live,bytes,lines,model}");
     const rows = Object.fromEntries(table(r.stdout, "sessions").map((x) => [x.id, x]));
     // compaction fixture: one boundary; the hooks fixture's queued/slash/answer count as humans.
     expect(rows.a6000006).toMatchObject({ compactions: 1, turns: 2 });
@@ -104,7 +114,7 @@ describe("sessions: the full schema", () => {
     const without = await run(["sessions", "--limit", "0"]);
     expect(without.stdout).not.toContain("ae0f1e2d");
     const withSubs = await run(["sessions", "--limit", "0", "--subagents"]);
-    expect(withSubs.stdout).toContain("{id,started,last,turns,title,kind,parent}");
+    expect(withSubs.stdout).toContain("{id,last,turns,title,kind,parent}");
     expect(table(withSubs.stdout, "sessions").find((x) => x.id === "ae0f1e2d")).toMatchObject({ kind: "subagent", parent: "ae00000e" });
     expect((await run(["tail", "ae0f1e2d"])).exitCode).toBe(0);
   });

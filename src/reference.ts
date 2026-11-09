@@ -154,7 +154,7 @@ const FIND_FLAGS: FlagSpec[] = [
 export const TOOLS_FIELDS = ["result_id", "error", "files"] as const;
 export type ToolsField = (typeof TOOLS_FIELDS)[number];
 
-export const SESSIONS_FIELDS = ["uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"] as const;
+export const SESSIONS_FIELDS = ["started", "uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"] as const;
 
 export const HOOK_SCOPES = ["user", "project"] as const;
 export const HOOK_AGENTS = ["claude", "codex", "opencode"] as const;

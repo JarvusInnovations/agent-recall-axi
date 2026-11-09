@@ -46,13 +46,15 @@ function parseFields(text: string | undefined): Field[] {
 export function sessionRow(s: SessionInfo, tz: string, now: Date, extra: readonly string[]): Record<string, string | number | boolean> {
   const row: Record<string, string | number | boolean> = {
     id: s.short,
-    started: s.started ? formatMonthDayMinute(new Date(s.started), tz) : "",
     last: `${formatMonthDayMinute(new Date(s.last), tz)} (${formatAgo(new Date(s.last), now)})`,
     turns: s.turns,
     title: titleCell(s.title),
   };
   for (const f of extra) {
     switch (f) {
+      case "started":
+        row.started = s.started ? formatMonthDayMinute(new Date(s.started), tz) : "";
+        break;
       case "uuid":
         row.uuid = s.id;
         break;

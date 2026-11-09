@@ -232,13 +232,13 @@ describe("sessions and home", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
     expect(stdout).toMatch(/^count: 3 of 22$/m);
-    expect(stdout).toContain("sessions[3]{id,started,last,turns,title}:");
-    expect(stdout).toContain('b1000011,"11-07 23:50","11-08 00:05 (0s ago)",2,start the overnight widget migration');
+    expect(stdout).toContain("sessions[3]{id,last,turns,title}:");
+    expect(stdout).toContain('b1000011,"11-08 00:05 (0s ago)",2,start the overnight widget migration');
   });
 
   it("--subagents adds kind and parent; --fields adds columns", async () => {
     const { stdout } = await run(["sessions", "--subagents", "--limit", "0", "--fields", "uuid"]);
-    expect(stdout).toContain("{id,started,last,turns,title,kind,parent,uuid}");
+    expect(stdout).toContain("{id,last,turns,title,kind,parent,uuid}");
     expect(stdout).toMatch(/ae0f1e2d,.*,subagent,ae00000e,ae0f1e2d3c4b5a697/);
     const bad = await run(["sessions", "--fields", "turns"]);
     expect(bad.exitCode).toBe(2);
