@@ -154,7 +154,7 @@ describe("the offset table on a 200 MB session (plan pan)", () => {
     const second = best(["around", anchor, "--session", big]);
     expect(second.ms).toBeLessThan(budget());
     expect(second.stdout).toBe(first.stdout);
-    const status = cli(["cache", "status"]);
+    const status = cli(["cache", "status", "--full"]);
     expect(status.stdout).toContain(`f0000099,${lines},${Math.ceil(lines / 256)},`);
   }, 120_000);
 
