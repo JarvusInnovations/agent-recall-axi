@@ -17,6 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # This repository is public: fail on any home path, email address or uuid from the
+      # real world before anything else runs (specs/architecture.md#ci).
+      - name: Scrub gate
+        run: bash scripts/scrub-check.sh
+
       - uses: actions/setup-node@v7
         with:
           node-version-file: .tool-versions
