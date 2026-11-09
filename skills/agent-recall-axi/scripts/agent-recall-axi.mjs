@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.0.0-g9ac22a0" : readVersion();
+    VERSION = true ? "0.0.0-g64efa3c" : readVersion();
   }
 });
 
@@ -2152,7 +2152,7 @@ var DESCRIPTION, GLOBAL_FLAGS, SESSION_ARG, ID_ARG, LIMIT, KIND, HEAD, FULL, FRO
 var init_reference = __esm({
   "src/reference.ts"() {
     "use strict";
-    DESCRIPTION = "Read, search and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
+    DESCRIPTION = "Agent memory across your session history: search, read and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
     GLOBAL_FLAGS = [
       { name: "tz", value: "string", arg: "<iana>", describe: "time zone for parsing and rendering", default: "TZ, else the system zone" }
     ];
