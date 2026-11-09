@@ -1,5 +1,6 @@
 ---
-status: in-progress
+status: done
+done: 2026-11-09
 depends: [sessions-four-columns]
 specs:
   - specs/cli.md
@@ -12,6 +13,7 @@ specs:
   - specs/behaviors/time-and-scope.md
   - specs/behaviors/row-format.md
   - specs/behaviors/errors.md
+pr: 32
 ---
 
 # Plan: Rename to `agent-recall-axi`, `search` verb, four-column defaults
@@ -56,10 +58,25 @@ Schemas are trimmed at their render sites, and the dropped columns move behind `
 
 ## Validation
 
-- [ ] Unit: `search` matches what `recall` returned; `recall` fails VALIDATION_ERROR with the hint.
+- [x] Unit: `search` matches what `recall` returned; `recall` fails VALIDATION_ERROR with the hint.
 - [ ] After release: on both machines, uninstall the old hooks, skill and npm package and install the
       new ones by hand.
-- [ ] Unit: the trimmed default schemas print, and each dropped column comes back through its flag.
-- [ ] check, check:types, check:skill, check:bundle and check:scrub pass, and CI is green.
+- [x] Unit: the trimmed default schemas print, and each dropped column comes back through its flag.
+- [x] check, check:types, check:skill, check:bundle and check:scrub pass, and CI is green.
 - [ ] The repo is renamed on GitHub, the package is published as `agent-recall-axi`, and
       `agent-session-axi` is deprecated on npm with a pointer to the new name.
+
+## Notes
+
+- `bun install` keeps a lockfile's root name, so the lockfile was regenerated from scratch. That picked
+  up a dev-only rolldown patch bump (1.2.16 → 1.2.18).
+- The GitHub repo was renamed before the PR merged, so its links and the release workflows see the new
+  name. GitHub redirects the old URL.
+
+## Follow-ups
+
+- **Deferred (maintainer, after release):**
+  - The first `agent-recall-axi` publish is manual (trusted publishing needs the package to exist), and
+    the trusted publisher then has to be configured on npmjs.
+  - Run `npm deprecate agent-session-axi "Renamed to agent-recall-axi"`.
+  - Move both machines over by hand (hooks, skill, global install).
