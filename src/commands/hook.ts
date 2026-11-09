@@ -338,7 +338,7 @@ function status(ctx: Ctx, io: HookIo): string {
   });
   const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
   const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
-  const body: Record<string, unknown> = { hook: `${word} (${ctx.scope} scope)` };
+  const body: Record<string, unknown> = { hook: `${word} (${ctx.scope} scope${failed ? "; see errors" : ""})` };
   if (seen.size === 1) body.command = [...seen][0];
   else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;

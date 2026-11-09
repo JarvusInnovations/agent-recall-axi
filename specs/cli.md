@@ -519,7 +519,8 @@ agent-recall-axi search <phrase> [--regex] [--file <pattern>] [--tool <name>] [-
 
 The flagship memory verb, named for the word an agent reaches for first. The pre-rename verb
 `recall` is not a command: it fails `VALIDATION_ERROR` (exit 2) with the targeted hint
-``recall is now `search` `` and the usage line, so a remembered `recall` costs one corrected call,
+``recall is now `search` ``, a hint carrying the same phrase and flags (`recall flange --since 1y` →
+``Run `agent-recall-axi search flange --since 1y` ``), and the usage line, so a remembered `recall` costs one corrected call,
 not a guess. (The library function keeps the name `recall`; `api.md`.)
 
 "Have I dealt with this before?" in one call: `find` across every session the agent can read,
@@ -706,7 +707,7 @@ help[2]:
   Code and Codex entries hold it. `codex_features` is printed when Codex is a target.
 - `status` states per target: `installed`, `stale` (ours, with a command other than the one
   `install` would write now), `absent`, or `error: <message>`; the first line is `hook:
-  installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`, with the scope,
+  installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`, with the scope (and `; see errors` when any target's row is an `error:`, exit 1),
   and `codex_features:` reports the user flag. It writes nothing. The footer suggests `hook
   install` when any target is not `installed`, else `hook uninstall`.
 - `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first

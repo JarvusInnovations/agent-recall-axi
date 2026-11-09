@@ -268,6 +268,9 @@ describe("hook install / status / uninstall", () => {
     expect(r.exitCode).toBe(1);
     // An errored target means the headline never claims success.
     expect(r.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
+    const st = await hook(b, ["status", "--scope", "project"], bin);
+    expect(st.exitCode).toBe(1);
+    expect(st.stdout).toMatch(/^hook: "?[a-z ]+ \(project scope; see errors\)"?$/m);
     expect(r.stdout).toMatch(/^ {2}claude,.*,"?error: /m);
     expect(r.stdout).toMatch(/codex,.*,added$/m);
     expect(readFileSync(join(b.project, ".claude", "settings.json"), "utf8")).toBe("{ not json");
@@ -634,7 +637,11 @@ describe("home view hook mode", () => {
   });
 
   it("startup, clear, garbage, an empty stdin, a payload without source and an unusable session print the listing", async () => {
+    // Warm the session-stats cache first: every case below shares it, and a cold baseline
+    // (mtime rows, turns `?`) would differ from a later stats-backed listing.
+    await run(["sessions", "--limit", "0"]);
     const listing = await run([]);
+    expect(listing.stdout).not.toMatch(/,\?,/);
     expect(listing.stdout).toMatch(/^sessions\[/m);
     const cases: Array<string | undefined> = [
       JSON.stringify({ session_id: id, source: "startup" }),

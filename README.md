@@ -6,7 +6,9 @@ read them. Claude Code's
 `~/.claude/projects/**/*.jsonl` is the first supported format; the reader is an event model with
 adapters, so another agent's logs are a new adapter file, not a rewrite. An
 [AXI](https://github.com/kunchenguid/axi) tool by Jarvus Innovations. MIT. (Formerly published as
-`agent-session-axi`.)
+`agent-session-axi`; if you installed it, run `agent-session-axi hook uninstall` and
+`npm uninstall -g agent-session-axi` before installing this, so the old session hook doesn't stay
+behind.)
 
 **Privacy: reads local files only; sends nothing.** Session logs hold everything a human typed;
 this tool never opens a network connection, never modifies a log, and writes only its own
