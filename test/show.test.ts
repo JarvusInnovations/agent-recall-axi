@@ -84,7 +84,7 @@ describe("show", () => {
     expect(p.exitCode).toBe(0);
     expect(p.stdout).toMatch(/^pointer: ".*tool-results\/bfx0001\.txt \(42\.8k, exists\)"$/m);
     expect(p.stdout).toMatch(/^preview: "widget gadget sprocket/m);
-    expect(p.stdout).toContain("Run `agent-session-axi show a4000004:3 --full` for the persisted output (42.8k)");
+    expect(p.stdout).toContain("Run `agent-recall-axi show a4000004:3 --full` for the persisted output (42.8k)");
     const full = await run(["show", "a4000004:3", "--full"]);
     const text = JSON.parse(field(full.stdout, "text")!) as string;
     expect(text.length).toBe(42_800);
@@ -117,8 +117,8 @@ describe("show", () => {
     expect(stdout).toMatch(/^kind: silent$/m);
     expect(stdout).toMatch(/^type: file-history-snapshot$/m);
     expect(stdout).toMatch(/^raw:\n {2}type: file-history-snapshot$/m);
-    expect(stdout).toContain("Run `agent-session-axi show b4000015:1` for the nearest event before");
-    expect(stdout).toContain("Run `agent-session-axi show b4000015:3.1` for the nearest event after");
+    expect(stdout).toContain("Run `agent-recall-axi show b4000015:1` for the nearest event before");
+    expect(stdout).toContain("Run `agent-recall-axi show b4000015:3.1` for the nearest event after");
     const malformed = await run(["show", "af00000f:21"]);
     expect(malformed.exitCode).toBe(0);
     expect(malformed.stdout).toMatch(/^malformed: true$/m);
@@ -128,7 +128,7 @@ describe("show", () => {
   it("a session opened by path keeps its path in the no-events hint", async () => {
     const r = await run(["show", "3", "--session", fx("silent")], { cwd: "/elsewhere" });
     expect(r.exitCode).toBe(0);
-    const hint = /`agent-session-axi (events [^`]*)`/.exec(r.stdout)![1]!;
+    const hint = /`agent-recall-axi (events [^`]*)`/.exec(r.stdout)![1]!;
     expect(hint).toContain(fx("silent").replace(/^.*\/test\//, ""));
     expect((await run(hint.split(" "), { cwd: "/elsewhere" })).exitCode).toBe(0);
   });
@@ -138,9 +138,9 @@ describe("show", () => {
     expect(exitCode).toBe(1);
     expect(stdout).toMatch(/^error: "a3000003:9999 is beyond the end of the session \(10 lines\)"$/m);
     expect(stdout).toMatch(/^code: NOT_FOUND$/m);
-    expect(stdout).toContain("Run `agent-session-axi tail a3000003` for the last rows of this session");
+    expect(stdout).toContain("Run `agent-recall-axi tail a3000003` for the last rows of this session");
     const scoped = await run(["show", "c1000013:50", "--all"]);
-    expect(scoped.stdout).toContain("Run `agent-session-axi tail c1000013 --all`");
+    expect(scoped.stdout).toContain("Run `agent-recall-axi tail c1000013 --all`");
   });
 
   it("--raw prints the stored line for any seq; --fields keeps only the named fields", async () => {
@@ -161,7 +161,7 @@ describe("show", () => {
     const text = JSON.parse(field(long.stdout, "text")!) as string;
     expect(text.endsWith(" … (truncated, 4500 chars total)")).toBe(true);
     expect(text.length).toBe(4000 + " … (truncated, 4500 chars total)".length);
-    expect(long.stdout).toContain("Run `agent-session-axi show b5000016:7 --full` for the complete text (4.5k chars)");
+    expect(long.stdout).toContain("Run `agent-recall-axi show b5000016:7 --full` for the complete text (4.5k chars)");
     const whole = await run(["show", "b5000016:7", "--full"]);
     expect((JSON.parse(field(whole.stdout, "text")!) as string).length).toBe(4500);
     expect(whole.stdout).not.toContain("help[");
@@ -171,7 +171,7 @@ describe("show", () => {
     // A call's linked result over the cap.
     const call = await run(["show", "b5000016:3"]);
     expect(call.stdout).toContain(" … (truncated, 5000 chars total)");
-    expect(call.stdout).toContain("Run `agent-session-axi show b5000016:3 --full` for the complete result (5.0k chars)");
+    expect(call.stdout).toContain("Run `agent-recall-axi show b5000016:3 --full` for the complete result (5.0k chars)");
   });
 
   it("H text is never cut by show; meta strings are capped with the marker and a --full hint", async () => {
@@ -184,7 +184,7 @@ describe("show", () => {
     expect(field(m.stdout, "text")).toBe("now the short prompt");
     const hookText = /^ {2}hook_text: (.*)$/m.exec(m.stdout)![1]!;
     expect((JSON.parse(hookText) as string).endsWith(" … (truncated, 4400 chars total)")).toBe(true);
-    expect(m.stdout).toContain("Run `agent-session-axi show b5000016:10 --full` for the complete meta.hook_text (4.4k chars)");
+    expect(m.stdout).toContain("Run `agent-recall-axi show b5000016:10 --full` for the complete meta.hook_text (4.4k chars)");
     const full = await run(["show", "b5000016:10", "--full"]);
     expect((JSON.parse(/^ {2}hook_text: (.*)$/m.exec(full.stdout)![1]!) as string).length).toBe(4400);
   });
@@ -233,7 +233,7 @@ describe("rows: truncation and --fields", () => {
     expect(text.endsWith("…")).toBe(true);
     expect(text.length).toBe(201);
     expect(stdout).toContain("for the whole text of the 5 rows cut to 200 chars");
-    expect(stdout).toContain("Run `agent-session-axi show b5000016:1` to see one cut row whole");
+    expect(stdout).toContain("Run `agent-recall-axi show b5000016:1` to see one cut row whole");
   });
 
   it("a URL spanning the cut is kept whole; a call's target path is never cut", async () => {

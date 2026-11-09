@@ -53,7 +53,7 @@ export { budgetCut, DEFAULT_HUMAN_BUDGET, humanMessages, type HumanMessages, typ
 export { toolCalls, toolCallsWithResults, toolFilter, type ToolCall, type ToolOpts } from "./tools.js";
 export type { Span } from "./hold.js";
 
-// resume pack (specs/api.md#resume-pack); the renderer is the agent-session-axi/render subpath
+// resume pack (specs/api.md#resume-pack); the renderer is the agent-recall-axi/render subpath
 export { buildResumePack, DEFAULT_RESUME_BUDGET, DEFAULT_RESUME_CLAIMS, DEFAULT_RESUME_TOOLS, packCost, type ResumePack, type ResumePackOpts } from "./resume.js";
 
 // sessions and recall (specs/api.md#scope-and-sessions, #searching): stats, titles, the home

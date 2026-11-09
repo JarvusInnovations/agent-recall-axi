@@ -46,7 +46,7 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 /** The TOON document without its help block (help lines are prose commands, not TOON items). */
 const body = (out: string) => decode(out.split(/\nhelp\[\d+\]:\n/)[0]!) as Record<string, unknown>;
-const hints = (out: string) => [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+const hints = (out: string) => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
 const header = (out: string, key: string) => new RegExp(`^${key}: (.*)$`, "m").exec(out)?.[1];
 const table = (out: string, label: string) => (body(out)[label] as Array<Record<string, unknown>>) ?? [];
 
@@ -65,25 +65,28 @@ async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("turns", () => {
-  it("one row per human prompt with events, calls and how it ended", async () => {
-    const r = await run(["turns", fx("compaction")]);
+  it("one row per human prompt and how it ended, four columns; --full adds events and calls", async () => {
+    const plain = await run(["turns", fx("compaction")]);
+    expect(plain.stdout).toContain("turns[2]{id,t,prompt,ended}:");
+    expect(table(plain.stdout, "turns")[0]).toEqual({ id: "a6000006:1", t: "13:40:02", prompt: "keep refactoring the flange module", ended: "compaction" });
+    const r = await run(["turns", fx("compaction"), "--full"]);
     expect(r.exitCode).toBe(0);
     expect(table(r.stdout, "turns")).toEqual([
-      { id: "a6000006:1", t: "13:40:02", prompt: "keep refactoring the flange module", events: 4, calls: 0, ended: "compaction" },
-      { id: "a6000006:5", t: "13:40:08", prompt: "continue with the second file", events: 2, calls: 0, ended: "stop" },
+      { id: "a6000006:1", t: "13:40:02", prompt: "keep refactoring the flange module", ended: "compaction", events: 4, calls: 0 },
+      { id: "a6000006:5", t: "13:40:08", prompt: "continue with the second file", ended: "stop", events: 2, calls: 0 },
     ]);
     expect(header(r.stdout, "count")).toBe("2 of 2");
   });
 
   it("ended is open when the file ends before the agent's closing text", async () => {
-    const r = await run(["turns", fx("parallel-tools")]);
+    const r = await run(["turns", fx("parallel-tools"), "--full"]);
     expect(table(r.stdout, "turns")).toEqual([
-      { id: "a3000003:1", t: "13:40:02", prompt: "run the tests and the linter, and check the config", events: 10, calls: 4, ended: "open" },
+      { id: "a3000003:1", t: "13:40:02", prompt: "run the tests and the linter, and check the config", ended: "open", events: 10, calls: 4 },
     ]);
   });
 
   it("turn 0 appears only when events precede the first prompt", async () => {
-    const hooks = table((await run(["turns", fx("hooks")])).stdout, "turns");
+    const hooks = table((await run(["turns", fx("hooks"), "--full"])).stdout, "turns");
     expect(hooks[0]).toMatchObject({ id: "aa00000a:1", prompt: "(session start)", events: 1, ended: "stop" });
     expect(hooks).toHaveLength(2);
     const plain = table((await run(["turns", fx("string-content")])).stdout, "turns");
@@ -271,10 +274,12 @@ describe("tools", () => {
 });
 
 describe("compactions", () => {
-  it("lists each boundary with trigger, tokens, summary id and the window it opens", async () => {
+  it("lists each boundary with its summary id and the window it opens (four columns); --full adds trigger and tokens", async () => {
     const r = await run(["compactions", fx("compaction")]);
-    expect(table(r.stdout, "compactions")).toEqual([{ id: "a6000006:3", t: "13:40:06", trigger: "auto", pre: "998.6k", post: "25.1k", summary: "a6000006:4", window: 1 }]);
+    expect(table(r.stdout, "compactions")).toEqual([{ id: "a6000006:3", t: "13:40:06", summary: "a6000006:4", window: 1 }]);
     for (const h of hints(r.stdout)) expect((await run(h)).exitCode, h.join(" ")).toBe(0);
+    const blocks = body((await run(["compactions", fx("compaction"), "--full"])).stdout).compactions as Array<Record<string, unknown>>;
+    expect(blocks[0]).toMatchObject({ trigger: "auto", pre: "998.6k", post: "25.1k", summary: "a6000006:4", window: 1 });
   });
 
   it("--full adds the summary text and the window sizes", async () => {
@@ -286,9 +291,12 @@ describe("compactions", () => {
   it("a boundary-less summary is listed with trigger unknown", async () => {
     const rows = table((await run(["compactions", farFile])).stdout, "compactions");
     expect(rows.map(({ t: _t, ...r }) => r)).toEqual([
-      { id: "e8000028:3", trigger: "auto", pre: "500.0k", post: "20.0k", summary: "", window: 1 },
-      { id: "e8000028:9", trigger: "unknown", pre: "", post: "", summary: "e8000028:9", window: 2 },
+      { id: "e8000028:3", summary: "", window: 1 },
+      { id: "e8000028:9", summary: "e8000028:9", window: 2 },
     ]);
+    const blocks = body((await run(["compactions", farFile, "--full"])).stdout).compactions as Array<Record<string, unknown>>;
+    expect(blocks.map((b) => b.trigger)).toEqual(["auto", "unknown"]);
+    expect(blocks[0]).toMatchObject({ pre: "500.0k", post: "20.0k" });
   });
 
   it("a single-window session prints the definitive empty line", async () => {

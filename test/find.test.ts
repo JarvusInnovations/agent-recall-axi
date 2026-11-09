@@ -28,7 +28,7 @@ const seq = (...n: number[]) => n.map((x) => `${S}:${x}`);
 /** The commands in help[] lines, as argv for `run` (single-quoted args unquoted). */
 function helpCommands(out: string): string[][] {
   const cmds: string[][] = [];
-  for (const m of out.matchAll(/Run `agent-session-axi ([^`]+)`/g)) {
+  for (const m of out.matchAll(/Run `agent-recall-axi ([^`]+)`/g)) {
     const argv: string[] = [];
     for (const t of m[1]!.matchAll(/'((?:[^']|'\\'')*)'|(\S+)/g)) argv.push(t[1] !== undefined ? t[1].replace(/'\\''/g, "'") : t[2]!);
     cmds.push(argv);
@@ -222,7 +222,7 @@ describe("find: header and footer", () => {
     expect(r.stdout).toMatch(/^query: "phrase \\"redirect\\" \+ file \*\.env\*"$/m);
     expect(r.stdout).toMatch(/^count: 1 of 1 hit \(18 lines scanned\)$/m);
     expect(table(r.stdout).rows.find((x) => x.why)).toMatchObject({ id: `${S}:4`, why: "phrase+file" });
-    expect(r.stdout).toContain(`Run \`agent-session-axi show ${S}:4\` for the whole call and result`);
+    expect(r.stdout).toContain(`Run \`agent-recall-axi show ${S}:4\` for the whole call and result`);
     for (const argv of helpCommands(r.stdout)) expect((await run(argv)).exitCode, argv.join(" ")).toBe(0);
   });
 
@@ -373,11 +373,11 @@ describe("find review: validation and resolution", () => {
     const noHandle = await run(["find", "config/staging.env", "--all"]);
     expect(noHandle.exitCode).toBe(2);
     expect(noHandle.stdout).toContain("read as the <session>");
-    expect(noHandle.stdout).toContain("Run `agent-session-axi find latest config/staging.env --all`");
+    expect(noHandle.stdout).toContain("Run `agent-recall-axi find latest config/staging.env --all`");
     const missing = await run(["find", "abcdef12", "--tool", "bash", "--project", "/src/widget"]);
     expect(missing.exitCode).toBe(1);
     expect(missing.stdout).toContain("read as the <session>");
-    expect(missing.stdout).toContain("Run `agent-session-axi find latest abcdef12 --tool bash --project /src/widget`");
+    expect(missing.stdout).toContain("Run `agent-recall-axi find latest abcdef12 --tool bash --project /src/widget`");
     expect(missing.stdout).toContain("sessions --subagents --project /src/widget");
   });
 

@@ -15,8 +15,8 @@ import { FIXTURE_ROOT } from "./fixtures/build.js";
 import { BIN_JS, fx, REPO } from "./helpers/run.js";
 
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
-const SKILL_DIR = join(REPO, "skills", "agent-session-axi");
-const SHIM = join(SKILL_DIR, "scripts", "agent-session-axi");
+const SKILL_DIR = join(REPO, "skills", "agent-recall-axi");
+const SHIM = join(SKILL_DIR, "scripts", "agent-recall-axi");
 const tmp = mkdtempSync(join(tmpdir(), "asa-skill-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -45,10 +45,10 @@ describe("the committed bundle", () => {
 
   it("is executable, as is the shim, and both are committed that way", () => {
     for (const p of [OUTFILE, SHIM]) expect(statSync(p).mode & 0o111, p).toBe(0o111);
-    const staged = execFileSync("git", ["ls-files", "-s", "skills/agent-session-axi/scripts"], { cwd: REPO, encoding: "utf8" });
+    const staged = execFileSync("git", ["ls-files", "-s", "skills/agent-recall-axi/scripts"], { cwd: REPO, encoding: "utf8" });
     // Before the files are committed (a fresh branch), the working-tree bits above are the check.
     for (const line of staged.trim().split("\n").filter(Boolean)) expect(line.startsWith("100755"), line).toBe(true);
-    expect(readFileSync(join(REPO, ".gitattributes"), "utf8")).toMatch(/^skills\/agent-session-axi\/scripts\/agent-session-axi\.mjs linguist-generated=true$/m);
+    expect(readFileSync(join(REPO, ".gitattributes"), "utf8")).toMatch(/^skills\/agent-recall-axi\/scripts\/agent-recall-axi\.mjs linguist-generated=true$/m);
   });
 
   it("check:bundle: matches a fresh build; fails on any other byte; passes when only the version moved", async () => {
@@ -86,8 +86,8 @@ describe("the committed bundle", () => {
     const copy = join(tmp, "repo");
     for (const dir of ["bin", "src", "scripts"]) cpSync(join(REPO, dir), join(copy, dir), { recursive: true });
     for (const f of ["package.json", "tsconfig.json"]) cpSync(join(REPO, f), join(copy, f));
-    mkdirSync(join(copy, "skills", "agent-session-axi", "scripts"), { recursive: true });
-    cpSync(OUTFILE, join(copy, "skills", "agent-session-axi", "scripts", "agent-session-axi.mjs"));
+    mkdirSync(join(copy, "skills", "agent-recall-axi", "scripts"), { recursive: true });
+    cpSync(OUTFILE, join(copy, "skills", "agent-recall-axi", "scripts", "agent-recall-axi.mjs"));
     // The bundled packages as real copies (esbuild names modules by their real path); the
     // build tool itself only needs to resolve.
     for (const pkg of ["axi-sdk-js", "@toon-format"]) cpSync(join(REPO, "node_modules", pkg), join(copy, "node_modules", pkg), { recursive: true });
@@ -110,7 +110,7 @@ describe("SKILL.md", () => {
 
   it("has trigger-shaped frontmatter with name and description", () => {
     const fm = /^---\n([\s\S]*?)\n---\n/.exec(doc)?.[1] ?? "";
-    expect(fm).toMatch(/^name: agent-session-axi$/m);
+    expect(fm).toMatch(/^name: agent-recall-axi$/m);
     const description = /^description: (.+)$/m.exec(fm)?.[1] ?? "";
     for (const trigger of ["what was I doing", "have I dealt with this before", "what did the human ask"]) expect(description).toContain(trigger);
   });
@@ -124,7 +124,7 @@ describe("SKILL.md", () => {
   it("check:skill: the generated region matches COMMAND_GROUPS, and a changed summary without regeneration fails", () => {
     expect(spliceSkill(doc)).toBe(doc);
     expect(doc).toContain(commandReference());
-    for (const g of COMMAND_GROUPS) for (const c of g.commands) expect(doc).toContain(`\`scripts/agent-session-axi ${c.usage}\`: ${c.summary}`);
+    for (const g of COMMAND_GROUPS) for (const c of g.commands) expect(doc).toContain(`\`scripts/agent-recall-axi ${c.usage}\`: ${c.summary}`);
     const changed: CommandGroup[] = structuredClone(COMMAND_GROUPS);
     changed[0]!.commands[0]!.summary += " (edited)";
     expect(spliceSkill(doc, commandReference(changed))).not.toBe(doc);
@@ -136,29 +136,29 @@ describe("SKILL.md", () => {
 
   it("every example invokes the shim by its resolved path, never a bare binary name or a bare command word", () => {
     const spans = [...doc.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
-    const words = new Set(["agent-session-axi", ...COMMAND_GROUPS.flatMap((g) => g.commands.map((c) => c.name))]);
-    const bare = spans.filter((s) => words.has(s.split(/\s+/)[0]!) && s !== "agent-session-axi");
+    const words = new Set(["agent-recall-axi", ...COMMAND_GROUPS.flatMap((g) => g.commands.map((c) => c.name))]);
+    const bare = spans.filter((s) => words.has(s.split(/\s+/)[0]!) && s !== "agent-recall-axi");
     expect(bare).toEqual([]);
-    const invocations = spans.filter((s) => /^scripts\/agent-session-axi(\s|$)/.test(s));
+    const invocations = spans.filter((s) => /^scripts\/agent-recall-axi(\s|$)/.test(s));
     expect(invocations.length).toBeGreaterThan(20);
     const blocks = [...doc.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]!);
-    for (const b of blocks) expect(b).not.toMatch(/^\s*agent-session-axi\s/m);
+    for (const b of blocks) expect(b).not.toMatch(/^\s*agent-recall-axi\s/m);
   });
 
   it("the skill directory holds only SKILL.md and scripts/ (the shim and the bundle)", () => {
     expect(readdirSync(SKILL_DIR).sort()).toEqual(["SKILL.md", "scripts"]);
-    expect(readdirSync(join(SKILL_DIR, "scripts")).sort()).toEqual(["agent-session-axi", "agent-session-axi.mjs"]);
+    expect(readdirSync(join(SKILL_DIR, "scripts")).sort()).toEqual(["agent-recall-axi", "agent-recall-axi.mjs"]);
   });
 });
 
 describe("the skill, copied out of the repository, runs offline with node only", () => {
-  // as `npx skills add` lays it out: …/skills/agent-session-axi/
-  const copy = join(tmp, "installed", "skills", "agent-session-axi");
+  // as `npx skills add` lays it out: …/skills/agent-recall-axi/
+  const copy = join(tmp, "installed", "skills", "agent-recall-axi");
   cpSync(SKILL_DIR, copy, { recursive: true });
-  const shim = join(copy, "scripts", "agent-session-axi");
+  const shim = join(copy, "scripts", "agent-recall-axi");
   const linkDir = join(tmp, "path-bin");
   mkdirSync(linkDir, { recursive: true });
-  symlinkSync(shim, join(linkDir, "agent-session-axi"));
+  symlinkSync(shim, join(linkDir, "agent-recall-axi"));
   const cacheOf = (name: string) => join(tmp, `cache-${name}`);
   const baseEnv = (cache: string, extraPath = "") => ({
     PATH: `${extraPath}${join(node, "..")}:/usr/bin:/bin`,
@@ -169,7 +169,7 @@ describe("the skill, copied out of the repository, runs offline with node only",
   });
   let k = 0;
   const viaShim = (args: string[], opts: { onPath?: boolean; nodeOptions?: string } = {}) =>
-    spawnSync(opts.onPath ? join(linkDir, "agent-session-axi") : shim, args, {
+    spawnSync(opts.onPath ? join(linkDir, "agent-recall-axi") : shim, args, {
       cwd: tmp,
       encoding: "utf8",
       env: { ...baseEnv(cacheOf(`shim-${k++}`), opts.onPath ? `${linkDir}:` : ""), ...(opts.nodeOptions ? { NODE_OPTIONS: opts.nodeOptions } : {}) },
@@ -198,7 +198,7 @@ describe("the skill, copied out of the repository, runs offline with node only",
   it("off PATH, hints name the shim by its path; update knows it is a skill install", () => {
     const r = viaShim(["sessions", "--all", "--limit", "1"]);
     expect(r.stdout).toContain(`Run \`${shim} `);
-    expect(r.stdout).not.toMatch(/Run `agent-session-axi /);
+    expect(r.stdout).not.toMatch(/Run `agent-recall-axi /);
     const u = viaShim(["update"]);
     expect(u.stdout).toMatch(/^update: .* \(skill install\)$/m);
   });
@@ -207,7 +207,7 @@ describe("the skill, copied out of the repository, runs offline with node only",
     const quiet = join(tmp, "cdpath-target");
     mkdirSync(join(quiet, "scripts"), { recursive: true });
     const env = { ...baseEnv(cacheOf(`cd-${k++}`)), CDPATH: quiet };
-    const r = spawnSync(join(linkDir, "agent-session-axi"), ["--version"], { cwd: tmp, encoding: "utf8", env });
+    const r = spawnSync(join(linkDir, "agent-recall-axi"), ["--version"], { cwd: tmp, encoding: "utf8", env });
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\n$/);
     const bash = spawnSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).stdout.trim();

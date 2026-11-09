@@ -55,9 +55,9 @@ jobs:
       - name: Smoke test the built bin
         run: |
           set -u
-          bin=dist/bin/agent-session-axi.js
+          bin=dist/bin/agent-recall-axi.js
           node "$bin" --version | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'
-          node "$bin" --help | grep -q 'usage: agent-session-axi'
+          node "$bin" --help | grep -q 'usage: agent-recall-axi'
           set +e
           out=$(node "$bin" sessions --project /nonexistent 2>&1)
           code=$?
@@ -86,17 +86,17 @@ jobs:
         run: |
           set -euo pipefail
           test ! -e node_modules
-          skill="$RUNNER_TEMP/installed/skills/agent-session-axi"
+          skill="$RUNNER_TEMP/installed/skills/agent-recall-axi"
           mkdir -p "$(dirname "$skill")" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/out"
-          cp -R skills/agent-session-axi "$skill"
+          cp -R skills/agent-recall-axi "$skill"
           # on PATH through a symlink, so hints name it as dist/ does
-          ln -s "$skill/scripts/agent-session-axi" "$RUNNER_TEMP/bin/agent-session-axi"
-          "$skill/scripts/agent-session-axi" --version | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'
+          ln -s "$skill/scripts/agent-recall-axi" "$RUNNER_TEMP/bin/agent-recall-axi"
+          "$skill/scripts/agent-recall-axi" --version | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'
           export CLAUDE_CONFIG_DIR="$PWD/test/fixtures/claude" TZ=UTC PATH="$RUNNER_TEMP/bin:$PATH"
           s=$(ls test/fixtures/claude/projects/-src-widget/a6000006-*.jsonl)
-          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi tail "$s" > "$RUNNER_TEMP/out/tail.bundle"
-          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi find "$s" flange > "$RUNNER_TEMP/out/find.bundle"
-          XDG_CACHE_HOME=$(mktemp -d) agent-session-axi resume-pack "$s" > "$RUNNER_TEMP/out/resume-pack.bundle"
+          XDG_CACHE_HOME=$(mktemp -d) agent-recall-axi tail "$s" > "$RUNNER_TEMP/out/tail.bundle"
+          XDG_CACHE_HOME=$(mktemp -d) agent-recall-axi find "$s" flange > "$RUNNER_TEMP/out/find.bundle"
+          XDG_CACHE_HOME=$(mktemp -d) agent-recall-axi resume-pack "$s" > "$RUNNER_TEMP/out/resume-pack.bundle"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -109,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           export CLAUDE_CONFIG_DIR="$PWD/test/fixtures/claude" TZ=UTC
-          bin="$PWD/dist/bin/agent-session-axi.js"
+          bin="$PWD/dist/bin/agent-recall-axi.js"
           s=$(ls test/fixtures/claude/projects/-src-widget/a6000006-*.jsonl)
           XDG_CACHE_HOME=$(mktemp -d) node "$bin" tail "$s" > "$RUNNER_TEMP/out/tail.dist"
           XDG_CACHE_HOME=$(mktemp -d) node "$bin" find "$s" flange > "$RUNNER_TEMP/out/find.dist"

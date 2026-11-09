@@ -11,8 +11,8 @@ import { renderDocument } from "../output/render.js";
 import { BIN } from "./common.js";
 import { bundleShim, NAME } from "../invocation.js";
 
-const SKILL_LINE = "Run `npx skills update agent-session-axi` to update the skill bundle";
-const NPM_LINE = "Run `npm i -g agent-session-axi@latest` if installed from npm";
+const SKILL_LINE = "Run `npx skills update agent-recall-axi` to update the skill bundle";
+const NPM_LINE = "Run `npm i -g agent-recall-axi@latest` if installed from npm";
 
 /** Run from the skill bundle → a skill install, decided as the hints decide it (cli.md#update). */
 export function installChannel(entrypoint: string | undefined): "skill" | "npm" {

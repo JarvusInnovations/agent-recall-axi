@@ -1,4 +1,4 @@
-# agent-session-axi
+# agent-recall-axi
 
 An AXI tool (agent-facing CLI + library) that reads AI agent session logs. Spec-driven: `specs/`
 is the desired state, `plans/` the work DAG; load the `specops` skill (`.agents/skills/specops`)

@@ -1,6 +1,6 @@
 /**
  * A consumer of the published package (specs/api.md), compiled by `bun run check:types` after
- * `bun run build`: it imports only from `agent-session-axi` and `agent-session-axi/render`, so
+ * `bun run build`: it imports only from `agent-recall-axi` and `agent-recall-axi/render`, so
  * the `types` conditions of package.json `exports` resolve to `dist/`, and it uses every name
  * with the signature api.md gives it. Never run; a type error here is a spec/surface mismatch.
  */
@@ -13,8 +13,8 @@ import {
   type Session, type Event, type Turn, type Window, type Pointer, type ResumePack,
   type FindQuery, type Hit, type RecallResult, type Scope, type EventId,
   AgentSessionError,
-} from "agent-session-axi";
-import { renderResumePack } from "agent-session-axi/render";
+} from "agent-recall-axi";
+import { renderResumePack } from "agent-recall-axi/render";
 
 export async function consumer(): Promise<string> {
   const root: { root: string } = await openRoot({ root: "/home/user/.claude/projects" });

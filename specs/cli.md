@@ -1,12 +1,12 @@
 # CLI
 
-The command surface of `agent-session-axi`. Every command is a rendering of a library function
+The command surface of `agent-recall-axi`. Every command is a rendering of a library function
 (`api.md`); output follows `behaviors/row-format.md`, caps follow `behaviors/truncation.md`, time
 and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors/errors.md`.
 
 ## Conventions
 
-- Shape: `agent-session-axi <command> [args] [flags]`. Flags come after the command (the SDK
+- Shape: `agent-recall-axi <command> [args] [flags]`. Flags come after the command (the SDK
   rejects leading flags). `--x v` and `--x=v` both work; `--` ends flags.
 - The one global flag is `--tz <iana>`. `--help`/`-h` is always accepted.
 - Every command that resolves a `<session>` or an `<id>` (`turns`, `events`, `human`, `tools`,
@@ -39,7 +39,7 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
   cheap sources only, so they depend on the file and its sidecar, never the cache: the
   `custom-title.json` sidecar, else the `sessions-index.json` entry whose `fileMtime` matches the
   file, else the first `human` event in the file's first 1 MB, else `(untitled)`; one line, cut
-  to the row head. `sessions`, `recall`, `resume-pack` and `AMBIGUOUS_SESSION` candidates use the
+  to the row head. `sessions`, `search`, `resume-pack` and `AMBIGUOUS_SESSION` candidates use the
   full precedence (`data-model.md#session`).
 - Default `--limit` values are chosen so the common case fits in one call; the header always
   carries `count: <shown> of <matching>` and the footer the way to see more.
@@ -48,10 +48,10 @@ and scope grammar follow `behaviors/time-and-scope.md`, errors follow `behaviors
 - A hint names a session by its `<s8>` only when no other session in scope shares those 8
   characters; otherwise by its full id (`tail <uuid>`, `show <id> --session <uuid>`), so every
   hint resolves as printed.
-- Hints and suggested commands name the tool `agent-session-axi`. Run from the skill bundle,
+- Hints and suggested commands name the tool `agent-recall-axi`. Run from the skill bundle,
   which is not on `PATH`, they name it by the shim's path instead (`~/` for the home directory,
   with only the rest shell-quoted when it needs quoting, `~/'my skills/…'`, so the `~` still
-  expands; the same for every path a hint carries), unless `agent-session-axi` on `PATH` resolves to that shim or bundle; the
+  expands; the same for every path a hint carries), unless `agent-recall-axi` on `PATH` resolves to that shim or bundle; the
   npm bin is on `PATH` by installation and keeps the bare name.
 - `help[]` lines carry forward `--project`/`--all`/`--tz` when they were given, and a paging hint
   (`next`/`prev`/`--from`/`--to` continuations) also carries the caller's `--kind`, `--limit`,
@@ -67,7 +67,7 @@ show <id>                one entry, whole                         (zoom in)
 show <id> --full         ...with persisted output followed
 ```
 
-`find` and `recall` enter the ladder at any rung; `human`, `tools`, `compactions` are kind-scoped
+`find` and `search` enter the ladder at any rung; `human`, `tools`, `compactions` are kind-scoped
 views of the rows rung; `resume-pack` is a fixed composite for cold starts.
 
 ---
@@ -77,7 +77,7 @@ views of the rows rung; `resume-pack` is a fixed composite for cold starts.
 Content first: the sessions of the current project and where the latest one left off.
 
 ```
-bin: ~/.local/bin/agent-session-axi
+bin: ~/.local/bin/agent-recall-axi
 description: Read, search and pan/zoom through agent session logs; TOON out, local files only
 project: ~/src/widget (12 sessions)
 sessions[5]{id,last,turns,title}:
@@ -87,16 +87,16 @@ sessions[5]{id,last,turns,title}:
 latest: 7a2f1c3e
 last_human: 7a2f1c3e:4102 14:02:11 "ok ship it, then update the plan file"
 help[5]:
-  Run `agent-session-axi resume-pack 7a2f1c3e` for a cold-start pack of the latest session
-  Run `agent-session-axi tail 7a2f1c3e` for the last 20 rows
-  Run `agent-session-axi find "<phrase>"` to search this project's sessions
-  Run `agent-session-axi recall "<phrase>"` to search every project
-  Run `agent-session-axi --help` for the full command list, or `agent-session-axi <command> --help` for usage on any command
+  Run `agent-recall-axi resume-pack 7a2f1c3e` for a cold-start pack of the latest session
+  Run `agent-recall-axi tail 7a2f1c3e` for the last 20 rows
+  Run `agent-recall-axi find "<phrase>"` to search this project's sessions
+  Run `agent-recall-axi search "<phrase>"` to search every project
+  Run `agent-recall-axi --help` for the full command list, or `agent-recall-axi <command> --help` for usage on any command
 ```
 
 - With no log directory for the working directory: `project: none for <cwd>` and
   `sessions: none in this directory`, with hints to `sessions --all`, `sessions --project <path>`
-  and `recall "<phrase>"`, and nothing read from other projects. The home view is what the
+  and `search "<phrase>"`, and nothing read from other projects. The home view is what the
   SessionStart hook injects, so it stays scoped to the working directory (AXI §7): another
   project's sessions are context the agent did not ask for.
 - Must complete in under 300 ms on a project with 100 sessions: it reads `sessions-index.json`
@@ -134,7 +134,7 @@ help[5]:
 ## `sessions`
 
 ```
-agent-session-axi sessions [--project <p> | --all] [--since <span>] [--from <when>] [--to <when>]
+agent-recall-axi sessions [--project <p> | --all] [--since <span>] [--from <when>] [--to <when>]
                            [--limit <n>] [--subagents] [--fields <a,b>] [--json-out[=path]]
 ```
 
@@ -159,14 +159,16 @@ Extra fields: `started` (`MM-DD HH:MM`), `uuid`, `path`, `project`, `bytes`, `li
 ## `turns <session>`
 
 ```
-agent-session-axi turns <session> [--from <when|id>] [--to <when|id>] [--since <span>]
+agent-recall-axi turns <session> [--from <when|id>] [--to <when|id>] [--since <span>]
                         [--window <k|last>] [--limit <n>] [--full] [--json-out[=path]]
 ```
 
 One row per human prompt: the mid-zoom rung.
 
-Default schema: `turns[N]{id,t,prompt,events,calls,ended}` (`data-model.md#turn`). `prompt` is
-the head of the opening human text; `ended` is `stop`, `compaction` or `open`.
+Default schema: `turns[N]{id,t,prompt,ended}` (`data-model.md#turn`): four columns (AXI §2).
+`prompt` is the head of the opening human text; `ended` is `stop`, `compaction` or `open`, the
+column that keeps an agent from assuming a turn cut short by a compaction finished. `--full` adds
+`events` and `calls` (the turn's event and tool-call counts).
 
 - Default `--limit 30`, newest last; when more exist the footer says `Showing the last 30 of 112
   turns; raise --limit or narrow with --from`, followed by the runnable `turns <session> --to <first-shown-id>`
@@ -182,7 +184,7 @@ the head of the opening human text; `ended` is `stop`, `compaction` or `open`.
 ## `events <session>`
 
 ```
-agent-session-axi events <session> [--from <when|id>] [--to <when|id>] [--since <span>]
+agent-recall-axi events <session> [--from <when|id>] [--to <when|id>] [--since <span>]
                          [--window <k|last>] [--kind <a,b|all>] [--limit <n>] [--head <n>] [--full]
                          [--fields <a,b>] [--json-out[=path]] [--project <p> | --all]
 ```
@@ -203,7 +205,7 @@ given (then oldest first from that point). Default kinds: all but `thinking` and
 ## `human <session>`
 
 ```
-agent-session-axi human <session> [--from <when|id>] [--to <when|id>] [--since <span>]
+agent-recall-axi human <session> [--from <when|id>] [--to <when|id>] [--since <span>]
                         [--window <k|last>] [--budget <chars>] [--full] [--rows]
                         [--json-out[=path]]
 ```
@@ -250,20 +252,20 @@ messages[9]:
 ## `tools <session>`
 
 ```
-agent-session-axi tools <session> [--name <tool>] [--file <pattern>] [--errors]
+agent-recall-axi tools <session> [--name <tool>] [--file <pattern>] [--errors]
                         [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>]
                         [--limit <n>] [--full] [--fields <a,b>] [--json-out[=path]]
 ```
 
 Tool calls with their results folded in.
 
-Default schema: `tools[N]{id,t,tool,target,result}` — `result` is the status (`ok 1.2k`,
-`error 340`, `persisted 42.8k`, `image`, `pending`).
+Default schema: `tools[N]{id,tool,target,result}`: four columns (AXI §2); order lives in the
+ids — `result` is the status (`ok 1.2k`, `error 340`, `persisted 42.8k`, `image`, `pending`).
 
 - `--name` is a case-insensitive substring of the tool name (`--name bash`, `--name mcp__`).
 - `--file` filters by `files` touched (`data-model.md#files-touched`).
 - `--errors` keeps only calls whose result `is_error`.
-- `--fields <a,b>` adds columns after `result`: `result_id` (the linked result's id), `error`,
+- `--fields <a,b>` adds columns after `result`: `t` (the call's time), `result_id` (the linked result's id), `error`,
   `files` (joined with `, `; `show <id>` has the exact list).
 - Default `--limit 30`, newest last. `--full` adds the full input JSON and the result text to each
   row as a block (switches to block form like `human`), lifts the row cap, and prints a
@@ -275,7 +277,7 @@ Default schema: `tools[N]{id,t,tool,target,result}` — `result` is the status (
 ## `find`
 
 ```
-agent-session-axi find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>]
+agent-recall-axi find [<session>] [<phrase>] [--regex] [--file <pattern>] [--tool <name>]
                        [--kind <a,b|all>] [--from <when|id>] [--to <when|id>] [--since <span>]
                        [--window <k|last>] [--context <n>] [--before <n>] [--after <n>]
                        [--limit <n>] [--head <n>] [--full] [--fields <a,b>]
@@ -351,9 +353,9 @@ rows[9]{id,t,kind,why,text}:
   7a2f1c3e:415,13:58:09,assistant,,The redirect URI in staging.env still points at the old host…
   ...
 help[3]:
-  Run `agent-session-axi around 7a2f1c3e:412.2 --before 10 --after 10` for more context
-  Run `agent-session-axi show 7a2f1c3e:412.2` for the whole call and result
-  Run `agent-session-axi find "redirect" --all` to search every project
+  Run `agent-recall-axi around 7a2f1c3e:412.2 --before 10 --after 10` for more context
+  Run `agent-recall-axi show 7a2f1c3e:412.2` for the whole call and result
+  Run `agent-recall-axi find "redirect" --all` to search every project
 ```
 
 - Empty: `hits: 0 events match phrase "redirect" in 7a2f1c3e (4,120 lines scanned)`, exit 0,
@@ -379,11 +381,11 @@ help[3]:
 ## `around <id>` · `next <id>` · `prev <id>`
 
 ```
-agent-session-axi around <id> [--before <n>] [--after <n>] [--context <n>] [--kind …] [--head <n>] [--full]
+agent-recall-axi around <id> [--before <n>] [--after <n>] [--context <n>] [--kind …] [--head <n>] [--full]
                          [--fields <a,b>] [--window <k|last>] [--session <ref>] [--project <p> | --all]
-agent-session-axi next <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+agent-recall-axi next <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
                        [--window <k|last>] [--session <ref>] [--project <p> | --all]
-agent-session-axi prev <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+agent-recall-axi prev <id> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
                        [--window <k|last>] [--session <ref>] [--project <p> | --all]
 ```
 
@@ -420,7 +422,7 @@ The pan verbs. Same rows as `events`; the difference is where they start.
 ## `tail <session>`
 
 ```
-agent-session-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
+agent-recall-axi tail <session> [<n>] [--limit <n>] [--kind …] [--head <n>] [--full] [--fields <a,b>]
                        [--window <k|last>] [--project <p> | --all]
 ```
 
@@ -439,7 +441,7 @@ rows and the exact count `count: 20 of 4120` always agree. Without a table (or w
 ## `show <id>` (alias: `zoom`)
 
 ```
-agent-session-axi show <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]
+agent-recall-axi show <id> [--full] [--raw] [--fields <a,b>] [--session <ref>] [--project <p> | --all]
 ```
 
 One entry or one event, whole. The zoom.
@@ -462,7 +464,7 @@ result_status: ok 1.1k
 result_text: "1\tAPP_HOST=staging.example.test\n2\tOAUTH_REDIRECT=https://old.example.test/callback\n…"
 uuid: 3c04f2b0-…
 help[1]:
-  Run `agent-session-axi show 7a2f1c3e:413 --full` for the complete result (1.1k chars)
+  Run `agent-recall-axi show 7a2f1c3e:413 --full` for the complete result (1.1k chars)
 ```
 
 - A `call` shows its input in full (capped at 4,000 chars unless `--full`) and its linked result's
@@ -492,27 +494,33 @@ help[1]:
 ## `compactions <session>`
 
 ```
-agent-session-axi compactions <session> [--full]
+agent-recall-axi compactions <session> [--full]
 ```
 
 Where the context window closed, and what stood in for the lost history.
 
-Default schema: `compactions[N]{id,t,trigger,pre,post,summary,window}` — `pre`/`post` are token
-counts (`998.6k`, `25.1k`), `summary` the summary event id, `window` the index of the window the
-boundary opens. `--full` switches to block form: each boundary with `dropped`, the event counts
+Default schema: `compactions[N]{id,t,summary,window}`: four columns (AXI §2) — `summary` the
+summary event id (one `show` recovers what was lost), `window` the index of the window the
+boundary opens (the value `--window` takes). `--full` switches to block form: each boundary with
+`trigger`, `pre`/`post` token counts (`998.6k`, `25.1k`), `dropped`, the event counts
 of the windows before and after it, and its summary's text. A boundary-less summary is listed
 with `trigger` `unknown` (`behaviors/context-windows.md`). Empty: `compactions: 0 in
 7a2f1c3e (one window, 4,120 lines)`.
 Footer: `show <compaction-id>` for the preserved events, `human <session> --window <k>` for what
 the human said after the last boundary.
 
-## `recall <phrase>`
+## `search <phrase>`
 
 ```
-agent-session-axi recall <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>]
+agent-recall-axi search <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>]
                          [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all]
                          [--limit <n>] [--json-out[=path]]
 ```
+
+The flagship memory verb, named for the word an agent reaches for first. The pre-rename verb
+`recall` is not a command: it fails `VALIDATION_ERROR` (exit 2) with the targeted hint
+``recall is now `search` `` and the usage line, so a remembered `recall` costs one corrected call,
+not a guess. (The library function keeps the name `recall`; `api.md`.)
 
 "Have I dealt with this before?" in one call: `find` across every session the agent can read,
 grouped by session.
@@ -525,12 +533,12 @@ the earliest hit; the header carries `scanned: 83 sessions, 412 MB, 2.1s` and th
 - Empty: `sessions: 0 of 83 scanned mention "<phrase>" since 90d`, exit 0, hint `--since 1y`.
 - Uses the cache's term index when present and falls back to a streaming scan; the header says
   which (`index: fresh|partial|none`).
-- **What it searches.** `recall` matches as `find` does, over what the human and the agent said and
+- **What it searches.** `search` matches as `find` does, over what the human and the agent said and
   the calls the agent made: the `H` and `C` kinds of an `events` listing (`human*`, `assistant`,
   `call`, `summary`; `--kind` may name any `H` or `C` kind, `thinking` included, and naming
   another is `VALIDATION_ERROR` pointing at `find --all`). A call matches on its text and input,
   never its result's text: tool output is `find`'s (`find "<phrase>" --all`). These are exactly the
-  texts the term index covers (`architecture.md#cache`), so an indexed and a scanned `recall`
+  texts the term index covers (`architecture.md#cache`), so an indexed and a scanned `search`
   return the same sessions, hits and first ids.
 - `--since`/`--from`/`--to` bound events by time as in `find`; a session whose file was last
   modified before the window's start is not read and not counted in `scanned:`. `--since` and
@@ -547,7 +555,7 @@ the earliest hit; the header carries `scanned: 83 sessions, 412 MB, 2.1s` and th
 ## `resume-pack <session>`
 
 ```
-agent-session-axi resume-pack <session> [--window <k|last>] [--budget <chars>] [--tools <n>]
+agent-recall-axi resume-pack <session> [--window <k|last>] [--budget <chars>] [--tools <n>]
                               [--claims <n>] [--project <p> | --all] [--json-out[=path]]
 ```
 
@@ -572,8 +580,8 @@ human[4]:
     kind: human
     text: |
       ...
-tools[10]{id,t,tool,target,result}:
-  7a2f1c3e:4080.1,11-08 00:01:20,Edit,src/auth/callback.ts,ok 52
+tools[10]{id,tool,target,result}:
+  7a2f1c3e:4080.1,Edit,src/auth/callback.ts,ok 52
   ...
 claims[3]:
   - id: 7a2f1c3e:4101
@@ -581,8 +589,8 @@ claims[3]:
     text: |
       Fixed the redirect loop by …
 help[2]:
-  Run `agent-session-axi tail 7a2f1c3e` to see the last rows in order
-  Run `agent-session-axi human 7a2f1c3e --window all` for every human message in the session
+  Run `agent-recall-axi tail 7a2f1c3e` to see the last rows in order
+  Run `agent-recall-axi human 7a2f1c3e --window all` for every human message in the session
 ```
 
 Layer order is fixed (summary, human, tools, claims) so a consumer can read authority top-down.
@@ -600,7 +608,7 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
   one (`behaviors/context-windows.md`); it is `C` text, cut at 4,000 chars with the house marker
   and a `show <summary-id> --full` hint. When the budget drops it, the layer prints in its
   place as `summary: "dropped to meet the budget; show <summary-id> --full"`. `human[n]` and `claims[n]` are block lists whose texts
-  are whole and verbatim; `tools[n]{id,t,tool,target,result}` is the `tools` view's row (target
+  are whole and verbatim; `tools[n]{id,tool,target,result}` is the `tools` view's default row (target
   cut to 120 chars, `result` the linked status). An empty layer prints `human[0]:`,
   `tools[0]:`, `claims[0]:`; it is never left out.
 - **Budget** (`data-model.md#resume-pack`): a bound on the rendered layers, so the whole output
@@ -621,9 +629,9 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 ## `hook`
 
 ```
-agent-session-axi hook install   [--scope user|project] [--agent claude|codex|opencode]
-agent-session-axi hook status    [--scope user|project]
-agent-session-axi hook uninstall [--scope user|project]
+agent-recall-axi hook install   [--scope user|project] [--agent claude|codex|opencode]
+agent-recall-axi hook status    [--scope user|project]
+agent-recall-axi hook uninstall [--scope user|project]
 ```
 
 Explicit opt-in registration of the SessionStart hook that runs the home view (and, in hook mode,
@@ -636,28 +644,28 @@ the resume pack after a compaction). The one command that writes outside the cac
 - **Targets**, user scope: Claude Code `$CLAUDE_CONFIG_DIR/settings.json` (default
   `~/.claude/settings.json`), a `SessionStart` entry; Codex `$CODEX_HOME/hooks.json` (default
   `~/.codex/hooks.json`) plus `[features] hooks = true` in `$CODEX_HOME/config.toml`; OpenCode
-  the managed plugin `$XDG_CONFIG_HOME/opencode/plugins/axi-agent-session-axi.js` (default
+  the managed plugin `$XDG_CONFIG_HOME/opencode/plugins/axi-agent-recall-axi.js` (default
   `~/.config/opencode/…`). Project scope: `.claude/settings.json`, `.codex/hooks.json` and
-  `.opencode/plugins/axi-agent-session-axi.js` under the working directory. Codex reads its
+  `.opencode/plugins/axi-agent-recall-axi.js` under the working directory. Codex reads its
   feature flag only from the user's `config.toml`, which a project install never writes: it
   reports `codex_features: not set (needs [features] hooks = true in <path>; run hook install
   --scope user or set it yourself)` unless the flag is already on. `--agent` installs one of
   the three; without it all three. `status` and `uninstall` always cover all three.
 - **The command** the hook runs is the running binary: the skill shim
-  (`…/skills/agent-session-axi/scripts/agent-session-axi`, or the bundle beside it when the
+  (`…/skills/agent-recall-axi/scripts/agent-recall-axi`, or the bundle beside it when the
   shim is not executable) when it runs from the skill bundle, else the npm bin; as the bare name
-  `agent-session-axi` when that name on `PATH` resolves to the same file, else its absolute
+  `agent-recall-axi` when that name on `PATH` resolves to the same file, else its absolute
   path. Claude Code and Codex run it through a shell, so their entries hold it shell-quoted
-  (`'/opt/my tools/…/agent-session-axi'`); the OpenCode plugin spawns it without a shell and
+  (`'/opt/my tools/…/agent-recall-axi'`); the OpenCode plugin spawns it without a shell and
   holds it raw. The entrypoint must be one of the forms this tool installs (a file named
-  `agent-session-axi`, `agent-session-axi.js` or `agent-session-axi.mjs`); anything else,
+  `agent-recall-axi`, `agent-recall-axi.js` or `agent-recall-axi.mjs`); anything else,
   including a source checkout's `.ts`, is `VALIDATION_ERROR` naming the built bin and the shim.
 - **Which entries are ours**: a `SessionStart` hook whose command, split into shell words, is
   exactly one word that this tool could have written: the bare name, or an absolute path whose
   last segment is one of the three names above, quoted or not. A command with any other word
   (a wrapper with arguments, a pipeline, another tool) is never modified or removed, whatever it
   contains. The OpenCode plugin is ours only when its first line is the SDK's managed marker for
-  `agent-session-axi`.
+  `agent-recall-axi`.
 - **Idempotent**: an install that changes nothing rewrites nothing (file bytes unchanged) and
   says so; our entry with another command (the binary moved) is rewritten in place (path
   repair), and a second entry of ours is removed. `uninstall` removes only our entries (and a
@@ -673,20 +681,20 @@ the resume pack after a compaction). The one command that writes outside the cac
   other way (a `features.` dotted key or `features = { … }` inline table at the top level, a
   `[features.<sub>]` or `[[features]]` header, two `[features]` headers) or with a `hooks` value
   other than `true`/`false`, the Codex target is an `error:` and neither Codex file is written.
-- `AGENT_SESSION_AXI_DISABLE_HOOKS=1` makes `install` a no-op that says so (exit 0), for a host
+- `AGENT_RECALL_AXI_DISABLE_HOOKS=1` makes `install` a no-op that says so (exit 0), for a host
   or CI that must never gain a hook.
 
 ```
 hook: installed (user scope)
-command: agent-session-axi
+command: agent-recall-axi
 targets[3]{agent,path,state}:
   claude,~/.claude/settings.json,added
   codex,~/.codex/hooks.json,added
-  opencode,~/.config/opencode/plugins/axi-agent-session-axi.js,added
+  opencode,~/.config/opencode/plugins/axi-agent-recall-axi.js,added
 codex_features: ~/.codex/config.toml (hooks = true)
 help[2]:
-  Run `agent-session-axi hook status` to check it
-  Run `agent-session-axi hook uninstall` to remove it
+  Run `agent-recall-axi hook status` to check it
+  Run `agent-recall-axi hook uninstall` to remove it
 ```
 
 - `install` states per target: `added`, `updated` (the command or timeout was repaired),
@@ -715,32 +723,32 @@ help[2]:
 ## `cache`
 
 ```
-agent-session-axi cache status
-agent-session-axi cache clear [--project <p> | --all]
+agent-recall-axi cache status [--full]
+agent-recall-axi cache clear [--project <p> | --all]
 ```
 
 Reports the cache directory, size, indexed session count and staleness; `clear` deletes it.
 Nothing else depends on the cache existing.
 
 ```
-cache: ~/.cache/agent-session-axi
+cache: ~/.cache/agent-recall-axi
 size: 61.3k
 tracked: 4 files
 count: 2 indexed
-indexed[2]{session,lines,checkpoints,size,state,path}:
-  7a2f1c3e,4120,17,9.8k,fresh,~/.claude/projects/-src-widget/7a2f1c3e-….jsonl
-  91b0c4d2,812,4,2.1k,appended,~/.claude/projects/-src-widget/91b0c4d2-….jsonl
+indexed[2]{session,state,path}:
+  7a2f1c3e,fresh,~/.claude/projects/-src-widget/7a2f1c3e-….jsonl
+  91b0c4d2,appended,~/.claude/projects/-src-widget/91b0c4d2-….jsonl
 help[2]:
-  Run `agent-session-axi cache clear` to delete the cache (it is rebuilt on demand)
-  Run `agent-session-axi around <id>` to index a session
+  Run `agent-recall-axi cache clear` to delete the cache (it is rebuilt on demand)
+  Run `agent-recall-axi around <id>` to index a session
 ```
 
-- `lines` is the last-indexed seq, `checkpoints` the offset-table size, `size` the record's bytes
-  on disk. `state` is `fresh` (the file is as indexed, or only a line still being written
+- The default row is `{session,state,path}` (AXI §2). `--full` adds `lines` (the last-indexed
+  seq), `checkpoints` (the offset-table size) and `size` (the record's bytes on disk). `state` is `fresh` (the file is as indexed, or only a line still being written
   follows), `appended` (it grew; the next seek extends the table), `rewritten` (shorter, or the indexed head or last line changed; the next read
   discards the record) or `missing` (the file is gone).
 - `tracked` counts every per-file identity record (`behaviors/id-stability.md`).
-- Empty: `cache: ~/.cache/agent-session-axi (absent)` or `count: 0 indexed`, exit 0.
+- Empty: `cache: ~/.cache/agent-recall-axi (absent)` or `count: 0 indexed`, exit 0.
 - `cache clear` with no flag or `--all` deletes the whole directory; `--project <p>` deletes only
   the records stored for files under that project's log directory (logs since deleted
   included). Clearing an absent cache is a no-op, exit 0
@@ -749,20 +757,20 @@ help[2]:
 ## `update`
 
 ```
-agent-session-axi update [--check]
+agent-recall-axi update [--check]
 ```
 
 Shadows the SDK's built-in self-updater so the tool never contacts a registry
 (`behaviors/privacy.md`). Print-only: reports the running version and the two ways to update,
-`npx skills update agent-session-axi` for a skill install and `npm i -g agent-session-axi@latest`
+`npx skills update agent-recall-axi` for a skill install and `npm i -g agent-recall-axi@latest`
 for an npm install, choosing the first line by how the running binary was installed (run from
 the skill bundle, as the hints decide it (`#conventions`), → skill first). `--check` is accepted and prints the same text; exit 0.
 
 ```
-update: agent-session-axi 0.3.1 (skill install)
+update: agent-recall-axi 0.3.1 (skill install)
 help[2]:
-  Run `npx skills update agent-session-axi` to update the skill bundle
-  Run `npm i -g agent-session-axi@latest` if installed from npm
+  Run `npx skills update agent-recall-axi` to update the skill bundle
+  Run `npm i -g agent-recall-axi@latest` if installed from npm
 ```
 
 ## Built-ins

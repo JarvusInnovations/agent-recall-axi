@@ -61,7 +61,7 @@ export async function homeCommand(io: Io): Promise<string> {
     return renderDocument(body, [
       `Run \`${BIN} sessions --all\` for the newest sessions across every project`,
       `Run \`${BIN} sessions --project <path>\` for one project's sessions`,
-      `Run \`${BIN} recall "<phrase>"\` to search every project`,
+      `Run \`${BIN} search "<phrase>"\` to search every project`,
       `Run \`${BIN} --help\` for the full command list`,
     ]);
   }
@@ -89,7 +89,7 @@ export async function homeCommand(io: Io): Promise<string> {
   const unnumbered = listing.lastHuman?.event !== undefined && !listing.lastHuman.numbered;
   help.push(`Run \`${BIN} tail ${name}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
   help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
-  help.push(`Run \`${BIN} recall "<phrase>"\` to search every project`);
+  help.push(`Run \`${BIN} search "<phrase>"\` to search every project`);
   if (skipped.help) help.push(skipped.help);
   help.push(`Run \`${BIN} --help\` for the full command list, or \`${BIN} <command> --help\` for usage on any command`);
   return renderDocument(body, help);

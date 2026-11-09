@@ -6,7 +6,7 @@ import { main } from "../../src/cli.js";
 import { FIXTURE_ROOT, fixtureIndex } from "../fixtures/build.js";
 
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const BIN_JS = join(REPO, "dist", "bin", "agent-session-axi.js");
+export const BIN_JS = join(REPO, "dist", "bin", "agent-recall-axi.js");
 export const NOW = new Date("2026-11-07T14:00:00.000Z");
 
 const index = fixtureIndex();

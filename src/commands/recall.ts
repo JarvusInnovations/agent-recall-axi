@@ -1,4 +1,4 @@
-/** `recall <phrase>` (specs/cli.md#recall): a cross-project search grouped by session. */
+/** `search <phrase>` (specs/cli.md#search-phrase): a cross-project search grouped by session (library `recall`). */
 import { AxiError } from "axi-sdk-js";
 import { AgentSessionError } from "../lib/errors.js";
 import { formatId, hintName, sharedShorts } from "../lib/ids.js";
@@ -13,7 +13,7 @@ import { formatBytes } from "../output/sizes.js";
 import { BIN, carry, collapseHome, parseKinds, parseRange, scopeOf, shellArg, unreadableNote, zoneOf, type Io } from "./common.js";
 import { jsonOutTarget, withJsonOutLine, writeJsonOut } from "./json-out.js";
 
-/** recall's default window (cli.md#recall). */
+/** search's default window (cli.md#search-phrase). */
 const RECALL_SINCE = "90d";
 /** How many sessions get their own `find` hint. */
 const FIND_HINTS = 5;
@@ -21,20 +21,20 @@ const FIND_HINTS = 5;
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
 export async function recallCommand(args: string[], io: Io): Promise<string> {
-  const p = parseFlags("recall", args, findCommand("recall")?.flags ?? []);
-  if (p.help) return renderCommandHelp("recall") ?? "";
-  const usage = usageLine("recall");
+  const p = parseFlags("search", args, findCommand("search")?.flags ?? []);
+  if (p.help) return renderCommandHelp("search") ?? "";
+  const usage = usageLine("search");
   if (p.positionals.length !== 1) {
-    throw new AxiError(p.positionals.length ? 'recall takes one <phrase> (quote a phrase with spaces: recall "two words")' : "recall needs a <phrase>", "USAGE", [usage]);
+    throw new AxiError(p.positionals.length ? 'search takes one <phrase> (quote a phrase with spaces: search "two words")' : "search needs a <phrase>", "USAGE", [usage]);
   }
   const phrase = p.positionals[0]!;
   if (phrase === "") throw new AxiError("the phrase is empty", "USAGE", [usage]);
   const tz = zoneOf(p, io);
-  const range = parseRange("recall", p, tz, io.now, false);
+  const range = parseRange("search", p, tz, io.now, false);
   const parsedKinds = parseKinds(getString(p, "kind"));
   const kinds = parsedKinds === "all" ? [...KINDS] : parsedKinds;
   const limit = getNumber(p, "limit") ?? 20;
-  const scope = scopeOf("recall", p, io);
+  const scope = scopeOf("search", p, io);
   const project = getString(p, "project");
   const defaulted = getString(p, "since") === undefined && getString(p, "from") === undefined;
   const opts: RecallOpts = { scope, limit: 0, cache: { env: io.env } };
@@ -45,7 +45,7 @@ export async function recallCommand(args: string[], io: Io): Promise<string> {
   if (defaulted) opts.from = new Date(io.now.getTime() - parseSpan(RECALL_SINCE));
   else if (range.from instanceof Date) opts.from = range.from;
   if (range.to instanceof Date) opts.to = range.to;
-  const jsonOut = await jsonOutTarget("recall", p, io);
+  const jsonOut = await jsonOutTarget("search", p, io);
   let r;
   try {
     // Validates the regex, patterns and kinds before any log is read.
@@ -80,7 +80,7 @@ export async function recallCommand(args: string[], io: Io): Promise<string> {
   let out: string;
   if (shown.length === 0) {
     header.sessions = `0 of ${r.scanned.sessions} scanned mention ${opts.regex ? `/${phrase}/` : `"${phrase}"`}${sinceText !== undefined ? ` since ${sinceText}` : ""}`;
-    help.push(`Run \`${BIN} recall${phraseArg}${handles} --since 1y${getString(p, "to") !== undefined ? ` --to ${shellArg(getString(p, "to")!)}` : ""}${project !== undefined ? scopeFlag : ""}${tzc}${trailing}\` to look back a year`);
+    help.push(`Run \`${BIN} search${phraseArg}${handles} --since 1y${getString(p, "to") !== undefined ? ` --to ${shellArg(getString(p, "to")!)}` : ""}${project !== undefined ? scopeFlag : ""}${tzc}${trailing}\` to look back a year`);
     help.push(`Run \`${BIN} find${phraseArg} --all${time}${tzc}${trailing}\` to search tool output too`);
     if (skipped.help) help.push(skipped.help);
     out = renderDocument(header, help);
@@ -97,7 +97,7 @@ export async function recallCommand(args: string[], io: Io): Promise<string> {
     for (const s of shown.slice(0, FIND_HINTS)) {
       help.push(`Run \`${BIN} find ${hintName(s.session, shared)}${phraseArg}${handles}${scopeFlag}${tzc}${trailing}\` to dig into ${s.session.short}`);
     }
-    if (shown.length < r.matching) help.push(`Run \`${BIN} recall${phraseArg}${handles}${time}${project !== undefined ? scopeFlag : ""} --limit 0${tzc}${trailing}\` for all ${plural(r.matching, "session")}`);
+    if (shown.length < r.matching) help.push(`Run \`${BIN} search${phraseArg}${handles}${time}${project !== undefined ? scopeFlag : ""} --limit 0${tzc}${trailing}\` for all ${plural(r.matching, "session")}`);
     if (skipped.help) help.push(skipped.help);
     out = renderDocument(header, help);
   }

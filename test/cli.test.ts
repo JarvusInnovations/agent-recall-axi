@@ -75,7 +75,7 @@ describe("events", () => {
     const both = await run(["events", fx("two-day"), "--since", "7d", "--from", "today"]);
     expect(both.exitCode).toBe(2);
     expect(both.stdout).toMatch(/^code: USAGE$/m);
-    expect(both.stdout).toContain("usage: agent-session-axi events <session>");
+    expect(both.stdout).toContain("usage: agent-recall-axi events <session>");
     expect(both.stdout).toContain("--from -7d starts at the beginning of the local day");
     expect(both.stdout).not.toContain("now-7d");
     const hinted = await run(["events", fx("two-day"), "--from", "-7d"]);
@@ -99,19 +99,19 @@ describe("events", () => {
   it("paging hints carry the caller's view and the far bound", async () => {
     const path = shellPath(fx("parallel-tools"));
     const back = await run(["events", fx("parallel-tools"), "--kind", "call,human", "--limit", "2", "--head", "50", "--tz", "Asia/Tokyo"]);
-    expect(back.stdout).toContain(`Run \`agent-session-axi events ${path} --to a3000003:4 --kind call,human --limit 2 --head 50 --tz Asia/Tokyo\` for earlier rows`);
+    expect(back.stdout).toContain(`Run \`agent-recall-axi events ${path} --to a3000003:4 --kind call,human --limit 2 --head 50 --tz Asia/Tokyo\` for earlier rows`);
     const fwd = await run(["events", fx("parallel-tools"), "--from", "a3000003:2", "--to", "a3000003:9", "--limit", "1"]);
-    expect(fwd.stdout).toContain(`Run \`agent-session-axi events ${path} --from a3000003:3 --to a3000003:9 --limit 1\` for later rows`);
+    expect(fwd.stdout).toContain(`Run \`agent-recall-axi events ${path} --from a3000003:3 --to a3000003:9 --limit 1\` for later rows`);
     const tail = await run(["tail", fx("parallel-tools"), "2", "--kind", "call"]);
-    expect(tail.stdout).toContain(`Run \`agent-session-axi prev a3000003:4 --session ${path} --kind call --limit 2\` for earlier rows`);
+    expect(tail.stdout).toContain(`Run \`agent-recall-axi prev a3000003:4 --session ${path} --kind call --limit 2\` for earlier rows`);
   });
 
   it("the cut note is a complete command that shows those rows whole", async () => {
     const path = fx("string-content");
     const cut = await run(["events", path, "--head", "10"]);
     const note = cut.stdout.split("\n").find((l) => l.includes("cut to 10 chars"))!;
-    expect(note).toMatch(/^ {2}Run `agent-session-axi events \S+ --from a1000001:2 --to a1000001:6 --full` for the whole text of the 4 rows cut to 10 chars$/);
-    const cmd = /`agent-session-axi (.*)`/.exec(note)![1]!.split(" ");
+    expect(note).toMatch(/^ {2}Run `agent-recall-axi events \S+ --from a1000001:2 --to a1000001:6 --full` for the whole text of the 4 rows cut to 10 chars$/);
+    const cmd = /`agent-recall-axi (.*)`/.exec(note)![1]!.split(" ");
     const whole = await run(cmd);
     expect(whole.exitCode).toBe(0);
     expect(rowLines(whole.stdout, "events")).toHaveLength(4);
@@ -141,12 +141,26 @@ describe("events", () => {
     expect(short.stdout).not.toContain("--n");
   });
 
+  it("the pre-rename verb recall is a VALIDATION_ERROR pointing at search", async () => {
+    const { stdout, exitCode } = await run(["recall", "anything"]);
+    expect(exitCode).toBe(2);
+    expect(stdout).toMatch(/^error: "?recall is now `search`"?$/m);
+    expect(stdout).toContain("agent-recall-axi search");
+  });
+
+  it("tools prints four default columns; --fields t adds the time", async () => {
+    const plain = await run(["tools", fx("parallel-tools")]);
+    expect(plain.stdout).toMatch(/^tools\[\d+\]\{id,tool,target,result\}:$/m);
+    const timed = await run(["tools", fx("parallel-tools"), "--fields", "t"]);
+    expect(timed.stdout).toMatch(/^tools\[\d+\]\{id,tool,target,result,t\}:$/m);
+  });
+
   it("an unknown command is a VALIDATION_ERROR whose hint names the tool", async () => {
     const { stdout, exitCode } = await run(["frobnicate"]);
     expect(exitCode).toBe(2);
     expect(stdout).toMatch(/^error: "?unknown command: frobnicate"?$/m);
     expect(stdout).toMatch(/^code: VALIDATION_ERROR$/m);
-    expect(stdout).toContain("Run `agent-session-axi --help` to see available commands");
+    expect(stdout).toContain("Run `agent-recall-axi --help` to see available commands");
   });
 
   it("a leading flag gets the SDK's error", async () => {
@@ -192,7 +206,7 @@ describe("tail", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("tail[20]{id,t,kind,text}:");
     expect(stdout).toMatch(/^count: 20 \(newest; earlier rows exist\)$/m);
-    expect(stdout).toMatch(/Run `agent-session-axi prev f0000099:\d+ --session .*` for earlier rows/);
+    expect(stdout).toMatch(/Run `agent-recall-axi prev f0000099:\d+ --session .*` for earlier rows/);
   });
 
   it("`tail <s> 5` and `--limit 5` agree", async () => {
@@ -264,7 +278,7 @@ describe("sessions and home", () => {
     expect(none.stdout).toMatch(/^project: none for \/elsewhere$/m);
     expect(none.stdout).toMatch(/^sessions: none in this directory$/m);
     expect(none.stdout).not.toContain("sessions[");
-    expect(none.stdout).toContain("agent-session-axi sessions --all");
+    expect(none.stdout).toContain("agent-recall-axi sessions --all");
   });
 });
 
@@ -287,18 +301,18 @@ describe("help, planned commands, update", () => {
     const { stdout, exitCode } = await run(["hook"]);
     expect(exitCode).toBe(2);
     // errors.md#codes: a USAGE error's help is the command's usage line.
-    expect(stdout).toContain("usage: agent-session-axi hook install [--scope user|project] [--agent claude|codex|opencode] | hook status");
+    expect(stdout).toContain("usage: agent-recall-axi hook install [--scope user|project] [--agent claude|codex|opencode] | hook status");
     const missing = await run(["events", fx("thinking"), "--limit"]);
     expect(missing.exitCode).toBe(2);
-    expect(missing.stdout).toContain("usage: agent-session-axi events <session> [--from <when|id>]");
+    expect(missing.stdout).toContain("usage: agent-recall-axi events <session> [--from <when|id>]");
   });
 
   it("update and update --check print the version and both update commands", async () => {
-    const npm = await run(["update"], { entrypoint: "/usr/lib/node_modules/agent-session-axi/dist/bin/agent-session-axi.js" });
+    const npm = await run(["update"], { entrypoint: "/usr/lib/node_modules/agent-recall-axi/dist/bin/agent-recall-axi.js" });
     expect(npm.exitCode).toBe(0);
-    expect(npm.stdout).toMatch(/^update: agent-session-axi \S+ \(npm install\)$/m);
+    expect(npm.stdout).toMatch(/^update: agent-recall-axi \S+ \(npm install\)$/m);
     expect(npm.stdout.indexOf("npm i -g")).toBeLessThan(npm.stdout.indexOf("npx skills update"));
-    const skill = await run(["update", "--check"], { entrypoint: "/opt/agents/skills/agent-session-axi/scripts/agent-session-axi.mjs" });
+    const skill = await run(["update", "--check"], { entrypoint: "/opt/agents/skills/agent-recall-axi/scripts/agent-recall-axi.mjs" });
     expect(skill.exitCode).toBe(0);
     expect(skill.stdout).toMatch(/\(skill install\)/);
     expect(skill.stdout.indexOf("npx skills update")).toBeLessThan(skill.stdout.indexOf("npm i -g"));

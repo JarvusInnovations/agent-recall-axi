@@ -1,7 +1,7 @@
 name: 'Main: guard'
 
 # main is the release target and stays the default branch (it is what
-# `npx skills add JarvusInnovations/agent-session-axi` installs). Only the Release PR
+# `npx skills add JarvusInnovations/agent-recall-axi` installs). Only the Release PR
 # from develop, or a hotfix/* branch, may merge into it. This check is
 # required on main, so a feature PR opened against main cannot merge; the
 # companion main-retarget workflow moves such PRs onto develop on open.

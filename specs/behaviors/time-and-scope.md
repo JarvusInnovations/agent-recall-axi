@@ -21,7 +21,7 @@ Every command with `--from`, `--to`, `--since`, `--before`, `--after`, `--projec
   token: `now`, `today`, `yesterday`, `+Nd`/`-Nd`, `+Nw`/`-Nw` (day precision), `+Nh`/`-Nh`,
   `+Nm`/`-Nm` (instant precision).
 - `--since <span>` is shorthand for `--from now-<span>`: spans are `90m`, `24h`, `7d`, `2w`, `1y`
-  (a year is 365 days; `recall`'s empty-state hint is `--since 1y`).
+  (a year is 365 days; `search`'s empty-state hint is `--since 1y`).
 - `--tz <iana>` is the one global flag, accepted on every command, and sets the zone for parsing
   and rendering; default `TZ`, else the system zone. The header echoes the resolved zone.
 - An event id is also accepted where a `<when>` is: it means that event's timestamp. The resolver
@@ -44,7 +44,7 @@ Every command with `--from`, `--to`, `--since`, `--before`, `--after`, `--projec
 - `--project <value>` widens the scope to one project: a filesystem path (resolved to its log
   directory), an encoded directory name, or a substring that matches exactly one project's `cwd`
   (ambiguity lists the candidates).
-- `--all` scopes to every project under the log root. `recall` defaults to `--all`.
+- `--all` scopes to every project under the log root. `search` defaults to `--all`.
 - `<session>` resolves per `data-model.md#session-reference`; a literal path ignores scope.
 - Subagent sessions are in scope for id resolution always, and in listings only with
   `--subagents`.

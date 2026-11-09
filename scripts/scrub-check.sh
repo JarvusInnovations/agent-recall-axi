@@ -32,7 +32,7 @@ fi
 rules=(
   "home path"
   '/(home|users)/[a-z0-9._-]+'
-  ':/(home|users)/user$|^skills/agent-session-axi/scripts/agent-session-axi\.mjs:[0-9]+:/(home)/linuxbrew$'
+  ':/(home|users)/user$|^skills/agent-recall-axi/scripts/agent-recall-axi\.mjs:[0-9]+:/(home)/linuxbrew$'
 
   "email address"
   '[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}'

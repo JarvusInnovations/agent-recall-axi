@@ -27,12 +27,12 @@ Every command, the library, the skill and the session hook.
 - **Cache** (`architecture.md#cache`): derived indexes only. The cache may hold ids, seqs,
   offsets, hashes, kinds, counts, tool names, the file paths a call targeted, entry timestamps and
   model names; it never holds message text, tool input text or result text (a session title is
-  kept as the position of its line, not its text). The one exception is `recall`'s term index:
+  kept as the position of its line, not its text). The one exception is `search`'s term index:
   the lower-cased word tokens of every `H` and `C` text, `thinking` and call inputs included,
   each with the seqs that hold it, sorted by token so no order survives. A secret pasted into a
   prompt or a command is therefore present in the cache as tokens until `cache clear` removes
-  it. It lives under `$XDG_CACHE_HOME/agent-session-axi/` (default
-  `~/.cache/agent-session-axi/`), is created with owner-only permissions, is keyed by file identity
+  it. It lives under `$XDG_CACHE_HOME/agent-recall-axi/` (default
+  `~/.cache/agent-recall-axi/`), is created with owner-only permissions, is keyed by file identity
   so it can never attribute one file's content to another, and is fully removable with
   `cache clear`. Deleting it loses nothing; everything is rebuilt from the logs.
 - **Exports** (`--json-out[=path]`) write where the caller says, or to an owner-only temp file; the

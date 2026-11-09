@@ -32,8 +32,8 @@ import {
 } from "./hook-settings.js";
 
 export const MARKER = NAME;
-export const DISABLE_ENV = "AGENT_SESSION_AXI_DISABLE_HOOKS";
-const OPENCODE_FILE = "axi-agent-session-axi.js";
+export const DISABLE_ENV = "AGENT_RECALL_AXI_DISABLE_HOOKS";
+const OPENCODE_FILE = "axi-agent-recall-axi.js";
 /** The first line of the SDK's managed plugin for this marker: the only plugin file that is ours. */
 const OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
 const COMMAND_LINE = /^const command = (".*");$/m;

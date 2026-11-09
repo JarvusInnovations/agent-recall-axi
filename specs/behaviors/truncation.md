@@ -23,7 +23,7 @@ Every command.
 | `human` total output | 12,000 chars including the window's opening summary (itself capped at 4,000 as `C` text); the newest human message always prints whole; older messages drop oldest-first | `--budget <chars>`, `--full` |
 | `resume-pack` total | 16,000 bytes of rendered layers (the output is at most that plus header, footer and the newest human message, `data-model.md#resume-pack`); claims drop first, then calls, then the oldest human messages, then the opening summary; the newest human message always prints whole | `--budget <chars>`, `--budget 0` |
 | rows per listing | `--limit` default per command (`cli.md`) | `--limit <n>`; `--limit 0` = no cap |
-| `recall` sessions scanned | last 90 days | `--since`, `--from` |
+| `search` sessions scanned | last 90 days | `--since`, `--from` |
 
 ### Marks
 

@@ -154,7 +154,7 @@ describe("the offset table on a 200 MB session (plan pan)", () => {
     const second = best(["around", anchor, "--session", big]);
     expect(second.ms).toBeLessThan(budget());
     expect(second.stdout).toBe(first.stdout);
-    const status = cli(["cache", "status"]);
+    const status = cli(["cache", "status", "--full"]);
     expect(status.stdout).toContain(`f0000099,${lines},${Math.ceil(lines / 256)},`);
   }, 120_000);
 
@@ -174,7 +174,7 @@ describe("the offset table on a 200 MB session (plan pan)", () => {
     expect(warm.ms).toBeLessThan(budget());
     const session = await openSession(big);
     const eid = { session: session.short, seq: lines - 2 };
-    const seeked = await show(session, eid, { cache: { dir: join(cacheHome, "agent-session-axi") } });
+    const seeked = await show(session, eid, { cache: { dir: join(cacheHome, "agent-recall-axi") } });
     const cold = await showFromStart(session, eid);
     expect(JSON.stringify({ ...seeked, session: undefined })).toBe(JSON.stringify({ ...cold, session: undefined }));
   }, 120_000);

@@ -35,7 +35,7 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 const split = (out: string) => out.split(/\nhelp\[\d+\]:\n/);
 const body = (out: string) => decode(split(out)[0]!) as Record<string, unknown>;
 const helpLines = (out: string) => (split(out)[1] ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
-const hints = (out: string) => [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+const hints = (out: string) => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
 const texts = (v: unknown) => (v as Array<{ text: string }>).map((m) => m.text);
 const cache = () => ({ env: { XDG_CACHE_HOME: mkdtempSync(join(tmp, "cache-")) } });
 
@@ -49,7 +49,7 @@ describe("layers", () => {
     expect(r.stdout).toMatch(/^layers: summary C; human H \(verbatim\); tools C \(results D\); claims C$/m);
     expect(r.stdout).toMatch(/^budget: [\d.]+k of 16\.0k used$/m);
     expect(r.stdout).toContain("human[6]:");
-    expect(r.stdout).toContain("tools[10]{id,t,tool,target,result}:");
+    expect(r.stdout).toContain("tools[10]{id,tool,target,result}:");
     expect(r.stdout).toContain("claims[3]:");
     const doc = body(r.stdout);
     // Byte-equal to the strings the fixture wrote (a decoded TOON string is the stored text).
@@ -104,7 +104,7 @@ describe("layers", () => {
   it("a one-window session says so; --tools 3 --claims 1 are respected; no assistant text is claims[0]", async () => {
     const one = await run(["resume-pack", fx("find"), "--tools", "3", "--claims", "1"]);
     expect(one.stdout).toMatch(/^window: 0 \(last; only window 0\)$/m);
-    expect(one.stdout).toContain("tools[3]{id,t,tool,target,result}:");
+    expect(one.stdout).toContain("tools[3]{id,tool,target,result}:");
     expect(one.stdout).toContain("claims[1]:");
     expect(texts(body(one.stdout).claims)).toEqual(["Deployed to staging."]);
     const none = await run(["resume-pack", files.silent]);
