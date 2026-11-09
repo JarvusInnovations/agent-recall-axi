@@ -165,6 +165,8 @@ describe("hook install / status / uninstall", () => {
     expect(st.stdout).toContain("Run `agent-session-axi hook install --scope project` to install it");
     const again = await hook(b, ["uninstall", "--scope", "project"], bin);
     expect(again.stdout).toMatch(/^hook: nothing to remove \(project scope\)$/m);
+    expect(again.stdout).toContain("Run `agent-session-axi hook status --scope project` to confirm");
+    expect(again.stdout).toContain("Run `agent-session-axi hook install --scope project` to add it back");
     expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual(PRE_EXISTING);
   });
 
@@ -264,6 +266,8 @@ describe("hook install / status / uninstall", () => {
     writeFileSync(join(b.project, ".claude", "settings.json"), "{ not json");
     const r = await hook(b, ["install", "--scope", "project"], bin);
     expect(r.exitCode).toBe(1);
+    // An errored target means the headline never claims success.
+    expect(r.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
     expect(r.stdout).toMatch(/^ {2}claude,.*,"?error: /m);
     expect(r.stdout).toMatch(/codex,.*,added$/m);
     expect(readFileSync(join(b.project, ".claude", "settings.json"), "utf8")).toBe("{ not json");
@@ -533,7 +537,8 @@ describe("the bin's stdin, process-level", () => {
     for (const write of [undefined, '{"session_id":"a6000006-0000-4000-8000-000000000000","sour']) {
       const r = await spawnBin(cwd, write);
       expect(r.code, String(write)).toBe(0);
-      expect(r.stdout, String(write)).toMatch(/^sessions\[\d+\]/m);
+      // The home view, not an error: this cwd has no sessions, so it is the scoped empty state.
+      expect(r.stdout, String(write)).toMatch(/^sessions(\[\d+\]|: none in this directory)/m);
     }
   });
 });

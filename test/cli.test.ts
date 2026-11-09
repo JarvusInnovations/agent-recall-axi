@@ -133,6 +133,20 @@ describe("events", () => {
     expect(stdout).toContain("valid flags for `events`: --from, --to, --since, --kind, --limit, --head, --full");
     const renamed = await run(["events", fx("thinking"), "--until", "now"]);
     expect(renamed.stdout).toContain("use --to");
+    // A renamed short flag is named as typed, not re-prefixed.
+    const short = await run(["events", fx("thinking"), "-n", "3"]);
+    expect(short.exitCode).toBe(2);
+    expect(short.stdout).toMatch(/^error: unknown flag -n for `events`$/m);
+    expect(short.stdout).toContain("-n is not a flag of this tool; use --limit");
+    expect(short.stdout).not.toContain("--n");
+  });
+
+  it("an unknown command is a VALIDATION_ERROR whose hint names the tool", async () => {
+    const { stdout, exitCode } = await run(["frobnicate"]);
+    expect(exitCode).toBe(2);
+    expect(stdout).toMatch(/^error: "?unknown command: frobnicate"?$/m);
+    expect(stdout).toMatch(/^code: VALIDATION_ERROR$/m);
+    expect(stdout).toContain("Run `agent-session-axi --help` to see available commands");
   });
 
   it("a leading flag gets the SDK's error", async () => {
@@ -239,7 +253,7 @@ describe("sessions and home", () => {
     expect(stdout).not.toMatch(/\n\s+at /);
   });
 
-  it("the home view lists the project's sessions, or every project's when the cwd has none", async () => {
+  it("the home view lists the project's sessions, and none from other projects when the cwd has none", async () => {
     const here = await run([]);
     expect(here.stdout).toMatch(/^description: /m);
     expect(here.stdout).toMatch(/^project: \/src\/widget \(22 sessions\)$/m);
@@ -248,7 +262,9 @@ describe("sessions and home", () => {
     expect(here.stdout).toMatch(/^latest: [0-9a-f]{8}$/m);
     const none = await run([], { cwd: "/elsewhere" });
     expect(none.stdout).toMatch(/^project: none for \/elsewhere$/m);
-    expect(none.stdout).toContain("sessions[5]{id,last,turns,title}:");
+    expect(none.stdout).toMatch(/^sessions: none in this directory$/m);
+    expect(none.stdout).not.toContain("sessions[");
+    expect(none.stdout).toContain("agent-session-axi sessions --all");
   });
 });
 

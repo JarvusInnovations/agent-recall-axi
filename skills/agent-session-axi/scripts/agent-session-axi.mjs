@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.1.0" : readVersion();
+    VERSION = true ? "0.1.1" : readVersion();
   }
 });
 
@@ -5398,8 +5398,9 @@ function parseFlags(command, args, specs) {
     if (!spec) {
       const renamed = RENAMED[name];
       if (renamed && byName.has(renamed)) {
-        throw new AxiError(`unknown flag --${name} for \`${command}\``, "UNKNOWN_FLAG", [
-          `--${name} is not a flag of this tool; use --${renamed}`,
+        const typed = arg.split("=")[0];
+        throw new AxiError(`unknown flag ${typed} for \`${command}\``, "UNKNOWN_FLAG", [
+          `${typed} is not a flag of this tool; use --${renamed}`,
           validFlagsLine(command, specs)
         ]);
       }
@@ -6981,15 +6982,19 @@ async function homeCommand(io) {
   const body = {};
   const cache = { env: io.env };
   let listing;
-  let none = false;
   try {
     listing = await homeListing({ cwd: io.cwd, env: io.env }, { limit: HOME_LIMIT, cache });
     body.project = `${collapseHome(listing.scope.projects[0].cwd)} (${listing.total} session${listing.total === 1 ? "" : "s"})`;
   } catch (err) {
     if (!(err instanceof AgentSessionError) || err.code !== "NO_SESSIONS") throw err;
-    none = true;
     body.project = `none for ${collapseHome(io.cwd)}`;
-    listing = await homeListing({ cwd: io.cwd, env: io.env, project: "all" }, { limit: HOME_LIMIT, cache });
+    body.sessions = "none in this directory";
+    return renderDocument(body, [
+      `Run \`${BIN} sessions --all\` for the newest sessions across every project`,
+      `Run \`${BIN} sessions --project <path>\` for one project's sessions`,
+      `Run \`${BIN} recall "<phrase>"\` to search every project`,
+      `Run \`${BIN} --help\` for the full command list`
+    ]);
   }
   const skipped = unreadableNote(listing);
   if (skipped.count) body.unreadable = skipped.count;
@@ -7003,20 +7008,18 @@ async function homeCommand(io) {
   body.sessions = listing.sessions.map((s) => ({
     id: s.session.short,
     last: `${formatMonthDayMinute(new Date(s.last), tz)} (${formatAgo(new Date(s.last), io.now)})`,
-    turns: s.turns ?? "",
+    turns: s.turns ?? "?",
     title: titleCell(s.title)
   }));
   const latest2 = listing.sessions[0].session;
   body.latest = latest2.short;
   body.last_human = lastHumanLine(listing, tz, io.now);
   const name = hintName(latest2, listing.shared);
-  const scope = none ? " --all" : "";
-  if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}${scope}\` for a cold-start pack of the latest session`);
-  else help.push(`Run \`${BIN} human ${name} --window last${scope}\` for what the human asked in the latest session's live window`);
+  if (findCommand("resume-pack")?.status === "available") help.push(`Run \`${BIN} resume-pack ${name}\` for a cold-start pack of the latest session`);
+  else help.push(`Run \`${BIN} human ${name} --window last\` for what the human asked in the latest session's live window`);
   const unnumbered = listing.lastHuman?.event !== void 0 && !listing.lastHuman.numbered;
-  help.push(`Run \`${BIN} tail ${name}${scope}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
-  if (none) help.push(`Run \`${BIN} sessions --project <path>\` for one project's sessions`);
-  else help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
+  help.push(`Run \`${BIN} tail ${name}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
+  help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
   help.push(`Run \`${BIN} recall "<phrase>"\` to search every project`);
   if (skipped.help) help.push(skipped.help);
   help.push(`Run \`${BIN} --help\` for the full command list, or \`${BIN} <command> --help\` for usage on any command`);
@@ -7503,8 +7506,9 @@ function install(ctx, agent, io) {
     }
   });
   const changed = rows.some((r) => r.state === "added" || r.state === "updated");
+  const headline = failed ? changed ? `partly installed (${ctx.scope} scope; see errors)` : `not installed (${ctx.scope} scope; see errors)` : changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`;
   const body = {
-    hook: changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`,
+    hook: headline,
     command,
     targets: rows
   };
@@ -7579,7 +7583,11 @@ function uninstall(ctx) {
     }
   });
   const removed = rows.some((r) => r.state === "removed");
-  return finish({ hook: removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`, targets: rows }, [], failed);
+  const headline = failed ? `${removed ? "partly removed" : "not removed"} (${ctx.scope} scope; see errors)` : removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`;
+  return finish({ hook: headline, targets: rows }, [
+    `Run \`${BIN} hook status${ctx.scopeFlag}\` to confirm`,
+    `Run \`${BIN} hook install${ctx.scopeFlag}\` to add it back`
+  ], failed);
 }
 var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, SUBCOMMANDS;
 var init_hook2 = __esm({
@@ -9988,6 +9996,9 @@ async function main(argv = process.argv.slice(2), io = {}) {
     home: () => homeView(ctx, io.stdin?.()),
     commands,
     getCommandHelp: (name) => renderCommandHelp(name),
+    renderUnknownCommand: (name) => formatError(
+      new AxiError(`unknown command: ${name}`, "VALIDATION_ERROR", [`Run \`${BIN} --help\` to see available commands`])
+    ).output,
     formatError,
     ...io.stdout ? { stdout: io.stdout } : {}
   });

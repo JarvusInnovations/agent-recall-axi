@@ -40,8 +40,9 @@ or newer and nothing else: no registry, no `npm install`, no `node_modules`, so 
 that cannot reach npm at cold start still has its memory. The shim is not on `PATH`; run it by
 its path, for example `~/.claude/skills/agent-session-axi/scripts/agent-session-axi tail latest`,
 and the tool's own hints name that same path. `SKILL.md` tells the agent when to reach for it.
-The bundle reports the release it was cut from (`--version`); between releases, a bundle on the
-default branch reports a development version such as `0.0.0-g1a2b3c4`.
+The bundle reports the release it was cut from (`--version`): the default branch is `main`, which
+holds only released trees. Contributors: PRs go to `develop`; one opened against `main` is moved
+there automatically.
 
 ## The zoom ladder
 
