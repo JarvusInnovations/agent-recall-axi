@@ -12,6 +12,8 @@ publishes**.
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `ci.yml` | push / PR to `main` or `develop` | Scrub gate, type check, build, consumer type check, tests, `check:skill`, `check:bundle`, bin smoke test, and the skill bundle run with `node` alone |
+| `main-guard.yml` | PR to `main` | Required check: the head must be `develop` (the Release PR) or `hotfix/*` |
+| `main-retarget.yml` | PR to `main` opened | Moves any other PR onto `develop` and comments; never runs the PR's code |
 | `release-prepare.yml` | push to `develop` | Opens or refreshes the `Release: vX.Y.Z` PR and its bot `## Changelog` comment |
 | `release-validate.yml` | PR to `main` | Title format and tag collision (infra-components), plus `bundle-stamp`: the committed bundle must print the title's version |
 | `release-publish.yml` | Release PR merged | Tags `main`'s merge commit `vX.Y.Z` and creates the GitHub release with the PR body as its notes (uses `BOT_GITHUB_TOKEN`) |
@@ -40,8 +42,9 @@ git push origin develop
 ```
 
 That commit is in the merge, so the tree at `vX.Y.Z` reports `X.Y.Z` through both channels, and
-so does `develop` (the default branch, which `npx skills add` installs) until the next bundle
-rebuild, which reports `0.0.0-g<sha>`: a development build. `release-validate`'s `bundle-stamp`
+so does `main` (the default branch, which `npx skills add` installs) until the next release.
+`develop` carries the same stamp until its next bundle rebuild, which reports `0.0.0-g<sha>`: a
+development build that skill users never receive. `release-validate`'s `bundle-stamp`
 check blocks a Release PR whose bundle is not stamped with its title's version, and
 `publish-npm`'s gate repeats the check at the tag. Settle the title **before** stamping; a retitle
 needs a restamp.
