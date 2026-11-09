@@ -1,8 +1,10 @@
 ---
-status: in-progress
+status: done
+done: 2026-11-09
 depends: [axi-conformance]
 specs:
   - specs/cli.md
+pr: 30
 ---
 
 # Plan: `sessions` defaults to four columns
@@ -28,6 +30,6 @@ and field validation all pick it up from one place. The committed bundle is rebu
 
 ## Validation
 
-- [ ] Unit: `sessions` prints `{id,last,turns,title}` and no `started`; `--fields started` appends it
+- [x] Unit: `sessions` prints `{id,last,turns,title}` and no `started`; `--fields started` appends it
       as `MM-DD HH:MM`; `--subagents` and other `--fields` schemas shift accordingly.
-- [ ] check, check:skill, check:bundle and check:scrub pass, and CI is green.
+- [x] check, check:skill, check:bundle and check:scrub pass, and CI is green.
