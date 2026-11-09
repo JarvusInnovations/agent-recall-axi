@@ -1,6 +1,6 @@
-# agent-session-axi specs
+# agent-recall-axi specs
 
-These specs declare the **desired state** of `agent-session-axi`: what must be true of the tool, not
+These specs declare the **desired state** of `agent-recall-axi`: what must be true of the tool, not
 a description of what happens to be built. The spec leads; the code conforms. The workflow is the
 `specops` skill (`.agents/skills/specops`); plans that bring code to these specs live in `plans/`.
 

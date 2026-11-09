@@ -1,7 +1,7 @@
 # API: Library surface
 
 What another program (first consumer: the opsbots kit's cold-start pack) imports from
-`agent-session-axi`. The CLI in `cli.md` is a thin rendering of these functions; a behavior
+`agent-recall-axi`. The CLI in `cli.md` is a thin rendering of these functions; a behavior
 available in the CLI and not here is a bug.
 
 ## Module
@@ -15,7 +15,7 @@ import {
   type Session, type Event, type Turn, type Window, type Pointer, type ResumePack,
   type FindQuery, type Hit, type RecallResult, type Scope,
   AgentSessionError,
-} from "agent-session-axi";
+} from "agent-recall-axi";
 ```
 
 All functions are async or return async iterables; none writes to stdout, calls `process.exit`,
@@ -137,7 +137,7 @@ interface RecallResult { session: Session; hits: number; first: EventId; last: D
 At least one of `phrase`, `file`, `tool`, `kinds` is required; otherwise `VALIDATION_ERROR`.
 `findAcross` yields each session's hits in file order, sessions newest file modification time
 first (`cli.md#find`); `recall` searches the `H` and `C` kinds only and resolves `since` as
-`from` (`cli.md#recall`). `listSessions` computes each session's stats (`sessionStats`), so its
+`from` (`cli.md#search-phrase`). `listSessions` computes each session's stats (`sessionStats`), so its
 order and `last` are exact.
 
 ## Resume pack
@@ -166,11 +166,11 @@ budget is a non-negative integer bounding the rendered pack, counted and spent a
 the last, whose help names the index-or-`last` grammar and the valid range. Event texts are
 uncut; the 4,000-char summary cap is the renderer's.
 
-The kit renders the pack itself or calls `renderResumePack` from the `agent-session-axi/render`
+The kit renders the pack itself or calls `renderResumePack` from the `agent-recall-axi/render`
 subpath, which produces the CLI's exact TOON (`cli.md#resume-pack-session`):
 
 ```ts
-import { renderResumePack } from "agent-session-axi/render";
+import { renderResumePack } from "agent-recall-axi/render";
 renderResumePack(pack: ResumePack, opts: {
   tz: string;            // IANA zone for the time column
   ref?: string;          // how hints name the session (scope flags included); default its <s8>
