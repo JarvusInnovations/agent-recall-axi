@@ -116,6 +116,10 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
     home: () => homeView(ctx, io.stdin?.()),
     commands,
     getCommandHelp: (name) => renderCommandHelp(name),
+    renderUnknownCommand: (name) =>
+      formatError(
+        new AxiError(`unknown command: ${name}`, "VALIDATION_ERROR", [`Run \`${BIN} --help\` to see available commands`]),
+      ).output,
     formatError,
     ...(io.stdout ? { stdout: io.stdout } : {}),
   });
