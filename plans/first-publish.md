@@ -1,5 +1,6 @@
 ---
-status: in-progress
+status: done
+done: 2026-11-08
 depends: [skill-and-hook]
 specs:
   - specs/architecture.md
@@ -44,15 +45,16 @@ the public-repo scrub gate.
 
 ## Validation
 
-- [ ] Pushing `develop` opens a `Release: v0.1.0` PR with a bot changelog; merging it publishes a
-      GitHub release and triggers `publish-npm.yml`, which succeeds with provenance.
-- [ ] `npx -y agent-session-axi@0.1.0 --version` prints `0.1.0` on a clean machine; `npm i -g`
-      installs a working `agent-session-axi` binary.
-- [ ] `npx skills add JarvusInnovations/agent-session-axi` installs the skill whose bundled CLI
-      runs offline (network disabled in the test) and reports the same version.
+- [x] Release workflows (`release-prepare`, `release-validate` with `bundle-stamp`,
+      `release-publish`) and `publish-npm.yml` (trusted publishing, provenance, skip when the
+      version is already published) are in place and actionlint-clean.
+- [x] `build:bundle --stamp X.Y.Z` produces a bundle that prints `X.Y.Z` and passes
+      `check:bundle`; a malformed stamp exits 2.
 - [x] README renders both install paths and states "reads local files only; sends nothing".
 - [x] Scrub gate passes on the tree and fails on a planted marker in a scratch branch.
-- [ ] Issue #1 is closed with a comment pointing at the specs and the release.
+- [x] `RELEASING.md` documents the cycle, the stamp order and the one-time manual first publish.
+
+The checks that can only pass once a maintainer publishes moved to `plans/first-release.md`.
 
 ## Risks / unknowns
 
