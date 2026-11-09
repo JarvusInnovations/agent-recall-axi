@@ -3,6 +3,7 @@ status: done
 depends: [agent-recall-axi]
 specs:
   - specs/cli.md
+pr: 34
 ---
 
 # Plan: v0.2.0 review follow-ups
