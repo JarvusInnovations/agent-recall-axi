@@ -94,8 +94,11 @@ help[5]:
   Run `agent-session-axi --help` for the full command list, or `agent-session-axi <command> --help` for usage on any command
 ```
 
-- With no log directory for the working directory: `project: none for <cwd>` plus the five most
-  recent sessions across all projects and a hint to `--project`.
+- With no log directory for the working directory: `project: none for <cwd>` and
+  `sessions: none in this directory`, with hints to `sessions --all`, `sessions --project <path>`
+  and `recall "<phrase>"`, and nothing read from other projects. The home view is what the
+  SessionStart hook injects, so it stays scoped to the working directory (AXI §7): another
+  project's sessions are context the agent did not ask for.
 - Must complete in under 300 ms on a project with 100 sessions: it reads `sessions-index.json`
   when present and otherwise stats files and reads only the tail of the latest one. It never scans
   a whole file.
@@ -105,7 +108,7 @@ help[5]:
   the listing's budget of 8 MB of appended lines in total (exact, as `sessions` prints them); else
   the file's mtime as `last` (the matching `sessions-index.json` entry's `modified` when there is
   one) and, as `title`, `custom-title.json`, else that index entry's `summary`, else the first
-  `human` event in the file's first 1 MB; `turns` is empty without stats. `last` prints as in
+  `human` event in the file's first 1 MB; `turns` is `?` without stats (unknown, never an empty cell that reads like a missing value). `last` prints as in
   `sessions` (absolute plus relative).
 - `last_human` is the newest `H`-class event in the latest session's final 4 MB, read backwards
   (`<id> <time> "<head>"`, the time `HH:MM:SS` on today's local date and `MM-DD HH:MM:SS`
@@ -689,7 +692,9 @@ help[2]:
 - `install` states per target: `added`, `updated` (the command or timeout was repaired),
   `unchanged`, or `unmanaged (left in place)` for an OpenCode plugin file it did not write;
   the first line is `hook: installed (<scope> scope)`, or `hook: already installed
-  (<scope> scope; no changes)` when nothing changed. `command:` is the command as the Claude
+  (<scope> scope; no changes)` when nothing changed. When any target's row is an `error:`, the
+  first line never claims success: `hook: partly installed (<scope> scope; see errors)` if another
+  target changed, else `hook: not installed (<scope> scope; see errors)`, and the exit is 1. `command:` is the command as the Claude
   Code and Codex entries hold it. `codex_features` is printed when Codex is a target.
 - `status` states per target: `installed`, `stale` (ours, with a command other than the one
   `install` would write now), `absent`, or `error: <message>`; the first line is `hook:
@@ -697,7 +702,9 @@ help[2]:
   and `codex_features:` reports the user flag. It writes nothing. The footer suggests `hook
   install` when any target is not `installed`, else `hook uninstall`.
 - `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first
-  line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`.
+  line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`, or, when a
+  target errored, `hook: partly removed` / `hook: not removed` with `; see errors` and exit 1.
+  The footer suggests `hook status` to confirm and `hook install` to add it back.
 - A file that cannot be read or parsed, or whose shape is not what the agent reads (the JSON
   root or its `hooks` not a plain object, `SessionStart` present but not an array), is not
   overwritten: the target's state is `error: <message>`, the others proceed, and the command

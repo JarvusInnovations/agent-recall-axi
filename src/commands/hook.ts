@@ -290,8 +290,16 @@ function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
     }
   });
   const changed = rows.some((r) => r.state === "added" || r.state === "updated");
+  // A row that errored means the hook is not where it was asked to be: never headline success.
+  const headline = failed
+    ? changed
+      ? `partly installed (${ctx.scope} scope; see errors)`
+      : `not installed (${ctx.scope} scope; see errors)`
+    : changed
+      ? `installed (${ctx.scope} scope)`
+      : `already installed (${ctx.scope} scope; no changes)`;
   const body: Record<string, unknown> = {
-    hook: changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`,
+    hook: headline,
     command,
     targets: rows,
   };
@@ -370,5 +378,13 @@ function uninstall(ctx: Ctx): string {
     }
   });
   const removed = rows.some((r) => r.state === "removed");
-  return finish({ hook: removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`, targets: rows }, [], failed);
+  const headline = failed
+    ? `${removed ? "partly removed" : "not removed"} (${ctx.scope} scope; see errors)`
+    : removed
+      ? `removed (${ctx.scope} scope)`
+      : `nothing to remove (${ctx.scope} scope)`;
+  return finish({ hook: headline, targets: rows }, [
+    `Run \`${BIN} hook status${ctx.scopeFlag}\` to confirm`,
+    `Run \`${BIN} hook install${ctx.scopeFlag}\` to add it back`,
+  ], failed);
 }

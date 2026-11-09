@@ -39,8 +39,8 @@ describe("home view", () => {
     expect(b.last_human).toMatch(/^07:00:3\d "session 7 step 4: widget gadget/);
     expect(r.stdout).toContain("tail dd000007` for the last 20 rows with their ids");
     expect(helpLines(r.stdout)).toHaveLength(5);
-    // Cold: no cached stats, so turns is empty and the title comes from the file's head.
-    expect(rows[0]).toMatchObject({ turns: "", title: expect.stringMatching(/^session 7 step 0: /) });
+    // Cold: no cached stats, so turns is unknown (`?`) and the title comes from the file's head.
+    expect(rows[0]).toMatchObject({ turns: "?", title: expect.stringMatching(/^session 7 step 0: /) });
     for (const h of helpLines(r.stdout).map((l) => /`agent-session-axi ([^`]*)`/.exec(l)![1]!)) {
       if (h.includes("<")) continue;
       expect((await run(h.split(" "), { env: box.env, now: NOW })).exitCode, h).toBe(0);
@@ -67,21 +67,29 @@ describe("home view", () => {
       writeFileSync(join(dir, "sessions-index.json"), JSON.stringify({ version: 1, entries: [{ sessionId: id, fileMtime, summary: "indexed widget title", modified: "2026-11-01T01:05:00.000Z", messageCount: 99 }] }));
     index(mtime);
     let rows = body((await run([], { env: b2.env, now: NOW })).stdout).sessions as Array<Record<string, unknown>>;
-    expect(rows[0]).toMatchObject({ id: "dd000001", title: "indexed widget title", turns: "" });
+    expect(rows[0]).toMatchObject({ id: "dd000001", title: "indexed widget title", turns: "?" });
     expect(String(rows[0]!.last)).toMatch(/^11-01 01:05 /);
     index(mtime - 5000);
     rows = body((await run([], { env: b2.env, now: NOW })).stdout).sessions as Array<Record<string, unknown>>;
     expect(rows[0]!.title).toMatch(/^session 1 step 0: /);
   });
 
-  it("with no project for the cwd: project: none and five sessions across projects", async () => {
+  it("with no project for the cwd: project: none, no other project's sessions, and hints to widen", async () => {
     const r = await run([], { env: box.env, now: NOW, cwd: "/elsewhere" });
+    expect(r.exitCode).toBe(0);
     const b = body(r.stdout);
     expect(b.project).toBe("none for /elsewhere");
-    expect((b.sessions as unknown[]).length).toBe(5);
-    expect(helpLines(r.stdout)).toHaveLength(5);
+    expect(b.sessions).toBe("none in this directory");
+    expect(b.latest).toBeUndefined();
+    expect(r.stdout).not.toContain("dd000007");
+    expect(helpLines(r.stdout)).toHaveLength(4);
+    expect(r.stdout).toContain("sessions --all");
     expect(r.stdout).toContain("sessions --project <path>");
-    expect(r.stdout).toContain("tail dd000007 --all");
+    // Every runnable hint works from here.
+    for (const h of helpLines(r.stdout).map((l) => /`agent-session-axi ([^`]*)`/.exec(l)![1]!)) {
+      if (h.includes("<")) continue;
+      expect((await run(h.split(" "), { env: box.env, now: NOW, cwd: "/elsewhere" })).exitCode, h).toBe(0);
+    }
   });
 
   it("last_human says none when the session has no human message, and names the bound when it stops at 4 MB", async () => {

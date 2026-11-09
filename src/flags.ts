@@ -53,8 +53,9 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
     if (!spec) {
       const renamed = RENAMED[name];
       if (renamed && byName.has(renamed)) {
-        throw new AxiError(`unknown flag --${name} for \`${command}\``, "UNKNOWN_FLAG", [
-          `--${name} is not a flag of this tool; use --${renamed}`,
+        const typed = arg.split("=")[0]!;
+        throw new AxiError(`unknown flag ${typed} for \`${command}\``, "UNKNOWN_FLAG", [
+          `${typed} is not a flag of this tool; use --${renamed}`,
           validFlagsLine(command, specs),
         ]);
       }
