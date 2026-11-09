@@ -1,14 +1,14 @@
 /**
  * How hints name this tool (specs/cli.md#conventions). The npm bin is on PATH by installation,
- * so hints say `agent-session-axi`. The skill bundle is not: run from it, hints name the shim by
- * its path, unless `agent-session-axi` on PATH resolves to that shim or bundle. Leaf module: node
+ * so hints say `agent-recall-axi`. The skill bundle is not: run from it, hints name the shim by
+ * its path, unless `agent-recall-axi` on PATH resolves to that shim or bundle. Leaf module: node
  * builtins only, evaluated once per process.
  */
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
 
-export const NAME = "agent-session-axi";
+export const NAME = "agent-recall-axi";
 export const BUNDLE_FILE = `${NAME}.mjs`;
 
 function real(path: string): string | undefined {
@@ -33,7 +33,7 @@ export function bundleShim(entrypoint: string | undefined): { bundle: string; sh
   }
 }
 
-/** The PATH entry named `agent-session-axi` that resolves to one of `targets`, if any. */
+/** The PATH entry named `agent-recall-axi` that resolves to one of `targets`, if any. */
 export function onPath(targets: string[], pathVar: string | undefined): boolean {
   const want = new Set(targets.map((t) => real(t) ?? t));
   for (const dir of (pathVar ?? "").split(delimiter)) {

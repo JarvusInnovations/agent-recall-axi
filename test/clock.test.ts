@@ -26,7 +26,7 @@ const COMMANDS: string[][] = [
   ["find", "e1000018", "redirect"],
   ["find", "redirect"],
   ["find", "redirect", "--all"],
-  ["recall", "redirect"],
+  ["search", "redirect"],
   ["cache", "status"],
 ];
 

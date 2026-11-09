@@ -1,7 +1,7 @@
 /**
  * The library surface as a consumer sees it (specs/api.md, plans/resume-pack-library.md): every
- * name api.md lists resolves from the package entry `agent-session-axi` (the built `dist/`,
- * through package.json `exports`, never `src/`), the `agent-session-axi/render` subpath prints
+ * name api.md lists resolves from the package entry `agent-recall-axi` (the built `dist/`,
+ * through package.json `exports`, never `src/`), the `agent-recall-axi/render` subpath prints
  * the CLI's bytes, no exported function writes to stdout, and AgentSessionError codes map one to
  * one onto the CLI's.
  */
@@ -10,8 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxiError } from "axi-sdk-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as lib from "agent-session-axi";
-import * as render from "agent-session-axi/render";
+import * as lib from "agent-recall-axi";
+import * as render from "agent-recall-axi/render";
 import { resumeSession } from "./fixtures/build.js";
 import { CACHE_HOME, fx, REPO, run } from "./helpers/run.js";
 import { formatError } from "../src/cli.js";
@@ -35,7 +35,7 @@ function planStatus(slug: string): string {
 /** The module block's names (`type` marked) and every function a signature line in a ts block names. */
 function apiNames(): { values: Set<string>; types: Set<string>; render: Set<string> } {
   const text = spec("api.md");
-  const block = /import \{([^}]*)\} from "agent-session-axi";/.exec(text)![1]!;
+  const block = /import \{([^}]*)\} from "agent-recall-axi";/.exec(text)![1]!;
   const values = new Set<string>();
   const types = new Set<string>();
   const renderNames = new Set<string>();
@@ -43,7 +43,7 @@ function apiNames(): { values: Set<string>; types: Set<string>; render: Set<stri
     if (raw.startsWith("type ")) types.add(raw.slice(5).trim());
     else values.add(raw);
   }
-  for (const m of text.matchAll(/^import \{([^}]*)\} from "agent-session-axi\/render";/gm)) for (const n of m[1]!.split(",")) renderNames.add(n.trim());
+  for (const m of text.matchAll(/^import \{([^}]*)\} from "agent-recall-axi\/render";/gm)) for (const n of m[1]!.split(",")) renderNames.add(n.trim());
   for (const code of text.matchAll(/```ts\n([\s\S]*?)```/g)) {
     for (const line of code[1]!.split("\n")) {
       const fn = /^([a-z][A-Za-z]*)\(/.exec(line);
@@ -72,7 +72,7 @@ describe("api.md names resolve from the package entry", () => {
     expect(names.render).toEqual(new Set(["renderResumePack"]));
   });
 
-  it("every value name is a runtime export of agent-session-axi", () => {
+  it("every value name is a runtime export of agent-recall-axi", () => {
     const missing: string[] = [];
     for (const n of names.values) if (!(n in lib)) missing.push(n);
     for (const n of missing) pending(n);
@@ -90,7 +90,7 @@ describe("api.md names resolve from the package entry", () => {
   });
 });
 
-describe("agent-session-axi/render prints the CLI's bytes", () => {
+describe("agent-recall-axi/render prints the CLI's bytes", () => {
   const cases: Array<{ name: string; args: string[]; ref: () => string; opts: lib.ResumePackOpts; renderOpts: () => Parameters<typeof render.renderResumePack>[1] }> = [
     { name: "an <s8> in the current project, defaults", args: ["a6000006"], ref: () => fx("compaction"), opts: {}, renderOpts: () => ({ tz: "UTC" }) },
     {
@@ -244,8 +244,8 @@ describe("AgentSessionError codes map one to one onto the CLI's", () => {
     // The CLI is built from src/, so its formatError knows src's class; the codes are the same list.
     expect([...SRC_CODES]).toEqual([...lib.ERROR_CODES]);
     for (const code of lib.ERROR_CODES) {
-      const fromLib = formatError(new CliSideError("boom", code, ["Run `agent-session-axi sessions`"]));
-      const fromAxi = formatError(new AxiError("boom", code, ["Run `agent-session-axi sessions`"]));
+      const fromLib = formatError(new CliSideError("boom", code, ["Run `agent-recall-axi sessions`"]));
+      const fromAxi = formatError(new AxiError("boom", code, ["Run `agent-recall-axi sessions`"]));
       expect(fromLib, code).toEqual(fromAxi);
       expect(fromLib.exitCode, code).toBe(table.get(code));
       expect(fromLib.output).toContain(`code: ${code}`);

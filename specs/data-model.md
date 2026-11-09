@@ -49,7 +49,7 @@ The first 8 hex characters of the session uuid (or of the `agentId` for a subage
 session file whose name is not a uuid or `agent-<agentId>` (a copied or renamed log opened by
 path) gets the first 8 hex characters of the SHA-1 of its basename, so every printed id still
 round-trips through the resolver.
-Printed on every row that leaves a session's context (`recall`, cross-session `find`) and as the
+Printed on every row that leaves a session's context (`search`, cross-session `find`) and as the
 first component of every entry id. Fixed width; never shortened further, never lengthened by the
 tool (`behaviors/id-stability.md`).
 

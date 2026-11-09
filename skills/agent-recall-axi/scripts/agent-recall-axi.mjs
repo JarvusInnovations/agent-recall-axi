@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.1.2" : readVersion();
+    VERSION = true ? "0.2.0" : readVersion();
   }
 });
 
@@ -2152,7 +2152,7 @@ var DESCRIPTION, GLOBAL_FLAGS, SESSION_ARG, ID_ARG, LIMIT, KIND, HEAD, FULL, FRO
 var init_reference = __esm({
   "src/reference.ts"() {
     "use strict";
-    DESCRIPTION = "Read, search and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
+    DESCRIPTION = "Agent memory across your session history: search, read and pan/zoom through agent session logs (Claude Code first); TOON out, local files only";
     GLOBAL_FLAGS = [
       { name: "tz", value: "string", arg: "<iana>", describe: "time zone for parsing and rendering", default: "TZ, else the system zone" }
     ];
@@ -2254,7 +2254,7 @@ var init_reference = __esm({
       { ...WINDOW, describe: "search one compaction window: a 0-based index, last, k.. (k to the end) or all" },
       JSON_OUT
     ];
-    TOOLS_FIELDS = ["result_id", "error", "files"];
+    TOOLS_FIELDS = ["t", "result_id", "error", "files"];
     SESSIONS_FIELDS = ["started", "uuid", "path", "project", "bytes", "lines", "calls", "compactions", "humans", "live", "kind", "parent", "model"];
     HOOK_SCOPES = ["user", "project"];
     HOOK_AGENTS = ["claude", "codex", "opencode"];
@@ -2286,7 +2286,7 @@ var init_reference = __esm({
           {
             name: "turns",
             usage: "turns <session> [--from <when|id>] [--to <when|id>] [--since <span>] [--window <k|last>] [--limit <n>] [--full] [--project <p> | --all] [--json-out[=path]]",
-            summary: "one row per human prompt: events, calls and how the turn ended",
+            summary: "one row per human prompt and how the turn ended",
             status: "available",
             args: [SESSION_ARG],
             flags: [
@@ -2295,7 +2295,7 @@ var init_reference = __esm({
               SINCE,
               WINDOW,
               { name: "limit", value: "number", arg: "<n>", describe: "turns to show, newest last; 0 = no cap", default: "30" },
-              { name: "full", value: "boolean", describe: "lift the prompt head cap and the row cap" },
+              { name: "full", value: "boolean", describe: "lift the prompt head cap and the row cap, and add the events and calls columns" },
               REF_PROJECT,
               REF_ALL,
               JSON_OUT
@@ -2473,8 +2473,8 @@ var init_reference = __esm({
             examples: ['find "redirect"', 'find "redirect" --all', 'find latest "redirect"', "find 7a2f1c3e --file '*.env' --context 0", 'find 7a2f1c3e --tool bash "test" --since 1h', "find 7a2f1c3e --regex 'redir\\w+' --deep"]
           },
           {
-            name: "recall",
-            usage: "recall <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all] [--limit <n>] [--json-out[=path]]",
+            name: "search",
+            usage: "search <phrase> [--regex] [--file <pattern>] [--tool <name>] [--kind <a,b>] [--since <span>] [--from <when>] [--to <when>] [--project <p> | --all] [--limit <n>] [--json-out[=path]]",
             summary: "have I dealt with this before? what the human and the agent said, and the calls made, across every project, by session",
             status: "available",
             args: [`<phrase>: case-insensitive substring of human and agent text and call inputs (tool output is find's: find "<phrase>" --all)`],
@@ -2491,7 +2491,7 @@ var init_reference = __esm({
               LIMIT("20"),
               JSON_OUT
             ],
-            examples: ['recall "redirect loop"', 'recall "staging.env" --since 1y', 'recall "migration" --project ~/src/widget --kind human']
+            examples: ['search "redirect loop"', 'search "staging.env" --since 1y', 'search "migration" --project ~/src/widget --kind human']
           }
         ]
       },
@@ -2513,15 +2513,16 @@ var init_reference = __esm({
           },
           {
             name: "cache",
-            usage: "cache status | cache clear [--project <p> | --all]",
+            usage: "cache status [--full] | cache clear [--project <p> | --all]",
             summary: "the disposable derived cache: where it is, what is indexed, how to clear it",
             status: "available",
             args: ["status: the directory, its size, every indexed session and its state", "clear: delete the cache (with --project, only that project's records)"],
             flags: [
+              { name: "full", value: "boolean", describe: "add each record's lines, checkpoints and size (status only)" },
               { name: "project", value: "string", arg: "<p>", describe: "clear only this project's session records (clear only)" },
               { name: "all", value: "boolean", describe: "clear the whole cache, the default (clear only)" }
             ],
-            examples: ["cache status", "cache clear", "cache clear --project ~/src/widget"]
+            examples: ["cache status", "cache status --full", "cache clear", "cache clear --project ~/src/widget"]
           },
           {
             name: "update",
@@ -2588,7 +2589,7 @@ var NAME, BUNDLE_FILE, BIN;
 var init_invocation = __esm({
   "src/invocation.ts"() {
     "use strict";
-    NAME = "agent-session-axi";
+    NAME = "agent-recall-axi";
     BUNDLE_FILE = `${NAME}.mjs`;
     BIN = cliInvocation();
   }
@@ -3765,7 +3766,7 @@ function cacheDir(opts = {}) {
   if (opts.dir) return opts.dir;
   const env = opts.env ?? process.env;
   const base = env.XDG_CACHE_HOME && env.XDG_CACHE_HOME.length ? env.XDG_CACHE_HOME : join7(homedir6(), ".cache");
-  return join7(base, "agent-session-axi");
+  return join7(base, "agent-recall-axi");
 }
 function recordName(path) {
   return `${sha(path).slice(0, 32)}.json`;
@@ -6095,7 +6096,7 @@ async function openJsonOut(target) {
   let path = target.path;
   let tempDir;
   if (!path) {
-    tempDir = await mkdtemp(join12(target.tmp, "agent-session-axi-"));
+    tempDir = await mkdtemp(join12(target.tmp, "agent-recall-axi-"));
     await chmod(tempDir, 448);
     path = join12(tempDir, `${target.command.replace(/[^\w-]/g, "-")}.json`);
   }
@@ -6870,7 +6871,6 @@ function renderResumePack(pack, opts) {
   parts.push(renderBlockList("human", pack.human.map((m) => ({ id: formatId(m.id), t: time.format(m), kind: m.kind, text: m.text }))));
   const rows = pack.tools.map((ev) => ({
     id: formatId(ev.id),
-    t: time.format(ev),
     tool: ev.tool ?? "?",
     target: ev.target !== void 0 ? targetCut(ev, TARGET_HEAD).text : "",
     result: renderStatus(ev.status)
@@ -6994,7 +6994,7 @@ async function homeCommand(io) {
     return renderDocument(body, [
       `Run \`${BIN} sessions --all\` for the newest sessions across every project`,
       `Run \`${BIN} sessions --project <path>\` for one project's sessions`,
-      `Run \`${BIN} recall "<phrase>"\` to search every project`,
+      `Run \`${BIN} search "<phrase>"\` to search every project`,
       `Run \`${BIN} --help\` for the full command list`
     ]);
   }
@@ -7022,7 +7022,7 @@ async function homeCommand(io) {
   const unnumbered = listing.lastHuman?.event !== void 0 && !listing.lastHuman.numbered;
   help.push(`Run \`${BIN} tail ${name}\` for the last 20 rows${unnumbered ? " with their ids" : ""}`);
   help.push(`Run \`${BIN} find "<phrase>"\` to search this project's sessions`);
-  help.push(`Run \`${BIN} recall "<phrase>"\` to search every project`);
+  help.push(`Run \`${BIN} search "<phrase>"\` to search every project`);
   if (skipped.help) help.push(skipped.help);
   help.push(`Run \`${BIN} --help\` for the full command list, or \`${BIN} <command> --help\` for usage on any command`);
   return renderDocument(body, help);
@@ -7604,8 +7604,8 @@ var init_hook2 = __esm({
     init_common();
     init_hook_settings();
     MARKER = NAME;
-    DISABLE_ENV = "AGENT_SESSION_AXI_DISABLE_HOOKS";
-    OPENCODE_FILE = "axi-agent-session-axi.js";
+    DISABLE_ENV = "AGENT_RECALL_AXI_DISABLE_HOOKS";
+    OPENCODE_FILE = "axi-agent-recall-axi.js";
     OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
     COMMAND_LINE = /^const command = (".*");$/m;
     SUBCOMMANDS = ["install", "status", "uninstall"];
@@ -8771,8 +8771,8 @@ var init_update2 = __esm({
     init_render();
     init_common();
     init_invocation();
-    SKILL_LINE = "Run `npx skills update agent-session-axi` to update the skill bundle";
-    NPM_LINE = "Run `npm i -g agent-session-axi@latest` if installed from npm";
+    SKILL_LINE = "Run `npx skills update agent-recall-axi` to update the skill bundle";
+    NPM_LINE = "Run `npm i -g agent-recall-axi@latest` if installed from npm";
   }
 });
 
@@ -8906,14 +8906,15 @@ async function cacheCommand(args, io) {
   if (sub !== "status" && sub !== "clear") {
     throw new AxiError(`unknown cache subcommand ${sub}`, "USAGE", [usageLine("cache")]);
   }
-  const flags = sub === "clear" ? findCommand("cache").flags ?? [] : [];
+  const all = findCommand("cache").flags ?? [];
+  const flags = all.filter((f) => sub === "status" ? f.name === "full" : f.name !== "full");
   const p = parseFlags(`cache ${sub}`, args.slice(1), flags);
   if (p.help) return renderCommandHelp("cache") ?? "";
   if (p.positionals.length) throw new AxiError(`cache ${sub} takes no arguments`, "USAGE", [usageLine("cache")]);
   const opts = { env: io.env };
-  return sub === "status" ? status2(opts) : clear(p, io, opts);
+  return sub === "status" ? status2(opts, getBool(p, "full")) : clear(p, io, opts);
 }
-async function status2(opts) {
+async function status2(opts, full) {
   const s = await cacheStatus(opts);
   const dir = collapseHome(s.dir);
   if (!s.exists) {
@@ -8924,9 +8925,7 @@ async function status2(opts) {
   if (s.indexed.length) {
     header.indexed = s.indexed.map((f) => ({
       session: claudeCode.sessionForPath(f.path).short,
-      lines: f.lines,
-      checkpoints: f.checkpoints,
-      size: f.size < 1e3 ? f.size : formatSize(f.size),
+      ...full ? { lines: f.lines, checkpoints: f.checkpoints, size: f.size < 1e3 ? f.size : formatSize(f.size) } : {},
       state: f.state,
       path: collapseHome(f.path)
     }));
@@ -9273,7 +9272,9 @@ async function turnsCommand(args, io) {
   header.turns = kept.map((t) => {
     const prompt = t.prompt ? headCut(oneLine(t.prompt.text), head2) : { text: "(session start)", cut: false };
     if (prompt.cut) cut++;
-    return { id: formatId(t.id), t: time.format(t), prompt: prompt.text, events: t.events, calls: t.calls, ended: t.ended };
+    const row = { id: formatId(t.id), t: time.format(t), prompt: prompt.text, ended: t.ended };
+    if (full) Object.assign(row, { events: t.events, calls: t.calls });
+    return row;
   });
   const first = kept[0];
   const last = kept[kept.length - 1];
@@ -9442,8 +9443,8 @@ async function toolsCommand(args, io) {
         cut++;
         firstCut ??= ev.id;
       }
-      const row = { id: formatId(ev.id), t: time.format(ev), tool: ev.tool ?? "?", target: target.text, result: renderStatus(ev.status) };
-      for (const f of fields) row[f] = toolsField(c, f);
+      const row = { id: formatId(ev.id), tool: ev.tool ?? "?", target: target.text, result: renderStatus(ev.status) };
+      for (const f of fields) row[f] = f === "t" ? time.format(ev) : toolsField(c, f);
       return row;
     });
     parts.push(encode(header));
@@ -9468,7 +9469,7 @@ async function toolBlock(c, session, fmt, fields) {
   const doc = { id: formatId(ev.id), t: fmt(ev), tool: ev.tool ?? "?" };
   if (ev.target !== void 0) doc.target = ev.target;
   doc.result = renderStatus(ev.status);
-  for (const f of fields) doc[f] = toolsField(c, f);
+  for (const f of fields) if (f !== "t") doc[f] = toolsField(c, f);
   if (ev.input !== void 0) doc.input = ev.input;
   const r = c.result;
   if (r) {
@@ -9525,8 +9526,7 @@ async function compactionsCommand(args, io) {
   const parts = [];
   if (!full) {
     header.compactions = list.map((b) => {
-      const m = b.compaction.meta ?? {};
-      return { id: formatId(b.compaction.id), t: time.format(b.compaction), trigger: typeof m.trigger === "string" ? m.trigger : "unknown", pre: tokens(m.pre_tokens), post: tokens(m.post_tokens), summary: summaryId(b), window: b.opens };
+      return { id: formatId(b.compaction.id), t: time.format(b.compaction), summary: summaryId(b), window: b.opens };
     });
     parts.push(encode(header));
   } else {
@@ -9722,8 +9722,8 @@ async function recall(phrase, opts = {}) {
   if (opts.since && opts.from) throw new AgentSessionError("since and from both set the start; pass one", "USAGE", ["recall(phrase, { since }) or { from }"]);
   const bad = (opts.kinds ?? []).filter((k) => !SEARCHABLE.has(k));
   if (bad.length) {
-    throw new AgentSessionError(`recall searches what the human and the agent said and the calls it made; ${bad.join(", ")} ${bad.length === 1 ? "is" : "are"} not among them`, "VALIDATION_ERROR", [
-      `kinds recall takes: ${[...SEARCHABLE].join(", ")}`,
+    throw new AgentSessionError(`search covers what the human and the agent said and the calls it made; ${bad.join(", ")} ${bad.length === 1 ? "is" : "are"} not among them`, "VALIDATION_ERROR", [
+      `kinds search takes: ${[...SEARCHABLE].join(", ")}`,
       `Run \`${BIN} find "<phrase>" --all --kind <kinds>\` to search tool output and injected text`
     ]);
   }
@@ -9815,20 +9815,20 @@ var init_recall = __esm({
 });
 
 async function recallCommand(args, io) {
-  const p = parseFlags("recall", args, findCommand("recall")?.flags ?? []);
-  if (p.help) return renderCommandHelp("recall") ?? "";
-  const usage = usageLine("recall");
+  const p = parseFlags("search", args, findCommand("search")?.flags ?? []);
+  if (p.help) return renderCommandHelp("search") ?? "";
+  const usage = usageLine("search");
   if (p.positionals.length !== 1) {
-    throw new AxiError(p.positionals.length ? 'recall takes one <phrase> (quote a phrase with spaces: recall "two words")' : "recall needs a <phrase>", "USAGE", [usage]);
+    throw new AxiError(p.positionals.length ? 'search takes one <phrase> (quote a phrase with spaces: search "two words")' : "search needs a <phrase>", "USAGE", [usage]);
   }
   const phrase = p.positionals[0];
   if (phrase === "") throw new AxiError("the phrase is empty", "USAGE", [usage]);
   const tz = zoneOf(p, io);
-  const range = parseRange("recall", p, tz, io.now, false);
+  const range = parseRange("search", p, tz, io.now, false);
   const parsedKinds = parseKinds(getString(p, "kind"));
   const kinds = parsedKinds === "all" ? [...KINDS] : parsedKinds;
   const limit = getNumber(p, "limit") ?? 20;
-  const scope = scopeOf("recall", p, io);
+  const scope = scopeOf("search", p, io);
   const project2 = getString(p, "project");
   const defaulted = getString(p, "since") === void 0 && getString(p, "from") === void 0;
   const opts = { scope, limit: 0, cache: { env: io.env } };
@@ -9839,7 +9839,7 @@ async function recallCommand(args, io) {
   if (defaulted) opts.from = new Date(io.now.getTime() - parseSpan(RECALL_SINCE));
   else if (range.from instanceof Date) opts.from = range.from;
   if (range.to instanceof Date) opts.to = range.to;
-  const jsonOut = await jsonOutTarget("recall", p, io);
+  const jsonOut = await jsonOutTarget("search", p, io);
   let r;
   try {
     r = await recall(phrase, opts);
@@ -9871,7 +9871,7 @@ async function recallCommand(args, io) {
   let out;
   if (shown.length === 0) {
     header.sessions = `0 of ${r.scanned.sessions} scanned mention ${opts.regex ? `/${phrase}/` : `"${phrase}"`}${sinceText !== void 0 ? ` since ${sinceText}` : ""}`;
-    help.push(`Run \`${BIN} recall${phraseArg}${handles2} --since 1y${getString(p, "to") !== void 0 ? ` --to ${shellArg(getString(p, "to"))}` : ""}${project2 !== void 0 ? scopeFlag : ""}${tzc}${trailing}\` to look back a year`);
+    help.push(`Run \`${BIN} search${phraseArg}${handles2} --since 1y${getString(p, "to") !== void 0 ? ` --to ${shellArg(getString(p, "to"))}` : ""}${project2 !== void 0 ? scopeFlag : ""}${tzc}${trailing}\` to look back a year`);
     help.push(`Run \`${BIN} find${phraseArg} --all${time}${tzc}${trailing}\` to search tool output too`);
     if (skipped.help) help.push(skipped.help);
     out = renderDocument(header, help);
@@ -9888,7 +9888,7 @@ async function recallCommand(args, io) {
     for (const s of shown.slice(0, FIND_HINTS)) {
       help.push(`Run \`${BIN} find ${hintName(s.session, shared)}${phraseArg}${handles2}${scopeFlag}${tzc}${trailing}\` to dig into ${s.session.short}`);
     }
-    if (shown.length < r.matching) help.push(`Run \`${BIN} recall${phraseArg}${handles2}${time}${project2 !== void 0 ? scopeFlag : ""} --limit 0${tzc}${trailing}\` for all ${plural5(r.matching, "session")}`);
+    if (shown.length < r.matching) help.push(`Run \`${BIN} search${phraseArg}${handles2}${time}${project2 !== void 0 ? scopeFlag : ""} --limit 0${tzc}${trailing}\` for all ${plural5(r.matching, "session")}`);
     if (skipped.help) help.push(skipped.help);
     out = renderDocument(header, help);
   }
@@ -9950,7 +9950,7 @@ function formatError(error) {
     output: `${encode({ error: `unexpected failure: ${message}`, code: "INTERNAL_ERROR" })}
 ${renderHelp([
       "Re-run with --debug for details on stderr",
-      "File an issue at https://github.com/JarvusInnovations/agent-session-axi/issues"
+      "File an issue at https://github.com/JarvusInnovations/agent-recall-axi/issues"
     ])}
 `,
     exitCode: 1
@@ -9987,7 +9987,10 @@ async function main(argv = process.argv.slice(2), io = {}) {
   commands.tools = (a) => toolsCommand(a, ctx);
   commands.compactions = (a) => compactionsCommand(a, ctx);
   commands["resume-pack"] = (a) => resumePackCommand(a, ctx);
-  commands.recall = (a) => recallCommand(a, ctx);
+  commands.search = (a) => recallCommand(a, ctx);
+  commands.recall = () => {
+    throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search "<phrase>"\` to search every project`, usageLine("search")]);
+  };
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
   commands.hook = (a) => hookCommand(a, { ...ctx, ...io.entrypoint ? { entrypoint: io.entrypoint } : {} });
   await runAxiCli({

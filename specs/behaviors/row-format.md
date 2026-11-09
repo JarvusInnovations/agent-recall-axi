@@ -4,13 +4,13 @@
 
 Every listing prints events as rows of one shape, `{id,t,kind,text}`, as a TOON table whose label
 names what the rows are (`events`, `hits`, `tail`). Commands that list something other than events
-(`sessions`, `turns`, `tools`, `recall`) print their own small schema, documented in `cli.md`, and
+(`sessions`, `turns`, `tools`, `search`) print their own small schema, documented in `cli.md`, and
 still open every row with an id and a time.
 
 ## Applies To
 
 `events`, `around`, `next`, `prev`, `tail`, `find`, `human` (row mode), `tools`, `turns`,
-`sessions`, `recall`, `compactions`, the home view, and the `tools`/`claims` layers of
+`sessions`, `search`, `compactions`, the home view, and the `tools`/`claims` layers of
 `resume-pack`.
 
 ## Details

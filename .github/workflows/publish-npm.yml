@@ -38,7 +38,7 @@ jobs:
     - name: The committed skill bundle reports the release version
       run: |
         set -euo pipefail
-        got=$(node skills/agent-session-axi/scripts/agent-session-axi.mjs --version)
+        got=$(node skills/agent-recall-axi/scripts/agent-recall-axi.mjs --version)
         if [ "$got" != "$RELEASE_VERSION" ]; then
           echo "::error::the skill bundle at $GITHUB_REF_NAME reports $got, not $RELEASE_VERSION (RELEASING.md)"
           exit 1
@@ -73,7 +73,7 @@ jobs:
       run: bun run check:bundle
 
     - name: The built bin reports the release version
-      run: test "$(node dist/bin/agent-session-axi.js --version)" = "$RELEASE_VERSION"
+      run: test "$(node dist/bin/agent-recall-axi.js --version)" = "$RELEASE_VERSION"
 
   publish-npm:
     needs: gate

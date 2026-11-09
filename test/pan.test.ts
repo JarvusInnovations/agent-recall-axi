@@ -35,7 +35,7 @@ const rowsOf = (out: string, label: string) => {
   return lines.slice(i + 1, i + 1 + n);
 };
 const idsOf = (out: string, label: string) => rowsOf(out, label).map((r) => /^ {2}"([^"]+)"/.exec(r)![1]!);
-const hints = (out: string) => [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+const hints = (out: string) => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
 const header = (out: string, key: string) => new RegExp(`^${key}: (.*)$`, "m").exec(out)?.[1];
 
 /** Every visible event of the file by a forward scan from the start: the reference. */
@@ -170,16 +170,16 @@ describe("around, next, prev at the CLI", () => {
     const last = await run(["next", "a3000003:9", "1"]);
     expect(idsOf(last.stdout, "next")).toEqual(["a3000003:10"]);
     expect(last.stdout).toMatch(/^at_end: true$/m);
-    expect(last.stdout).not.toContain("agent-session-axi next");
+    expect(last.stdout).not.toContain("agent-recall-axi next");
     const empty = await run(["next", "a3000003:10"]);
     expect(empty.exitCode).toBe(0);
     expect(empty.stdout).toMatch(/^next: "0 events after a3000003:10 \(at end of session\)"$/m);
     expect(empty.stdout).toMatch(/^at_end: true$/m);
-    expect(empty.stdout).toContain("agent-session-axi prev a3000003:10");
+    expect(empty.stdout).toContain("agent-recall-axi prev a3000003:10");
     const first = await run(["prev", "a3000003:2", "5"]);
     expect(idsOf(first.stdout, "prev")).toEqual(["a3000003:1"]);
     expect(first.stdout).toMatch(/^at_start: true$/m);
-    expect(first.stdout).not.toContain("agent-session-axi prev");
+    expect(first.stdout).not.toContain("agent-recall-axi prev");
     const none = await run(["prev", "a3000003:1"]);
     expect(none.stdout).toMatch(/^prev: "0 events before a3000003:1 \(at start of session\)"$/m);
     const mid = await run(["around", "a3000003:4", "--context", "1"]);
@@ -214,7 +214,7 @@ describe("around, next, prev at the CLI", () => {
     expect(past.exitCode).toBe(1);
     expect(past.stdout).toMatch(/^code: NOT_FOUND$/m);
     expect(past.stdout).toContain("beyond the end of the session (10 lines)");
-    expect(past.stdout).toContain("Run `agent-session-axi tail a3000003` for the last rows");
+    expect(past.stdout).toContain("Run `agent-recall-axi tail a3000003` for the last rows");
     const block = await run(["next", "a3000003:4.3"]);
     expect(block.exitCode).toBe(1);
     expect(block.stdout).toMatch(/^code: NOT_FOUND$/m);
@@ -254,7 +254,7 @@ describe("the offset table as a cache", () => {
     const p = copy();
     const cacheHome = freshCache();
     const e = { env: { XDG_CACHE_HOME: cacheHome } };
-    const cache = { dir: join(cacheHome, "agent-session-axi") };
+    const cache = { dir: join(cacheHome, "agent-recall-axi") };
     expect((await run(["around", "e1000021:1000", "--session", p], e)).exitCode).toBe(0);
     const t1 = (await loadTable(p, cache))!;
     const lines = t1.seq;
@@ -269,7 +269,7 @@ describe("the offset table as a cache", () => {
     expect(t2.checkpoints.length).toBe(Math.ceil((lines + 1000) / 256));
     // Extended, not rebuilt: the earlier checkpoints are carried over unchanged.
     expect(t2.checkpoints.slice(0, t1.checkpoints.length)).toEqual(t1.checkpoints);
-    const status = await run(["cache", "status"], e);
+    const status = await run(["cache", "status", "--full"], e);
     expect(status.stdout).toContain(`e1000021,${lines + 1000},${t2.checkpoints.length},`);
     expect(status.stdout).toContain(",fresh,");
 
@@ -310,8 +310,11 @@ describe("the offset table as a cache", () => {
     await run(["around", "e1000021:300", "--session", file], e);
     const st = await run(["cache", "status"], e);
     expect(st.stdout).toMatch(/^count: 1 indexed$/m);
-    expect(st.stdout).toMatch(/^indexed\[1\]\{session,lines,checkpoints,size,state,path\}:$/m);
-    expect(st.stdout).toMatch(/^ {2}e1000021,\d+,6,[\d.k]+,fresh,/m);
+    expect(st.stdout).toMatch(/^indexed\[1\]\{session,state,path\}:$/m);
+    expect(st.stdout).toMatch(/^ {2}e1000021,fresh,/m);
+    const full = await run(["cache", "status", "--full"], e);
+    expect(full.stdout).toMatch(/^indexed\[1\]\{session,lines,checkpoints,size,state,path\}:$/m);
+    expect(full.stdout).toMatch(/^ {2}e1000021,\d+,6,[\d.k]+,fresh,/m);
     const cleared = await run(["cache", "clear"], e);
     expect(cleared.exitCode).toBe(0);
     expect(cleared.stdout).toMatch(/^cleared: .*\(deleted\)$/m);
@@ -347,7 +350,7 @@ describe("the offset table as a cache", () => {
     rmSync(cacheHome, { recursive: true, force: true });
     const again = await run(["around", "e1000021:900", "--session", file], e);
     expect(again.exitCode).toBe(0);
-    const index = join(cacheHome, "agent-session-axi", "index");
+    const index = join(cacheHome, "agent-recall-axi", "index");
     for (const f of readdirSync(index)) writeFileSync(join(index, f), '{"v":1,"path":');
     const corrupt = await run(["around", "e1000021:900", "--session", file], e);
     expect(corrupt.stdout).toBe(again.stdout);
@@ -465,7 +468,7 @@ describe("review round", () => {
     const e = { env: { XDG_CACHE_HOME: cacheHome } };
     await run(["around", "e1000021:700", "--session", file], e);
     await run(["around", "e2000022:299", "--session", dup], e);
-    const dir = join(cacheHome, "agent-session-axi");
+    const dir = join(cacheHome, "agent-recall-axi");
     const text = readdirSync(join(dir, "index")).map((f) => readFileSync(join(dir, "index", f), "utf8")).join("\n");
     expect(text.length).toBeGreaterThan(1000);
     for (const needle of ["process the next", "Batch 12 done", "export const batch", "ok batch", "process --batch", "needs two calls", "Summary", "start the widget release", "first answer", "late duplicate", "filler 4"]) {

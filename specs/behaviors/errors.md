@@ -46,7 +46,7 @@ vanished file never fails the listing: it is skipped, the header reports `unread
 - Unknown flags are rejected by name against the command's declared set; renamed flags get a
   targeted hint that names the flag as typed (`-n is not a flag of this tool; use --limit`).
 - An unknown command is a `VALIDATION_ERROR` (exit 2) whose hint names the tool:
-  ``Run `agent-session-axi --help` to see available commands``.
+  ``Run `agent-recall-axi --help` to see available commands``.
 - Dependency names never appear in messages; hints reference this tool's commands.
 - Progress and debug text go to stderr only.
 

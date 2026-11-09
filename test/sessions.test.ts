@@ -121,7 +121,7 @@ describe("sessions: the full schema", () => {
 
   it("the footer hints turns, find and the paging continuation, and each runs", async () => {
     const r = await run(["sessions", "--limit", "2", "--since", "2d"]);
-    const hints = [...r.stdout.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!);
+    const hints = [...r.stdout.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!);
     expect(hints[0]).toMatch(/^turns [0-9a-f]{8}$/);
     expect(hints).toContain('find "<phrase>"');
     expect(hints).toContain("sessions --since 2d --limit 0");
@@ -151,7 +151,7 @@ describe("the stats cache", () => {
     cpSync(join(FIXTURE_ROOT, "projects", "-src-widget", "a1000001-0000-4000-8000-000000000000.jsonl"), path);
     const turns = async () => table((await run(["sessions", "--fields", "lines"], { env: box.env })).stdout, "sessions")[0]!;
     expect(await turns()).toMatchObject({ turns: 2, lines: 5 });
-    expect(readdirSync(join(box.cache, "agent-session-axi", "stats"))).toHaveLength(1);
+    expect(readdirSync(join(box.cache, "agent-recall-axi", "stats"))).toHaveLength(1);
     const prompt = (text: string, ts: string) => JSON.stringify({ type: "user", message: { role: "user", content: text }, origin: { kind: "human" }, uuid: `u-${ts}`, timestamp: ts, sessionId: "a1000001-0000-4000-8000-000000000000" }) + "\n";
     appendFileSync(path, prompt("one more widget question", "2026-11-07T13:50:00.000Z"));
     expect(await turns()).toMatchObject({ turns: 3, lines: 6, last: "11-07 13:50 (10m ago)" });
@@ -164,8 +164,8 @@ describe("the stats cache", () => {
     const box = sandbox("cache-hygiene");
     cpSync(join(FIXTURE_ROOT, "projects"), join(box.root, "projects"), { recursive: true });
     await run(["sessions", "--all"], { env: box.env });
-    await run(["recall", "widget"], { env: box.env });
-    const base = join(box.cache, "agent-session-axi");
+    await run(["search", "widget"], { env: box.env });
+    const base = join(box.cache, "agent-recall-axi");
     expect(statSync(base).mode & 0o777).toBe(0o700);
     for (const sub of ["index", "stats", "terms"]) {
       expect(statSync(join(base, sub)).mode & 0o777, sub).toBe(0o700);

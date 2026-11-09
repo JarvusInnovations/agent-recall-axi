@@ -15,7 +15,7 @@
 ## Project structure
 
 ```
-bin/agent-session-axi.ts         fast path (--version) then dynamic import of src/cli
+bin/agent-recall-axi.ts         fast path (--version) then dynamic import of src/cli
 src/
   version.ts                     leaf: reads package.json; imports node builtins only
   cli.ts                         runAxiCli wiring, formatError, main(argv)
@@ -31,7 +31,7 @@ src/
     resume.ts                    renderResumePack: the resume-pack TOON
     resume-layout.ts             the pack's layout as byte costs (no TOON): the library's budget charges these
   render/
-    index.ts                     the agent-session-axi/render subpath (re-exports renderResumePack)
+    index.ts                     the agent-recall-axi/render subpath (re-exports renderResumePack)
   lib/                           the library (specs/api.md); no CLI concerns
     index.ts                     public exports
     model.ts                     Session, Entry, Event, Turn, Window, Pointer, ResumePack types
@@ -57,12 +57,12 @@ src/
       index.ts                   per-session stats + term index for recall
   hook.ts                        SessionStart payload detection (hook mode for home)
 scripts/
-  build-cli.ts                   esbuild → skills/agent-session-axi/scripts/agent-session-axi.mjs (+ --check)
+  build-cli.ts                   esbuild → skills/agent-recall-axi/scripts/agent-recall-axi.mjs (+ --check)
   build-skill.ts                 splice COMMAND_GROUPS into SKILL.md generated region (+ --check)
-skills/agent-session-axi/
+skills/agent-recall-axi/
   SKILL.md                       hand-written prose + generated command reference
-  scripts/agent-session-axi      bash shim (executable)
-  scripts/agent-session-axi.mjs  committed self-contained bundle (linguist-generated)
+  scripts/agent-recall-axi      bash shim (executable)
+  scripts/agent-recall-axi.mjs  committed self-contained bundle (linguist-generated)
 test/
   fixtures/                      synthetic jsonl sessions (see below)
   ...                            mirrors src/
@@ -75,7 +75,7 @@ The library (`src/lib`) is the product another program calls (`specs/api.md`); t
 consumer. Rules: no `process.stdout` writes, no `process.exit`, no flag parsing, no TOON inside
 `src/lib`; every function takes structured arguments and returns structured results or throws a
 typed error the CLI maps to `behaviors/errors.md`. The package exports the library as
-`agent-session-axi` (`exports["."]`), the resume-pack renderer as `agent-session-axi/render`
+`agent-recall-axi` (`exports["."]`), the resume-pack renderer as `agent-recall-axi/render`
 (`exports["./render"]`, `api.md#resume-pack`), and the CLI only as the `bin`. The `render`
 subpath is the one public entry into `src/output/`: it re-exports `renderResumePack`, which
 the `resume-pack` command calls too, so the CLI and a library caller cannot print different
@@ -136,19 +136,19 @@ stream with a bounded window:
   same row prints the same way whichever command reached it.
 - `around`/`next`/`prev` seek by seq using the cache's line-offset table when present (built
   lazily, invalidated by size/hash), else a forward scan.
-- `find`/`recall` stream forwards one line at a time; memory is bounded by the context window.
+- `find`/`search` stream forwards one line at a time; memory is bounded by the context window.
 - `human` and `resume-pack` read one window (from the last boundary) which the cache locates.
 - No command holds a whole file in memory; a test asserts peak RSS stays under 150 MB on a 200 MB
   fixture.
 
 ## Cache
 
-Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-session-axi/`
-(default `~/.cache/agent-session-axi/`), owner-only. Per file, keyed by its absolute path, it stores:
+Optional, derived, disposable (`behaviors/privacy.md`). Location `$XDG_CACHE_HOME/agent-recall-axi/`
+(default `~/.cache/agent-recall-axi/`), owner-only. Per file, keyed by its absolute path, it stores:
 an identity record for rewrite detection (byte length, the first line's hash once that line is
 complete, and the last complete line's byte offset, length and hash), a line-offset
 table (every 256th line), session stats (`turns`, `calls`, `compactions`, `humans`, `last`,
-`title`), compaction boundary seqs, and, once `recall` has run, a term index (lower-cased word
+`title`), compaction boundary seqs, and, once `search` (library `recall`) has run, a term index (lower-cased word
 tokens → seqs) for `H`, `C` and `call` text. Entries refresh incrementally: an appended file re-indexes
 only lines after `last-indexed seq`. The cache is never required for correctness; every command
 works with it absent and reports `index: none`.
@@ -184,7 +184,7 @@ identity, so a listing reads a few hundred bytes per session instead of the tabl
 while that identity matches the file (a trailing line still being written aside), and otherwise
 the table is extended (or built) and the mirror rewritten.
 
-The **term index** (`terms/`) is built by `recall`, in the same pass as the table, and carries its
+The **term index** (`terms/`) is built by `search` (library `recall`), in the same pass as the table, and carries its
 own identity (its last indexed seq, the byte offset past it, the first line's hash and the last
 indexed line's offset, length and hash): lower-cased word tokens (runs of letters, digits and
 `_`) of exactly the text `find` tests on an `H` or `C` event (its `text` and, for a `call`, its
@@ -196,7 +196,7 @@ match it: the index only ever skips lines that cannot hold a hit, and the lines 
 are verified by classifying them from their checkpoint. An appended file is indexed from the
 index's own last seq, reading from the table checkpoint at or before it, whether or not another
 command has extended the table since; only an index whose identity no longer matches the file (a
-rewrite) is rebuilt. `recall` never rewrites a record it did not change.
+rewrite) is rebuilt. `search` never rewrites a record it did not change.
 
 The table records the format version of the table and the package version that built it; a
 mismatch on either discards it, so a classifier change never serves counts or kinds computed by
@@ -234,9 +234,9 @@ before any file is opened.
 
 Two channels from one source, both committed to the same tag:
 
-1. **npm package** `agent-session-axi`: `tsc` → `dist/`, `bin` → `dist/bin/agent-session-axi.js`,
-   `files: [dist, skills/agent-session-axi, LICENSE, README.md]`, `engines.node >= 22`. Install
-   with `npm i -g agent-session-axi` or run with `npx -y agent-session-axi`. Publishing follows the
+1. **npm package** `agent-recall-axi`: `tsc` → `dist/`, `bin` → `dist/bin/agent-recall-axi.js`,
+   `files: [dist, skills/agent-recall-axi, LICENSE, README.md]`, `engines.node >= 22`. Install
+   with `npm i -g agent-recall-axi` or run with `npx -y agent-recall-axi`. Publishing follows the
    house develop→main Release-PR flow (`release-prepare`/`release-validate`/`release-publish`
    workflows) with trusted publishing after a manual first publish (`RELEASING.md`).
    `package.json` stays `0.0.0` in git; `publish-npm.yml`, on the GitHub release that
@@ -245,9 +245,9 @@ Two channels from one source, both committed to the same tag:
    `npm publish --provenance --access public` on Node 24 with `id-token: write` and no token
    (an `-rc.N` under the `next` dist-tag). A version already on the registry is skipped with a
    warning, which is how the manually published first version's release run stays green.
-2. **Skill** `skills/agent-session-axi/`: `SKILL.md` (prose + generated command reference) and a
-   **committed, self-contained bundle** `scripts/agent-session-axi.mjs` built by esbuild with every
-   dependency inlined, plus an executable bash shim, so `npx skills add JarvusInnovations/agent-session-axi`
+2. **Skill** `skills/agent-recall-axi/`: `SKILL.md` (prose + generated command reference) and a
+   **committed, self-contained bundle** `scripts/agent-recall-axi.mjs` built by esbuild with every
+   dependency inlined, plus an executable bash shim, so `npx skills add JarvusInnovations/agent-recall-axi`
    delivers a working tool offline, with no registry access and no install step. The bundle is
    marked `linguist-generated`, its embedded version is normalized out before the `--check` drift
    comparison, and CI fails when it or `SKILL.md` is stale. The skill's examples invoke the shim
@@ -256,7 +256,7 @@ Two channels from one source, both committed to the same tag:
 ### The skill bundle
 
 - `scripts/build-cli.ts` (`bun run build:bundle`; `--check` is `bun run check:bundle`) runs
-  esbuild on `bin/agent-session-axi.ts` (so the bundle keeps the version fast path) with
+  esbuild on `bin/agent-recall-axi.ts` (so the bundle keeps the version fast path) with
   `bundle`, `platform: node`, `target: node22`, `format: esm`, `legalComments: none`, a shebang
   banner and a "generated, do not edit" line, and writes the bundle mode 755. esbuild's
   `// <module path>` comments are stripped, so the bytes do not depend on the dependency
@@ -279,18 +279,18 @@ Two channels from one source, both committed to the same tag:
   (a development build). The order is in `RELEASING.md`.
 - The bundle reads nothing at run time but the logs and its cache: no `package.json`, no
   `node_modules`, no file beside it except, for hints, the existence of the shim.
-- The shim `scripts/agent-session-axi` is bash: it resolves its own symlinks (so a link to it on
+- The shim `scripts/agent-recall-axi` is bash: it resolves its own symlinks (so a link to it on
   `PATH` works, with `CDPATH` ignored), checks that `node` is on `PATH` and is 22 or newer
   (otherwise a one-line message on stderr and exit 127 or 1), and `exec`s `node` on the sibling
   `.mjs` with the arguments.
 - `scripts/build-skill.ts` (`bun run build:skill`; `--check` is `bun run check:skill`) splices
   the command reference generated from `COMMAND_GROUPS` (each group a heading, each command its
-  usage and summary, prefixed `scripts/agent-session-axi`) between
+  usage and summary, prefixed `scripts/agent-recall-axi`) between
   `<!-- BEGIN GENERATED: command-reference -->` and `<!-- END GENERATED: command-reference -->`;
   the prose outside the markers is hand-written and never touched, and missing markers fail the
   build.
 - `SKILL.md` frontmatter carries `name` and a trigger-shaped `description`; the body states the
-  privacy rule near the top, that every command is run as `scripts/agent-session-axi` relative to
+  privacy rule near the top, that every command is run as `scripts/agent-recall-axi` relative to
   the skill's own directory (never on `PATH`), the zoom ladder, the exploration loop, and both
   install paths. The skill directory holds only `SKILL.md` and `scripts/`.
 
@@ -301,7 +301,7 @@ other house tools ship npm alone; this one deliberately ships both.
 
 ### Version fast path
 
-`bin/agent-session-axi.ts` calls `tryFastPath(argv, { version })` with `version` from the leaf
+`bin/agent-recall-axi.ts` calls `tryFastPath(argv, { version })` with `version` from the leaf
 `src/version.ts` before dynamically importing `src/cli.ts`, so `--version` never loads the command
 graph. A test measures the fast path against the `node -e` floor in the same process.
 
@@ -334,7 +334,7 @@ generic (`widget`, `example.test`); no names, hosts, or paths from any real sess
 ## Branches
 
 `main` is the default branch and the release target: it holds exactly what was last released, so
-`npx skills add JarvusInnovations/agent-session-axi` installs a released, stamped bundle and never
+`npx skills add JarvusInnovations/agent-recall-axi` installs a released, stamped bundle and never
 an unreleased development build. Work merges to `develop`; only the `Release: v*` PR from
 `develop` (or a `hotfix/*` branch) merges to `main`. Because `main` is the default, PR tools open
 against it first, so two workflows keep the flow: `main-guard.yml`, a required check on PRs into

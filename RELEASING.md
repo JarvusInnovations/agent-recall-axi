@@ -1,8 +1,8 @@
 # Releasing
 
-`agent-session-axi` ships through two channels from one tag
+`agent-recall-axi` ships through two channels from one tag
 ([`specs/architecture.md#build-and-distribution`](specs/architecture.md#build-and-distribution)):
-the npm package, and the skill that `npx skills add JarvusInnovations/agent-session-axi` copies
+the npm package, and the skill that `npx skills add JarvusInnovations/agent-recall-axi` copies
 from the repository with its committed bundle. Releases use the house develop→main Release-PR
 flow: pushing `develop` opens a `Release: vX.Y.Z` PR into `main`, and **merging that PR
 publishes**.
@@ -25,7 +25,7 @@ publishes**.
 2. **Tag**: `release-publish` cuts `vX.Y.Z` from the Release PR's title on `main`'s merge commit.
 3. **npm**: `publish-npm.yml` runs `npm version --no-git-tag-version X.Y.Z` before building, so
    `dist/` and the published `package.json` say `X.Y.Z`, and `--version` reads it from there.
-4. **Skill bundle**: `scripts/agent-session-axi.mjs` carries its version as a literal stamped at
+4. **Skill bundle**: `scripts/agent-recall-axi.mjs` carries its version as a literal stamped at
    build time: `--stamp <version>` when given, else `git describe --tags --match 'v[0-9]*'`,
    else `<package.json version>-g<sha>`. `check:bundle` ignores that one literal, so a restamp
    never fails CI.
@@ -36,7 +36,7 @@ the bundle explicitly, on `develop`, **before** the Release PR merges:
 
 ```sh
 bun run build:bundle --stamp X.Y.Z      # no leading v
-git add skills/agent-session-axi/scripts/agent-session-axi.mjs
+git add skills/agent-recall-axi/scripts/agent-recall-axi.mjs
 git commit -m "build: stamp the skill bundle X.Y.Z"
 git push origin develop
 ```
@@ -64,9 +64,9 @@ Follow the `release-flow` skill. In short:
 5. Verify:
 
    ```sh
-   npm view agent-session-axi version _npmUser dist.attestations
+   npm view agent-recall-axi version _npmUser dist.attestations
    # _npmUser.name 'GitHub Actions', trustedPublisher set, provenance predicate slsa.dev/provenance/v1
-   npx -y agent-session-axi@X.Y.Z --version
+   npx -y agent-recall-axi@X.Y.Z --version
    gh release view vX.Y.Z --json body --jq .body
    ```
 
@@ -89,23 +89,23 @@ deliberately.
 
    ```sh
    sha=$(git rev-parse origin/develop)          # the stamped commit the Release PR will merge
-   git clone https://github.com/JarvusInnovations/agent-session-axi.git /tmp/asa-release
+   git clone https://github.com/JarvusInnovations/agent-recall-axi.git /tmp/asa-release
    cd /tmp/asa-release && git checkout --detach "$sha"
    asdf install                                  # node and bun from .tool-versions
-   test "$(node skills/agent-session-axi/scripts/agent-session-axi.mjs --version)" = 0.1.0
+   test "$(node skills/agent-recall-axi/scripts/agent-recall-axi.mjs --version)" = 0.1.0
    npm version --no-git-tag-version 0.1.0
    bun install --frozen-lockfile
    bun run check && bun run build && bun run check:types && bun run test \
      && bun run check:skill && bun run check:bundle && bun run check:scrub
-   npm pack --dry-run                            # dist/, skills/agent-session-axi/, LICENSE, README.md, package.json
+   npm pack --dry-run                            # dist/, skills/agent-recall-axi/, LICENSE, README.md, package.json
    npm login                                     # if not already
    npm publish --access public                   # prepublishOnly rebuilds dist/
-   npx -y agent-session-axi@0.1.0 --version      # 0.1.0
+   npx -y agent-recall-axi@0.1.0 --version      # 0.1.0
    ```
 
-5. Configure trusted publishing: on npmjs.com, open the `agent-session-axi` package →
+5. Configure trusted publishing: on npmjs.com, open the `agent-recall-axi` package →
    **Settings** → **Trusted Publisher** → **GitHub Actions**, and enter organization or user
-   `JarvusInnovations`, repository `agent-session-axi`, workflow filename `publish-npm.yml`,
+   `JarvusInnovations`, repository `agent-recall-axi`, workflow filename `publish-npm.yml`,
    environment left blank. Save. Optionally, under **Publishing access**, require two-factor
    authentication and disallow tokens, so only the workflow (and a 2FA'd maintainer) can publish.
 6. Confirm the org secret `BOT_GITHUB_TOKEN` is available to this repository (`release-publish`
@@ -116,5 +116,5 @@ deliberately.
    prints nothing.
 
 The trusted-publisher configuration is first exercised by the next release (`0.1.1` or `0.2.0`):
-check `npm view agent-session-axi _npmUser dist.attestations` afterwards. A human in `_npmUser`
+check `npm view agent-recall-axi _npmUser dist.attestations` afterwards. A human in `_npmUser`
 means that publish did not go through the workflow.

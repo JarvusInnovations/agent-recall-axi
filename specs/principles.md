@@ -85,7 +85,7 @@ out of time order), so they never determine sequence or ids.
 ## Deterministic output for the same file
 
 Given the same file bytes and the same arguments, every command prints the same bytes (relative
-times excepted, and only in the `sessions` listing and the home view; `recall`'s header also
+times excepted, and only in the `sessions` listing and the home view; `search`'s header also
 reports its measured scan time and whether the cache's index served it, never its results). No model calls, no
 heuristics that depend on the clock, no randomness. This is what lets another program (the ops kit's
 cold-start pack) call the library and trust the result.

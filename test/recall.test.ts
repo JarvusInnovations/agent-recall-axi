@@ -24,7 +24,7 @@ function sandbox(name: string): { root: string; cache: string; env: Record<strin
 
 const NOW = new Date("2026-11-07T14:00:00.000Z");
 const body = (out: string) => decode(out.split(/^(help\[|json_out:)/m)[0]!) as Record<string, unknown>;
-const hints = (out: string) => [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!);
+const hints = (out: string) => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!);
 /** A hint as argv: quoted words kept together (the phrase). */
 const argv = (hint: string) => [...hint.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]!);
 
@@ -100,7 +100,7 @@ describe("recall", () => {
   it("groups by session with hits and first, newest first; index: none, then fresh with identical results, and identical with the cache deleted", async () => {
     const box = sandbox("recall");
     const opts = { env: box.env, now: NOW };
-    const first = await run(["recall", RECALL_PHRASE, "--since", "1y"], opts);
+    const first = await run(["search", RECALL_PHRASE, "--since", "1y"], opts);
     expect(first.exitCode).toBe(0);
     const b1 = body(first.stdout);
     expect(b1.index).toBe("none");
@@ -111,11 +111,11 @@ describe("recall", () => {
       { id: "d3000033", project: "/src/sprocket", last: "11-06 09:00", hits: 1, first: "d3000033:2" },
       { id: "d2000032", project: "/src/gadget", last: "06-01 09:00", hits: 1, first: "d2000032:1" },
     ]);
-    const second = await run(["recall", RECALL_PHRASE, "--since", "1y"], opts);
+    const second = await run(["search", RECALL_PHRASE, "--since", "1y"], opts);
     expect(body(second.stdout).index).toBe("fresh");
     expect(body(second.stdout).sessions).toEqual(b1.sessions);
     rmSync(box.cache, { recursive: true, force: true });
-    const third = await run(["recall", RECALL_PHRASE, "--since", "1y"], opts);
+    const third = await run(["search", RECALL_PHRASE, "--since", "1y"], opts);
     expect(body(third.stdout).index).toBe("none");
     expect(body(third.stdout).sessions).toEqual(b1.sessions);
     for (const h of hints(first.stdout)) expect((await run(argv(h), opts)).exitCode, h).toBe(0);
@@ -125,12 +125,12 @@ describe("recall", () => {
   it("the default window is 90 days; an appended session is read from its index's end (partial) with the same answer as a scan", async () => {
     const box = sandbox("append");
     const opts = { env: box.env, now: NOW };
-    const r = await run(["recall", RECALL_PHRASE], opts);
+    const r = await run(["search", RECALL_PHRASE], opts);
     expect(body(r.stdout).since).toBe("90d (the default)");
     expect((body(r.stdout).sessions as Array<{ id: string }>).map((x) => x.id)).toEqual(["d1000031", "d3000033"]);
     const path = join(box.root, "projects", "-src-gadget", "d1000031-0000-4000-8000-000000000000.jsonl");
     appendFileSync(path, JSON.stringify({ type: "user", message: { role: "user", content: "one more sprocket rebalance pass" }, origin: { kind: "human" }, uuid: "u-extra", timestamp: "2026-11-07T10:05:00.000Z", sessionId: "d1000031-0000-4000-8000-000000000000" }) + "\n");
-    const after = await run(["recall", RECALL_PHRASE], opts);
+    const after = await run(["search", RECALL_PHRASE], opts);
     expect(body(after.stdout).index).toBe("partial");
     const scan = await recall(RECALL_PHRASE, { scope: { env: { CLAUDE_CONFIG_DIR: box.root } }, from: new Date(NOW.getTime() - 90 * 86_400_000), cache: { dir: join(box.cache, "fresh") } });
     expect(scan.scanned.index).toBe("none");
@@ -141,27 +141,27 @@ describe("recall", () => {
   it("matches every word run of the phrase inside the index's tokens (substrings, case), and a regex scans", async () => {
     const box = sandbox("tokens");
     const opts = { env: box.env, now: NOW };
-    await run(["recall", "x", "--since", "1y"], opts);
-    const sub = await run(["recall", "ROCKET REBAL", "--since", "1y"], opts);
+    await run(["search", "x", "--since", "1y"], opts);
+    const sub = await run(["search", "ROCKET REBAL", "--since", "1y"], opts);
     expect(body(sub.stdout).index).toBe("fresh");
     expect((body(sub.stdout).sessions as unknown[]).length).toBe(3);
-    const re = await run(["recall", "sprocket\\s+rebalance", "--regex", "--since", "1y"], opts);
+    const re = await run(["search", "sprocket\\s+rebalance", "--regex", "--since", "1y"], opts);
     expect(body(re.stdout).index).toBe("none");
     expect((body(re.stdout).sessions as unknown[]).length).toBe(3);
   });
 
   it("no match: the definitive empty line with the scanned count and a --since 1y hint", async () => {
     const box = sandbox("empty");
-    const r = await run(["recall", OUTPUT_ONLY_PHRASE], { env: box.env, now: NOW });
+    const r = await run(["search", OUTPUT_ONLY_PHRASE], { env: box.env, now: NOW });
     expect(r.exitCode).toBe(0);
     expect(body(r.stdout).sessions).toBe(`0 of 2 scanned mention "${OUTPUT_ONLY_PHRASE}" since 90d`);
-    expect(hints(r.stdout)[0]).toBe(`recall '${OUTPUT_ONLY_PHRASE}' --since 1y`);
+    expect(hints(r.stdout)[0]).toBe(`search '${OUTPUT_ONLY_PHRASE}' --since 1y`);
     expect(hints(r.stdout)[1]).toBe(`find '${OUTPUT_ONLY_PHRASE}' --all`);
   });
 
   it("validates before reading: a D kind, --since with --from, a bad regex", async () => {
     const box = sandbox("validate");
-    for (const args of [["recall", "x", "--kind", "result"], ["recall", "x", "--since", "1d", "--from", "today"], ["recall", "(a+)+", "--regex"], ["recall"]]) {
+    for (const args of [["search", "x", "--kind", "result"], ["search", "x", "--since", "1d", "--from", "today"], ["search", "(a+)+", "--regex"], ["recall"]]) {
       const r = await run(args, { env: box.env, now: NOW });
       expect(r.exitCode, args.join(" ")).toBe(2);
     }
@@ -183,7 +183,7 @@ describe("--json-out", () => {
       [["tools", "d1000031"], "tools", 1],
       [["find", "d1000031", "sprocket", "--limit", "1"], "hits", 2],
       [["find", "sprocket", "--all", "--since", "1y", "--limit", "1"], "hits", 4],
-      [["recall", RECALL_PHRASE, "--since", "1y", "--limit", "1"], "sessions", 3],
+      [["search", RECALL_PHRASE, "--since", "1y", "--limit", "1"], "sessions", 3],
       [["sessions", "--all", "--limit", "1"], "sessions", 3],
     ];
     for (const [args, key, n] of cases) {

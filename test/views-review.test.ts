@@ -37,7 +37,7 @@ beforeAll(() => {
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 const body = (out: string) => decode(out.split(/\nhelp\[\d+\]:\n/)[0]!) as Record<string, unknown>;
-const hints = (out: string) => [...out.matchAll(/Run `agent-session-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+const hints = (out: string) => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
 const helpLines = (out: string) => (out.split(/\nhelp\[\d+\]:\n/)[1] ?? "").split("\n").map((l) => l.trim());
 const collect = async <T>(it: AsyncIterable<T>) => {
   const out: T[] = [];
