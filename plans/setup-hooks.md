@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [skill-and-hook, followups-0.2.1]
 specs:
   - specs/cli.md
@@ -51,18 +51,34 @@ the bare form meaning install-or-repair. **In:**
 
 ## Validation
 
-- [ ] Unit: the existing hook suite passes against `setup hooks`, `setup hooks status` and
+- [x] Unit: the existing hook suite passes against `setup hooks`, `setup hooks status` and
       `setup hooks uninstall`, including the test that only the install writes a settings file.
-- [ ] Unit: an entry written under the old command name (same command string) reads as `installed`
+- [x] Unit: an entry written under the old command name (same command string) reads as `installed`
       and is removed by `setup hooks uninstall`.
-- [ ] Unit: `hook install --scope project`, `hook status` and `hook uninstall` each exit 2 with the
+- [x] Unit: `hook install --scope project`, `hook status` and `hook uninstall` each exit 2 with the
       corrected call, arguments carried, and write nothing.
-- [ ] Unit: `setup`, `setup bogus`, `setup hooks bogus`, `setup hooks install` and
+- [x] Unit: `setup`, `setup bogus`, `setup hooks bogus`, `setup hooks install` and
       `setup hooks status --agent claude` exit 2 naming what is valid.
-- [ ] Unit: every `Run` hint the three operations and the redirects print runs with exit 0.
-- [ ] Unit project passes. check, build, check:types, check:skill, check:bundle and check:scrub pass.
+- [x] Unit: every `Run` hint the three operations and the redirects print runs with exit 0.
+- [x] Unit project: 393 tests pass. check, build, check:types, check:skill, check:bundle and check:scrub pass.
 
 ## Risks / unknowns
 
 - **A breaking rename.** Agents and docs that remember `hook install` get one corrected call from
   the redirect; the release carrying this is a minor bump while the tool is pre-1.0.
+
+## Notes
+
+- Unknown `setup` and `setup hooks` actions are `VALIDATION_ERROR` (the house style for an unknown
+  subcommand); `cache` still reports its unknown subcommand as `USAGE`. Both exit 2.
+- `setup hooks install` is refused with the corrected call, not accepted: accepting it would be the
+  alias the rename is meant to avoid.
+- The rebuilt bundle reports a development version (`0.0.0-g<sha>`) until the release stamp
+  (`RELEASING.md`).
+
+## Follow-ups
+
+- **Issue**: project scope writes under the working directory; the house style is `--dir <path>`,
+  else the git root, else an error. Not filed yet.
+- **Issue**: the tool's AXI catalog entry describes `hook install|status|uninstall`; re-pin it after
+  the release that carries this.
