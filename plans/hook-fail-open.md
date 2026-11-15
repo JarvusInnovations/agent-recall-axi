@@ -1,5 +1,6 @@
 ---
 status: done
+pr: 39
 depends: [setup-hooks]
 specs:
   - specs/cli.md
