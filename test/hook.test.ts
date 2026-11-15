@@ -317,6 +317,148 @@ describe("setup hooks / status / uninstall", () => {
     expect(readdirSync(b.project)).toEqual([]);
     expect(readdirSync(b.home)).toEqual(["lib"]);
   });
+
+  it("setup alone is USAGE; an unknown setup or setup hooks action lists the valid ones", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const opts = { cwd: b.project, env: b.env, entrypoint: bin };
+    const usage = "usage: agent-recall-axi setup hooks [--scope user|project] [--agent claude|codex|opencode] | setup hooks status [--scope user|project] | setup hooks uninstall [--scope user|project]";
+    const bare = await run(["setup"], opts);
+    expect(bare.exitCode).toBe(2);
+    expect(bare.stdout).toMatch(/^code: USAGE$/m);
+    expect(bare.stdout).toContain("setup needs an action: hooks");
+    expect(bare.stdout).toContain(usage);
+    const other = await run(["setup", "hook"], opts);
+    expect(other.exitCode).toBe(2);
+    expect(other.stdout).toMatch(/^error: unknown setup action `hook`$/m);
+    expect(other.stdout).toContain("valid setup actions: hooks");
+    const action = await setup(b, ["frobnicate", "--scope", "project"], bin);
+    expect(action.exitCode).toBe(2);
+    expect(action.stdout).toMatch(/^error: unknown setup hooks action `frobnicate`$/m);
+    expect(action.stdout).toContain("valid setup hooks actions: status, uninstall (none: install or repair)");
+    expect(action.stdout).toContain(usage);
+    // The old subcommand under the new name: the corrected call, not an install.
+    const install = await setup(b, ["install", "--scope", "project", "--agent", "claude"], bin);
+    expect(install.exitCode).toBe(2);
+    expect(install.stdout).toMatch(/^code: VALIDATION_ERROR$/m);
+    expect(install.stdout).toContain("Run `agent-recall-axi setup hooks --scope project --agent claude` to install or repair the hook");
+    // An action after a flag is never read as one, and never installs.
+    const late = await setup(b, ["--scope", "project", "uninstall"], bin);
+    expect(late.stdout).toContain("the action comes before the flags: setup hooks uninstall [flags]");
+    // A flag error under an action prints the command's usage line, not the words typed.
+    expect((await setup(b, ["status", "--scope"], bin)).stdout).toContain(usage);
+    expect(readdirSync(b.project)).toEqual([]);
+    expect(readdirSync(b.home)).toEqual(["lib"]);
+  });
+});
+
+describe("the retired `hook` command", () => {
+  it("each form fails VALIDATION_ERROR with the corrected call, arguments carried, and writes nothing", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const opts = { cwd: b.project, env: b.env, entrypoint: bin };
+    const cases: Array<[string[], string]> = [
+      [["install"], "Run `agent-recall-axi setup hooks` to install or repair the hook"],
+      [["install", "--scope", "project"], "Run `agent-recall-axi setup hooks --scope project` to install or repair the hook"],
+      [["install", "--scope=project", "--agent", "claude"], "Run `agent-recall-axi setup hooks --scope=project --agent claude` to install or repair the hook"],
+      [["status"], "Run `agent-recall-axi setup hooks status` to see where the hook is installed"],
+      [["status", "--scope", "project"], "Run `agent-recall-axi setup hooks status --scope project` to see where the hook is installed"],
+      [["uninstall"], "Run `agent-recall-axi setup hooks uninstall` to remove the hook"],
+      [["uninstall", "--scope", "user"], "Run `agent-recall-axi setup hooks uninstall --scope user` to remove the hook"],
+      // Carried as typed and quoted for the shell, even when the corrected call will reject it.
+      [["status", "two words"], "Run `agent-recall-axi setup hooks status 'two words'` to see where the hook is installed"],
+      [[], "Run `agent-recall-axi setup hooks --help` for the hook commands"],
+      [["frobnicate"], "Run `agent-recall-axi setup hooks --help` for the hook commands"],
+      [["--help"], "Run `agent-recall-axi setup hooks --help` for the hook commands"],
+    ];
+    for (const [args, hint] of cases) {
+      const r = await run(["hook", ...args], opts);
+      expect(r.exitCode, args.join(" ")).toBe(2);
+      expect(r.stdout, args.join(" ")).toMatch(/^error: hook is now `setup hooks`$/m);
+      expect(r.stdout, args.join(" ")).toMatch(/^code: VALIDATION_ERROR$/m);
+      expect(r.stdout, args.join(" ")).toContain(hint);
+      expect(r.stdout, args.join(" ")).toContain("usage: agent-recall-axi setup hooks [--scope user|project]");
+    }
+    // No alias: nothing was installed, read or removed.
+    expect(readdirSync(b.project)).toEqual([]);
+    expect(readdirSync(b.home)).toEqual(["lib"]);
+  });
+
+  it("is not in --help, and the redirect is the same without a built binary", async () => {
+    const top = await run(["--help"]);
+    expect(top.stdout).toContain("setup hooks [--scope user|project] [--agent claude|codex|opencode] | setup hooks status");
+    expect(top.stdout).not.toMatch(/^\s+hook /m);
+    const b = box();
+    const r = await run(["hook", "install"], { cwd: b.project, env: b.env });
+    expect(r.exitCode).toBe(2);
+    expect(r.stdout).toContain("Run `agent-recall-axi setup hooks` to install or repair the hook");
+  });
+
+  it("an entry written under the old command name is still ours: installed, repaired in place, removed", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    // What `hook install --scope project --agent claude` wrote: the command string never named the subcommand.
+    const p = join(b.project, ".claude", "settings.json");
+    mkdirSync(join(p, ".."), { recursive: true });
+    const old = `${JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: bin, timeout: 10 }] }] } }, null, 2)}\n`;
+    writeFileSync(p, old);
+    const st = await setup(b, ["status", "--scope", "project"], bin);
+    expect(st.stdout).toContain(`claude,${p},installed`);
+    const again = await setup(b, ["--scope", "project", "--agent", "claude"], bin);
+    expect(again.stdout).toMatch(/^hook: already installed \(project scope; no changes\)$/m);
+    expect(readFileSync(p, "utf8")).toBe(old);
+    const u = await setup(b, ["uninstall", "--scope", "project"], bin);
+    expect(u.stdout).toMatch(/^hook: removed \(project scope\)$/m);
+    expect(u.stdout).toContain(`claude,${p},removed`);
+    expect(readFileSync(p, "utf8")).not.toContain(bin);
+  });
+});
+
+describe("every hint the hook commands print runs", () => {
+  /** Every `Run \`agent-recall-axi …\`` hint in an output, as argv (no hint here carries a quoted word). */
+  const hintsOf = (out: string): string[][] => [...out.matchAll(/Run `agent-recall-axi ([^`]*)`/g)].map((m) => m[1]!.split(" "));
+
+  it("install, status, uninstall and the redirects, at both scopes: each hint exits 0", async () => {
+    const seen = new Set<string>();
+    for (const scope of [[], ["--scope", "project"]]) {
+      const b = box();
+      const bin = fakeBin(b);
+      const opts = { cwd: b.project, env: b.env, entrypoint: bin };
+      const sources: string[][] = [
+        ["setup", "hooks", "status", ...scope], // not installed: suggests the install
+        ["hook", "install", ...scope],
+        ["setup", "hooks", "install", ...scope],
+        ["setup", "hooks", ...scope],
+        ["setup", "hooks", "status", ...scope], // installed: suggests uninstall
+        ["hook", "status", ...scope],
+        ["hook", "uninstall", ...scope],
+        ["hook"],
+        ["setup", "hooks", "uninstall", ...scope],
+        ["setup", "hooks", "--bogus"],
+        ["setup", "hooks", "status", "--bogus"],
+      ];
+      for (const args of sources) {
+        const out = await run(args, opts);
+        const hs = hintsOf(out.stdout);
+        expect(hs.length, args.join(" ")).toBeGreaterThan(0);
+        for (const h of hs) {
+          seen.add(h.join(" "));
+          const r = await run(h, opts);
+          expect(r.exitCode, `${args.join(" ")} -> ${h.join(" ")}`).toBe(0);
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual([
+      "setup hooks",
+      "setup hooks --help",
+      "setup hooks --scope project",
+      "setup hooks status",
+      "setup hooks status --help",
+      "setup hooks status --scope project",
+      "setup hooks uninstall",
+      "setup hooks uninstall --scope project",
+    ]);
+  });
 });
 
 /** A settings file holding `json` (raw text when a string), returned with its path. */
