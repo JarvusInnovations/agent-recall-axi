@@ -19,6 +19,7 @@ import { BIN, shellArg, type Io } from "./common.js";
 import {
   atomicWrite,
   codexHooksEnabled,
+  featuresState,
   OUR_FILES,
   ourCommands,
   readHooksJson,
@@ -118,14 +119,6 @@ export function hookCommandString(execPath: string, pathVar: string | undefined)
 
 function collapseUnder(path: string, home: string): string {
   return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
-}
-
-function readOrUndefined(path: string): string | undefined {
-  try {
-    return readText(path);
-  } catch {
-    return undefined;
-  }
 }
 
 // ── OpenCode plugin ───────────────────────────────────────────────────────────────────────────
@@ -279,13 +272,43 @@ function rowsFor(targets: Targets): Array<{ agent: Agent; path: string }> {
   ];
 }
 
-/** The Codex feature flag line: on, or what is left for the user to set. */
-function codexFeatures(ctx: Ctx): string {
+/**
+ * The Codex feature flag line and whether it is an error. `not set` is said only for a config that
+ * was read (or does not exist) and has no hooks key; a config that cannot be read, or whose
+ * features this tool does not read, is `cannot read: …`, never a guess (cli.md#setup-hooks).
+ */
+function codexFeatures(ctx: Ctx): { line: string; failed: boolean } {
   const path = ctx.show(ctx.targets.codexConfig);
-  if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
-  return ctx.scope === "project"
-    ? `not set (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)`
-    : `${path} (not set)`;
+  let hooks: boolean | undefined;
+  try {
+    const st = featuresState(readText(ctx.targets.codexConfig) ?? "");
+    if (st.kind === "bad") return { line: `cannot read: ${st.reason} (${path})`, failed: true };
+    hooks = st.hooks;
+  } catch (err) {
+    if (!(err instanceof SettingsError)) throw err;
+    return { line: err.message, failed: true };
+  }
+  if (hooks === true) return { line: `${path} (hooks = true)`, failed: false };
+  const value = hooks === false ? "hooks = false" : "not set";
+  return {
+    line: ctx.scope === "project" ? `${value} (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)` : `${path} (${value})`,
+    failed: false,
+  };
+}
+
+/** An OpenCode plugin file without the managed marker: never overwritten, never called installed or absent. */
+const UNMANAGED = "error: unmanaged file, left in place (move or delete it, or add the managed marker)";
+
+/**
+ * What to do after an error, so no footer sends the reader back into a command that fails the
+ * same way: the unmanaged plugin's path and marker line, and for any other error, fix it first.
+ */
+function fixHints(ctx: Ctx, unmanaged: boolean, otherErrors: boolean): string[] {
+  const rerun = `\`${BIN} setup hooks${ctx.scopeFlag}\``;
+  const out: string[] = [];
+  if (unmanaged) out.push(`Move or delete ${ctx.show(ctx.targets.opencode)}, or make its first line \`${OPENCODE_MANAGED}\` so setup hooks replaces it; then run ${rerun}`);
+  if (otherErrors) out.push(`Fix what each error names, then run ${rerun}`);
+  return out;
 }
 
 function finish(body: Record<string, unknown>, help: string[], failed: boolean): string {
@@ -316,10 +339,18 @@ function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
   const command = shellQuote(raw);
   const chosen = rowsFor(ctx.targets).filter((r) => agent === undefined || r.agent === agent);
   let failed = false;
+  let unmanaged = false;
+  let otherErrors = false;
+  // The targets that hold the hook with this command once the run is over: what the headline counts.
+  let present = 0;
   const rows: Row[] = chosen.map(({ agent: a, path }) => {
     const row = (state: string): Row => ({ agent: a, path: ctx.show(path), state });
+    const ok = (state: string): Row => {
+      present++;
+      return row(state);
+    };
     try {
-      if (a === "claude" || (a === "codex" && ctx.scope === "project")) return row(installJson(path, command));
+      if (a === "claude" || (a === "codex" && ctx.scope === "project")) return ok(installJson(path, command));
       if (a === "codex") {
         // Both Codex files pass their checks before either is written.
         const cfg = withCodexHooksFeature(readText(ctx.targets.codexConfig) ?? "");
@@ -329,27 +360,47 @@ function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
           atomicWrite(ctx.targets.codexConfig, cfg.text);
           if (!codexHooksEnabled(readText(ctx.targets.codexConfig))) throw new SettingsError("the feature flag was not set after writing");
         });
-        return row(state === "unchanged" && cfg.changed ? "updated" : state);
+        return ok(state === "unchanged" && cfg.changed ? "updated" : state);
       }
       const current = readText(path);
-      if (current !== undefined && !isOurPlugin(current)) return row("unmanaged (left in place)");
+      if (current !== undefined && !isOurPlugin(current)) {
+        failed = true;
+        unmanaged = true;
+        return row(UNMANAGED);
+      }
       const next = pluginSource(execPath, raw);
-      if (current === next) return row("unchanged");
+      if (current === next) return ok("unchanged");
       atomicWrite(path, next);
       if (pluginCommand(readText(path)) !== raw) throw new SettingsError("the plugin was not in place after writing");
-      return row(current === undefined ? "added" : "updated");
+      return ok(current === undefined ? "added" : "updated");
     } catch (err) {
       if (!(err instanceof SettingsError)) throw err;
       failed = true;
+      otherErrors = true;
+      // The target errored; whether it holds the hook is read again, and only a clean read counts.
+      try {
+        if (a === "opencode" ? pluginCommand(readText(path)) === raw : ourCommands(readHooksJson(path).doc).includes(command)) present++;
+      } catch (again) {
+        if (!(again instanceof SettingsError)) throw again;
+      }
       return row(`error: ${err.message}`);
     }
   });
+  const features = chosen.some((r) => r.agent === "codex") ? codexFeatures(ctx) : undefined;
+  if (features?.failed) {
+    failed = true;
+    otherErrors = true;
+  }
   const changed = rows.some((r) => r.state === "added" || r.state === "updated");
-  // A row that errored means the hook is not where it was asked to be: never headline success.
+  // After an error the headline says what is true: how many of the chosen targets hold the hook.
   const headline = failed
-    ? changed
-      ? `partly installed (${ctx.scope} scope; see errors)`
-      : `not installed (${ctx.scope} scope; see errors)`
+    ? present === rows.length
+      ? changed
+        ? `installed (${ctx.scope} scope; see errors)`
+        : `already installed (${ctx.scope} scope; no changes; see errors)`
+      : present > 0
+        ? `partly installed (${ctx.scope} scope; see errors)`
+        : `not installed (${ctx.scope} scope; see errors)`
     : changed
       ? `installed (${ctx.scope} scope)`
       : `already installed (${ctx.scope} scope; no changes)`;
@@ -358,8 +409,12 @@ function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
     command,
     targets: rows,
   };
-  if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
-  return finish(body, [`Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`], failed);
+  if (features) body.codex_features = features.line;
+  return finish(
+    body,
+    [...fixHints(ctx, unmanaged, otherErrors), `Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`],
+    failed,
+  );
 }
 
 function status(ctx: Ctx, io: HookIo): string {
@@ -371,12 +426,22 @@ function status(ctx: Ctx, io: HookIo): string {
   }
   const seen = new Set<string>();
   let failed = false;
+  let unmanaged = false;
+  let otherErrors = false;
   const rows: Row[] = rowsFor(ctx.targets).map(({ agent, path }) => {
     const row = (state: string): Row => ({ agent, path: ctx.show(path), state });
     try {
       if (agent === "opencode") {
-        const cmd = pluginCommand(readText(path));
-        if (cmd === undefined) return row("absent");
+        const text = readText(path);
+        if (text === undefined) return row("absent");
+        if (!isOurPlugin(text)) {
+          failed = true;
+          unmanaged = true;
+          return row(UNMANAGED);
+        }
+        const cmd = pluginCommand(text);
+        // Ours, with no command line to read: the install would rewrite it.
+        if (cmd === undefined) return row("stale");
         seen.add(shellQuote(cmd));
         return row(expected !== undefined && cmd !== expected ? "stale" : "installed");
       }
@@ -388,19 +453,28 @@ function status(ctx: Ctx, io: HookIo): string {
     } catch (err) {
       if (!(err instanceof SettingsError)) throw err;
       failed = true;
+      otherErrors = true;
       return row(`error: ${err.message}`);
     }
   });
+  const features = codexFeatures(ctx);
+  if (features.failed) {
+    failed = true;
+    otherErrors = true;
+  }
   const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
   const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
   const body: Record<string, unknown> = { hook: `${word} (${ctx.scope} scope${failed ? "; see errors" : ""})` };
   if (seen.size === 1) body.command = [...seen][0];
   else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
-  body.codex_features = codexFeatures(ctx);
-  const help = rows.every((r) => r.state === "installed")
-    ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`]
-    : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+  body.codex_features = features.line;
+  // After an error the install would fail the same way, so the footer is the fix, not the install.
+  const help = failed
+    ? fixHints(ctx, unmanaged, otherErrors)
+    : rows.every((r) => r.state === "installed")
+      ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`]
+      : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
   return finish(body, help, failed);
 }
 
