@@ -627,17 +627,33 @@ none is filtered out, because a cold start that misses a mid-turn correction rep
 - Library: `buildResumePack` builds the pack, `renderResumePack` (the `render` subpath) prints
   these exact bytes (`api.md#resume-pack`).
 
-## `hook`
+## `setup hooks`
 
 ```
-agent-recall-axi hook install   [--scope user|project] [--agent claude|codex|opencode]
-agent-recall-axi hook status    [--scope user|project]
-agent-recall-axi hook uninstall [--scope user|project]
+agent-recall-axi setup hooks           [--scope user|project] [--agent claude|codex|opencode]
+agent-recall-axi setup hooks status    [--scope user|project]
+agent-recall-axi setup hooks uninstall [--scope user|project]
 ```
 
 Explicit opt-in registration of the SessionStart hook that runs the home view (and, in hook mode,
 the resume pack after a compaction). The one command that writes outside the cache
 (`behaviors/privacy.md`); never installed by any other command.
+
+- **Shape**: the name and the bare form follow the upstream AXI reference tools. Bare `setup hooks`
+  installs the hook, or repairs it; `status` and `uninstall` are actions under it, and the action
+  comes before any flag. `hooks` is the only `setup` action. `setup` alone is `USAGE` with the usage
+  line; any other word after `setup` (``unknown setup action `<word>` ``, valid: `hooks`) or after
+  `setup hooks` (``unknown setup hooks action `<word>` ``, valid: `status`, `uninstall`, or none to
+  install) is `VALIDATION_ERROR`, before any file is read. `setup hooks install` is one of those,
+  with the hint ``Run `agent-recall-axi setup hooks …` `` carrying the caller's flags.
+- **`hook` is not a command.** The pre-rename `hook install|status|uninstall` fails
+  `VALIDATION_ERROR` (exit 2) with ``hook is now `setup hooks` `` and a hint that is the corrected
+  call with the caller's own arguments (`hook install --scope project` →
+  ``Run `agent-recall-axi setup hooks --scope project` ``, `hook status` → `setup hooks status`,
+  `hook uninstall` → `setup hooks uninstall`), plus the usage line; it reads and writes nothing.
+  There is no alias. Entries an earlier version wrote with `hook install` are recognized,
+  repaired and removed exactly as before: the command the hook runs and the rules below for
+  which entries are ours did not change with the name.
 
 - **Scope**: `user` (the default) writes each agent's user config, which suits a bot host and a
   person who wants it everywhere; `project` writes the per-repository config under the working
@@ -649,9 +665,10 @@ the resume pack after a compaction). The one command that writes outside the cac
   `~/.config/opencode/…`). Project scope: `.claude/settings.json`, `.codex/hooks.json` and
   `.opencode/plugins/axi-agent-recall-axi.js` under the working directory. Codex reads its
   feature flag only from the user's `config.toml`, which a project install never writes: it
-  reports `codex_features: not set (needs [features] hooks = true in <path>; run hook install
+  reports `codex_features: not set (needs [features] hooks = true in <path>; run setup hooks
   --scope user or set it yourself)` unless the flag is already on. `--agent` installs one of
-  the three; without it all three. `status` and `uninstall` always cover all three.
+  the three; without it all three. It is a flag of the bare form only: `status` and `uninstall`
+  always cover all three.
 - **The command** the hook runs is the running binary: the skill shim
   (`…/skills/agent-recall-axi/scripts/agent-recall-axi`, or the bundle beside it when the
   shim is not executable) when it runs from the skill bundle, else the npm bin; as the bare name
@@ -682,7 +699,7 @@ the resume pack after a compaction). The one command that writes outside the cac
   other way (a `features.` dotted key or `features = { … }` inline table at the top level, a
   `[features.<sub>]` or `[[features]]` header, two `[features]` headers) or with a `hooks` value
   other than `true`/`false`, the Codex target is an `error:` and neither Codex file is written.
-- `AGENT_RECALL_AXI_DISABLE_HOOKS=1` makes `install` a no-op that says so (exit 0), for a host
+- `AGENT_RECALL_AXI_DISABLE_HOOKS=1` makes the install a no-op that says so (exit 0), for a host
   or CI that must never gain a hook.
 
 ```
@@ -694,11 +711,11 @@ targets[3]{agent,path,state}:
   opencode,~/.config/opencode/plugins/axi-agent-recall-axi.js,added
 codex_features: ~/.codex/config.toml (hooks = true)
 help[2]:
-  Run `agent-recall-axi hook status` to check it
-  Run `agent-recall-axi hook uninstall` to remove it
+  Run `agent-recall-axi setup hooks status` to check it
+  Run `agent-recall-axi setup hooks uninstall` to remove it
 ```
 
-- `install` states per target: `added`, `updated` (the command or timeout was repaired),
+- The install (bare `setup hooks`) states per target: `added`, `updated` (the command or timeout was repaired),
   `unchanged`, or `unmanaged (left in place)` for an OpenCode plugin file it did not write;
   the first line is `hook: installed (<scope> scope)`, or `hook: already installed
   (<scope> scope; no changes)` when nothing changed. When any target's row is an `error:`, the
@@ -706,19 +723,20 @@ help[2]:
   target changed, else `hook: not installed (<scope> scope; see errors)`, and the exit is 1. `command:` is the command as the Claude
   Code and Codex entries hold it. `codex_features` is printed when Codex is a target.
 - `status` states per target: `installed`, `stale` (ours, with a command other than the one
-  `install` would write now), `absent`, or `error: <message>`; the first line is `hook:
+  the install would write now), `absent`, or `error: <message>`; the first line is `hook:
   installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`, with the scope (and `; see errors` when any target's row is an `error:`, exit 1),
-  and `codex_features:` reports the user flag. It writes nothing. The footer suggests `hook
-  install` when any target is not `installed`, else `hook uninstall`.
+  and `codex_features:` reports the user flag. It writes nothing. The footer suggests bare
+  `setup hooks` when any target is not `installed`, else `setup hooks uninstall`.
 - `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first
   line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`, or, when a
   target errored, `hook: partly removed` / `hook: not removed` with `; see errors` and exit 1.
-  The footer suggests `hook status` to confirm and `hook install` to add it back.
+  The footer suggests `setup hooks status` to confirm and bare `setup hooks` to add it back.
 - A file that cannot be read or parsed, or whose shape is not what the agent reads (the JSON
   root or its `hooks` not a plain object, `SessionStart` present but not an array), is not
   overwritten: the target's state is `error: <message>`, the others proceed, and the command
   exits 1 after printing the table.
-- Footer hints carry `--scope` when it was given. Exit 0 for every other outcome, including
+- The output's first line keeps the key `hook:` (it names the thing, not the command). Footer
+  hints carry `--scope` when it was given. Exit 0 for every other outcome, including
   no-ops.
 
 ## `cache`
