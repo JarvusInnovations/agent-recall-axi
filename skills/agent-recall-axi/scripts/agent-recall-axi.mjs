@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.3.0" : readVersion();
+    VERSION = true ? "0.0.0-gca0a23c" : readVersion();
   }
 });
 
@@ -7382,13 +7382,6 @@ function hookCommandString(execPath, pathVar) {
 function collapseUnder(path, home) {
   return path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
-function readOrUndefined(path) {
-  try {
-    return readText(path);
-  } catch {
-    return void 0;
-  }
-}
 function isOurPlugin(text) {
   return text !== void 0 && text.split(/\r?\n/, 1)[0] === OPENCODE_MANAGED;
 }
@@ -7492,8 +7485,28 @@ function rowsFor(targets) {
 }
 function codexFeatures(ctx) {
   const path = ctx.show(ctx.targets.codexConfig);
-  if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
-  return ctx.scope === "project" ? `not set (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)` : `${path} (not set)`;
+  let hooks;
+  try {
+    const st = featuresState(readText(ctx.targets.codexConfig) ?? "");
+    if (st.kind === "bad") return { line: `cannot read: ${st.reason} (${path})`, failed: true };
+    hooks = st.hooks;
+  } catch (err) {
+    if (!(err instanceof SettingsError)) throw err;
+    return { line: err.message, failed: true };
+  }
+  if (hooks === true) return { line: `${path} (hooks = true)`, failed: false };
+  const value = hooks === false ? "hooks = false" : "not set";
+  return {
+    line: ctx.scope === "project" ? `${value} (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)` : `${path} (${value})`,
+    failed: false
+  };
+}
+function fixHints(ctx, unmanaged, otherErrors) {
+  const rerun = `\`${BIN} setup hooks${ctx.scopeFlag}\``;
+  const out = [];
+  if (unmanaged) out.push(`Move or delete ${ctx.show(ctx.targets.opencode)}, or make its first line \`${OPENCODE_MANAGED}\` so setup hooks replaces it; then run ${rerun}`);
+  if (otherErrors) out.push(`Fix what each error names, then run ${rerun}`);
+  return out;
 }
 function finish(body, help, failed) {
   if (failed) process.exitCode = 1;
@@ -7516,10 +7529,17 @@ function install(ctx, agent, io) {
   const command = shellQuote(raw);
   const chosen = rowsFor(ctx.targets).filter((r) => agent === void 0 || r.agent === agent);
   let failed = false;
+  let unmanaged = false;
+  let otherErrors = false;
+  let present = 0;
   const rows = chosen.map(({ agent: a, path }) => {
     const row = (state) => ({ agent: a, path: ctx.show(path), state });
+    const ok = (state) => {
+      present++;
+      return row(state);
+    };
     try {
-      if (a === "claude" || a === "codex" && ctx.scope === "project") return row(installJson(path, command));
+      if (a === "claude" || a === "codex" && ctx.scope === "project") return ok(installJson(path, command));
       if (a === "codex") {
         const cfg = withCodexHooksFeature(readText(ctx.targets.codexConfig) ?? "");
         readHooksJson(path);
@@ -7528,30 +7548,49 @@ function install(ctx, agent, io) {
           atomicWrite(ctx.targets.codexConfig, cfg.text);
           if (!codexHooksEnabled(readText(ctx.targets.codexConfig))) throw new SettingsError("the feature flag was not set after writing");
         });
-        return row(state === "unchanged" && cfg.changed ? "updated" : state);
+        return ok(state === "unchanged" && cfg.changed ? "updated" : state);
       }
       const current = readText(path);
-      if (current !== void 0 && !isOurPlugin(current)) return row("unmanaged (left in place)");
+      if (current !== void 0 && !isOurPlugin(current)) {
+        failed = true;
+        unmanaged = true;
+        return row(UNMANAGED);
+      }
       const next2 = pluginSource(execPath, raw);
-      if (current === next2) return row("unchanged");
+      if (current === next2) return ok("unchanged");
       atomicWrite(path, next2);
       if (pluginCommand(readText(path)) !== raw) throw new SettingsError("the plugin was not in place after writing");
-      return row(current === void 0 ? "added" : "updated");
+      return ok(current === void 0 ? "added" : "updated");
     } catch (err) {
       if (!(err instanceof SettingsError)) throw err;
       failed = true;
+      otherErrors = true;
+      try {
+        if (a === "opencode" ? pluginCommand(readText(path)) === raw : ourCommands(readHooksJson(path).doc).includes(command)) present++;
+      } catch (again) {
+        if (!(again instanceof SettingsError)) throw again;
+      }
       return row(`error: ${err.message}`);
     }
   });
+  const features = chosen.some((r) => r.agent === "codex") ? codexFeatures(ctx) : void 0;
+  if (features?.failed) {
+    failed = true;
+    otherErrors = true;
+  }
   const changed = rows.some((r) => r.state === "added" || r.state === "updated");
-  const headline = failed ? changed ? `partly installed (${ctx.scope} scope; see errors)` : `not installed (${ctx.scope} scope; see errors)` : changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`;
+  const headline = failed ? present === rows.length ? changed ? `installed (${ctx.scope} scope; see errors)` : `already installed (${ctx.scope} scope; no changes; see errors)` : present > 0 ? `partly installed (${ctx.scope} scope; see errors)` : `not installed (${ctx.scope} scope; see errors)` : changed ? `installed (${ctx.scope} scope)` : `already installed (${ctx.scope} scope; no changes)`;
   const body = {
     hook: headline,
     command,
     targets: rows
   };
-  if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
-  return finish(body, [`Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`], failed);
+  if (features) body.codex_features = features.line;
+  return finish(
+    body,
+    [...fixHints(ctx, unmanaged, otherErrors), `Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`],
+    failed
+  );
 }
 function status(ctx, io) {
   let expected;
@@ -7562,12 +7601,21 @@ function status(ctx, io) {
   }
   const seen = /* @__PURE__ */ new Set();
   let failed = false;
+  let unmanaged = false;
+  let otherErrors = false;
   const rows = rowsFor(ctx.targets).map(({ agent, path }) => {
     const row = (state) => ({ agent, path: ctx.show(path), state });
     try {
       if (agent === "opencode") {
-        const cmd = pluginCommand(readText(path));
-        if (cmd === void 0) return row("absent");
+        const text = readText(path);
+        if (text === void 0) return row("absent");
+        if (!isOurPlugin(text)) {
+          failed = true;
+          unmanaged = true;
+          return row(UNMANAGED);
+        }
+        const cmd = pluginCommand(text);
+        if (cmd === void 0) return row("stale");
         seen.add(shellQuote(cmd));
         return row(expected !== void 0 && cmd !== expected ? "stale" : "installed");
       }
@@ -7579,17 +7627,23 @@ function status(ctx, io) {
     } catch (err) {
       if (!(err instanceof SettingsError)) throw err;
       failed = true;
+      otherErrors = true;
       return row(`error: ${err.message}`);
     }
   });
+  const features = codexFeatures(ctx);
+  if (features.failed) {
+    failed = true;
+    otherErrors = true;
+  }
   const present = rows.filter((r) => r.state === "installed" || r.state === "stale").length;
   const word = present === 0 ? "not installed" : rows.some((r) => r.state === "stale") ? "stale" : present < rows.length ? "partly installed" : "installed";
   const body = { hook: `${word} (${ctx.scope} scope${failed ? "; see errors" : ""})` };
   if (seen.size === 1) body.command = [...seen][0];
   else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
-  body.codex_features = codexFeatures(ctx);
-  const help = rows.every((r) => r.state === "installed") ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`] : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+  body.codex_features = features.line;
+  const help = failed ? fixHints(ctx, unmanaged, otherErrors) : rows.every((r) => r.state === "installed") ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`] : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
   return finish(body, help, failed);
 }
 function uninstall(ctx) {
@@ -7627,7 +7681,7 @@ function uninstall(ctx) {
     `Run \`${BIN} setup hooks${ctx.scopeFlag}\` to add it back`
   ], failed);
 }
-var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, ACTIONS;
+var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, ACTIONS, UNMANAGED;
 var init_hook2 = __esm({
   "src/commands/hook.ts"() {
     "use strict";
@@ -7645,6 +7699,7 @@ var init_hook2 = __esm({
     OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
     COMMAND_LINE = /^const command = (".*");$/m;
     ACTIONS = ["status", "uninstall"];
+    UNMANAGED = "error: unmanaged file, left in place (move or delete it, or add the managed marker)";
   }
 });
 
