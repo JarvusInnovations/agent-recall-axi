@@ -1,5 +1,6 @@
 ---
 status: done
+pr: 37
 depends: [skill-and-hook, followups-0.2.1]
 specs:
   - specs/cli.md
