@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.0.0-g55f70f7" : readVersion();
+    VERSION = true ? "0.3.0" : readVersion();
   }
 });
 
