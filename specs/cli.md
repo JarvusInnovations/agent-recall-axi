@@ -716,17 +716,42 @@ help[2]:
 ```
 
 - The install (bare `setup hooks`) states per target: `added`, `updated` (the command or timeout was repaired),
-  `unchanged`, or `unmanaged (left in place)` for an OpenCode plugin file it did not write;
-  the first line is `hook: installed (<scope> scope)`, or `hook: already installed
-  (<scope> scope; no changes)` when nothing changed. When any target's row is an `error:`, the
-  first line never claims success: `hook: partly installed (<scope> scope; see errors)` if another
-  target changed, else `hook: not installed (<scope> scope; see errors)`, and the exit is 1. `command:` is the command as the Claude
-  Code and Codex entries hold it. `codex_features` is printed when Codex is a target.
+  `unchanged`, or `error: <message>`. `command:` is the command as the Claude Code and Codex
+  entries hold it. `codex_features` is printed when Codex is a target.
+- **The install's first line says what is true after the run.** With no `error:` anywhere it is
+  `hook: installed (<scope> scope)`, or `hook: already installed (<scope> scope; no changes)` when
+  nothing changed, exit 0. With an `error:` in any target's row or in `codex_features`, the exit
+  is 1, the first line ends `; see errors`, and its word counts the chosen targets that hold the
+  hook with the command this install writes: all of them, `hook: installed (<scope> scope; see
+  errors)`, or `hook: already installed (<scope> scope; no changes; see errors)` when this run
+  changed nothing (every hook is in place and one check failed); some, `hook: partly installed`;
+  none, `hook: not installed`. A target whose row is an `error:` is read once more for that count,
+  and counts only if that read succeeds and finds the hook.
+- **An OpenCode plugin file without the managed marker** is never overwritten, and is never
+  reported as installed, absent or a no-op by the install or `status`: both give the target
+  `error: unmanaged file, left in place (move or delete it, or add the managed marker)`, exit 1,
+  and a hint that names the path and the marker line (a file whose first line is the marker is
+  ours, and the next `setup hooks` replaces it). `uninstall` has nothing of ours to remove there:
+  its row is `unmanaged (left in place)`, exit 0.
+- **`codex_features`** is `<path> (hooks = true)`, `<path> (hooks = false)`, or `<path> (not set)`
+  (project scope: `not set (needs [features] hooks = true in <path>; run setup hooks --scope user
+  or set it yourself)`, with `hooks = false` in place of `not set` when the file says so). `not
+  set` is said only when the file was read, or does not exist, and has no `hooks` key in a plain
+  `[features]` table. A `config.toml` that cannot be read, or whose `features` is declared in a
+  way this tool does not read (the Codex `config.toml` rule above), is `cannot read: <message>`:
+  an error, with `; see errors` on the first line and exit 1, in the install and in `status`, at
+  either scope.
 - `status` states per target: `installed`, `stale` (ours, with a command other than the one
-  the install would write now), `absent`, or `error: <message>`; the first line is `hook:
-  installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`, with the scope (and `; see errors` when any target's row is an `error:`, exit 1),
-  and `codex_features:` reports the user flag. It writes nothing. The footer suggests bare
-  `setup hooks` when any target is not `installed`, else `setup hooks uninstall`.
+  the install would write now, or a managed OpenCode plugin whose command line cannot be read),
+  `absent` (the file does not exist, or holds no entry of ours), or `error: <message>`; the first
+  line is `hook: installed`, `hook: stale`, `hook: partly installed` or `hook: not installed`,
+  with the scope (and `; see errors` when any target's row or `codex_features` is an error, exit
+  1), and `codex_features:` reports the user flag. It writes nothing. The footer suggests
+  `setup hooks uninstall` when every target is `installed` and nothing errored, and bare
+  `setup hooks` when a target is `absent` or `stale`. After an error it never suggests a command
+  that would fail the same way: it says to fix what each error names (for an unmanaged plugin
+  file, the path and the marker line) and then run `setup hooks`. The install's footer adds the
+  same hint after an error.
 - `uninstall` states per target: `removed`, `absent` or `unmanaged (left in place)`; the first
   line is `hook: removed (<scope> scope)` or `hook: nothing to remove (<scope> scope)`, or, when a
   target errored, `hook: partly removed` / `hook: not removed` with `; see errors` and exit 1.

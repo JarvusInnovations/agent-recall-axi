@@ -276,20 +276,57 @@ describe("setup hooks / status / uninstall", () => {
     expect(readFileSync(join(b.project, ".claude", "settings.json"), "utf8")).toBe("{ not json");
   });
 
-  it("an OpenCode plugin file it did not write is left in place, on install and uninstall", async () => {
+  it("an OpenCode plugin file it did not write is left in place, and neither the install nor status calls it installed or absent", async () => {
     const b = box();
     const bin = fakeBin(b);
     const plugin = join(b.project, ".opencode", "plugins", "axi-agent-recall-axi.js");
     mkdirSync(join(b.project, ".opencode", "plugins"), { recursive: true });
     writeFileSync(plugin, "// hand-written\n");
-    const r = await setup(b, ["--scope", "project"], bin);
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("opencode,");
-    expect(r.stdout).toContain("unmanaged (left in place)");
+    const state = "error: unmanaged file, left in place (move or delete it, or add the managed marker)";
+    const marker = "// axi-sdk-js managed opencode plugin: agent-recall-axi";
+
+    // The one target asked for was not installed: no success headline, no exit 0.
+    const one = await setup(b, ["--scope", "project", "--agent", "opencode"], bin);
+    expect(one.exitCode).toBe(1);
+    expect(one.stdout).toMatch(/^hook: "?not installed \(project scope; see errors\)"?$/m);
+    expect(one.stdout).toContain(state);
+    // The hint names the file and the marker line, and what to run after.
+    const hint = one.stdout.split("\n").find((l) => l.includes("Move or delete"));
+    expect(hint).toContain(plugin);
+    expect(hint).toContain(marker);
+    expect(hint).toContain("agent-recall-axi setup hooks --scope project");
+    expect(readFileSync(plugin, "utf8")).toBe("// hand-written\n");
+
+    // With the other targets installed it is partly installed, still exit 1.
+    const all = await setup(b, ["--scope", "project"], bin);
+    expect(all.exitCode).toBe(1);
+    expect(all.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
+    expect(all.stdout).toMatch(/claude,.*,added$/m);
+    expect(all.stdout).toContain(state);
+
+    // status reports the same state for the target, and its hint is the fix, not the install again.
+    const st = await setup(b, ["status", "--scope", "project"], bin);
+    expect(st.exitCode).toBe(1);
+    expect(st.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
+    expect(st.stdout).toContain(state);
+    expect(st.stdout).not.toMatch(/opencode,.*,absent$/m);
+    expect(st.stdout).not.toMatch(/Run `agent-recall-axi setup hooks --scope project` to (install|repair) it/);
+    const stHint = st.stdout.split("\n").find((l) => l.includes("Move or delete"));
+    expect(stHint).toContain(plugin);
+    expect(stHint).toContain(marker);
+
+    // uninstall has nothing of ours to remove there.
     const u = await setup(b, ["uninstall", "--scope", "project"], bin);
     expect(u.exitCode).toBe(0);
     expect(u.stdout).toContain("unmanaged (left in place)");
     expect(readFileSync(plugin, "utf8")).toBe("// hand-written\n");
+
+    // The hint is true: with the marker on its first line the file is ours and the install replaces it.
+    writeFileSync(plugin, `${marker}\n// hand-written\n`);
+    const fixed = await setup(b, ["--scope", "project", "--agent", "opencode"], bin);
+    expect(fixed.exitCode).toBe(0);
+    expect(fixed.stdout).toMatch(/^hook: installed \(project scope\)$/m);
+    expect(fixed.stdout).toMatch(/opencode,.*,updated$/m);
   });
 
   it("validates its action and flags before touching a file", async () => {
@@ -663,6 +700,164 @@ describe("hook review fixes", () => {
     expect(shellPath(join(home, "my proj"))).toBe("~/'my proj'");
     expect(shellPath(join(home, "proj"))).toBe("~/proj");
     expect(shellPath("/opt/my proj")).toBe("'/opt/my proj'");
+  });
+});
+
+/** chmod cannot make a file unreadable to root, so the permission tests are skipped there. */
+const asRoot = process.getuid?.() === 0;
+
+describe("setup hooks fails closed (plans/hook-fail-open.md)", () => {
+  it.skipIf(asRoot)("an unreadable Codex config.toml is `cannot read`, never `not set`: status and the install exit 1 and say the hooks are in place", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    expect((await setup(b, [], bin)).exitCode).toBe(0);
+    const cfg = join(b.home, ".codex", "config.toml");
+    expect(readFileSync(cfg, "utf8")).toContain("hooks = true");
+    const before = tree(b.home);
+    const mode = statSync(cfg).mode & 0o7777;
+    chmodSync(cfg, 0o000);
+    try {
+      const st = await setup(b, ["status"], bin);
+      expect(st.exitCode).toBe(1);
+      expect(st.stdout).toMatch(/^hook: "?installed \(user scope; see errors\)"?$/m);
+      expect(st.stdout).toMatch(/^codex_features: "?cannot read: /m);
+      expect(st.stdout).not.toContain("not set");
+      for (const agent of ["claude", "codex", "opencode"]) expect(st.stdout).toMatch(new RegExp(`^ {2}${agent},.*,installed$`, "m"));
+      // Not "all good, here is how to remove it".
+      expect(st.stdout).not.toMatch(/^help\[1\]:\n {2}Run `agent-recall-axi setup hooks uninstall`/m);
+
+      // The install: every hook is in place and one check failed. It does not say "not installed".
+      const r = await setup(b, [], bin);
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toMatch(/^hook: "?already installed \(user scope; no changes; see errors\)"?$/m);
+      expect(r.stdout).toMatch(/^ {2}codex,.*,"?error: cannot read: /m);
+      expect(r.stdout).toMatch(/^codex_features: "?cannot read: /m);
+      expect(r.stdout).not.toContain("not set");
+
+      // Project scope reads the same user flag.
+      const p = await setup(b, ["status", "--scope", "project"], bin);
+      expect(p.exitCode).toBe(1);
+      expect(p.stdout).toMatch(/^codex_features: "?cannot read: /m);
+      expect(p.stdout).not.toContain("not set");
+    } finally {
+      chmodSync(cfg, mode);
+    }
+    expect(tree(b.home)).toEqual(before);
+  });
+
+  it.skipIf(asRoot)("an unreadable Codex config.toml with no Codex hook yet: the Codex target errors, nothing of Codex is written, the rest is partly installed", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    mkdirSync(join(b.home, ".codex"));
+    const cfg = join(b.home, ".codex", "config.toml");
+    writeFileSync(cfg, "[features]\nhooks = true\n");
+    chmodSync(cfg, 0o000);
+    try {
+      const r = await setup(b, [], bin);
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toMatch(/^hook: "?partly installed \(user scope; see errors\)"?$/m);
+      expect(existsSync(join(b.home, ".codex", "hooks.json"))).toBe(false);
+      const one = await setup(b, ["--agent", "codex"], bin);
+      expect(one.exitCode).toBe(1);
+      expect(one.stdout).toMatch(/^hook: "?not installed \(user scope; see errors\)"?$/m);
+      const st = await setup(b, ["status"], bin);
+      expect(st.exitCode).toBe(1);
+      expect(st.stdout).toMatch(/^hook: "?partly installed \(user scope; see errors\)"?$/m);
+      expect(st.stdout).toMatch(/codex,.*,absent$/m);
+    } finally {
+      chmodSync(cfg, 0o644);
+    }
+  });
+
+  it("`not set` is said only for a config that was read (or is missing) and has no hooks key", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const cfg = join(b.home, ".codex", "config.toml");
+    const line = async (args: string[]) => {
+      const r = await setup(b, args, bin);
+      return { ...r, features: r.stdout.split("\n").find((l) => l.startsWith("codex_features:")) };
+    };
+    // No file.
+    let st = await line(["status"]);
+    expect(st.exitCode).toBe(0);
+    expect(st.features).toBe("codex_features: ~/.codex/config.toml (not set)");
+    // Read, no key.
+    mkdirSync(join(b.home, ".codex"));
+    writeFileSync(cfg, 'model = "example-model"\n\n[features]\nother = true\n');
+    st = await line(["status"]);
+    expect(st.exitCode).toBe(0);
+    expect(st.features).toBe("codex_features: ~/.codex/config.toml (not set)");
+    // Set to false is not "not set".
+    writeFileSync(cfg, "[features]\nhooks = false\n");
+    st = await line(["status"]);
+    expect(st.exitCode).toBe(0);
+    expect(st.features).toBe("codex_features: ~/.codex/config.toml (hooks = false)");
+    const proj = await line(["status", "--scope", "project"]);
+    expect(proj.exitCode).toBe(0);
+    expect(proj.features).toContain("hooks = false (needs [features] hooks = true in ~/.codex/config.toml; run setup hooks --scope user or set it yourself)");
+    // Declared in a way this tool does not read: the flag is unknown, which is an error, at either scope.
+    for (const text of ["features.hooks = true\n", "[features]\nhooks = true\n\n[features]\nhooks = false\n", '[features]\nhooks = "yes"\n']) {
+      writeFileSync(cfg, text);
+      for (const scope of [[], ["--scope", "project"]]) {
+        st = await line(["status", ...scope]);
+        expect(st.exitCode, text).toBe(1);
+        expect(st.features, text).toMatch(/^codex_features: "?cannot read: /);
+        expect(st.stdout, text).not.toContain("not set");
+        expect(st.stdout, text).toMatch(/^hook: "?not installed \((user|project) scope; see errors\)"?$/m);
+        expect(st.stdout, text).not.toMatch(/Run `agent-recall-axi setup hooks[^`]*` to (install|repair) it/);
+      }
+      expect(readFileSync(cfg, "utf8")).toBe(text);
+    }
+    // A project install writes its three files and still reports the unknown user flag as an error.
+    const r = await line(["--scope", "project"]);
+    expect(r.exitCode).toBe(1);
+    expect(r.stdout).toMatch(/^hook: "?installed \(project scope; see errors\)"?$/m);
+    expect(r.features).toMatch(/^codex_features: "?cannot read: /);
+  });
+
+  it("an install where one target errors and the others are already in place is partly installed, not `not installed`", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    const p = settingsFile(b, "{ not json");
+    const first = await setup(b, ["--scope", "project"], bin);
+    expect(first.exitCode).toBe(1);
+    expect(first.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
+    // Nothing changes the second time; two of three targets still hold the hook.
+    const second = await setup(b, ["--scope", "project"], bin);
+    expect(second.exitCode).toBe(1);
+    expect(second.stdout).toMatch(/^hook: "?partly installed \(project scope; see errors\)"?$/m);
+    expect(second.stdout).toMatch(/codex,.*,unchanged$/m);
+    expect(second.stdout).toContain("Fix what each error names, then run `agent-recall-axi setup hooks --scope project`");
+    // Only the broken target was asked for: nothing is installed.
+    const one = await setup(b, ["--scope", "project", "--agent", "claude"], bin);
+    expect(one.exitCode).toBe(1);
+    expect(one.stdout).toMatch(/^hook: "?not installed \(project scope; see errors\)"?$/m);
+    // status does not send the reader back to an install that fails the same way.
+    const st = await setup(b, ["status", "--scope", "project"], bin);
+    expect(st.exitCode).toBe(1);
+    expect(st.stdout).not.toMatch(/Run `agent-recall-axi setup hooks --scope project` to (install|repair) it/);
+    expect(st.stdout).toContain("Fix what each error names, then run `agent-recall-axi setup hooks --scope project`");
+    expect(readFileSync(p, "utf8")).toBe("{ not json");
+  });
+
+  it("a managed OpenCode plugin whose command line cannot be read is stale, not absent, and the install repairs it", async () => {
+    const b = box();
+    const bin = fakeBin(b);
+    expect((await setup(b, ["--scope", "project"], bin)).exitCode).toBe(0);
+    const plugin = join(b.project, ".opencode", "plugins", "axi-agent-recall-axi.js");
+    const good = readFileSync(plugin, "utf8");
+    const broken = good.replace(/^const command = .*$/m, "const command = oops;");
+    expect(broken).not.toBe(good);
+    writeFileSync(plugin, broken);
+    const st = await setup(b, ["status", "--scope", "project"], bin);
+    expect(st.exitCode).toBe(0);
+    expect(st.stdout).toMatch(/^hook: stale \(project scope\)$/m);
+    expect(st.stdout).toMatch(/opencode,.*,stale$/m);
+    expect(st.stdout).toContain("Run `agent-recall-axi setup hooks --scope project` to repair it");
+    const r = await setup(b, ["--scope", "project"], bin);
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/opencode,.*,updated$/m);
+    expect(readFileSync(plugin, "utf8")).toBe(good);
   });
 });
 
