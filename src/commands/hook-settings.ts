@@ -1,5 +1,5 @@
 /**
- * The file-level work behind `hook` (specs/cli.md#hook): which entries are ours, shell quoting,
+ * The file-level work behind `setup hooks` (specs/cli.md#setup-hooks): which entries are ours, shell quoting,
  * the Claude Code / Codex hooks JSON merge, the Codex `config.toml` feature flag, and atomic
  * writes that keep a file as it was written. No output, no flags.
  */
@@ -8,7 +8,7 @@ import { chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync
 import { basename, dirname, join } from "node:path";
 import { NAME } from "../invocation.js";
 
-/** The file names this tool installs as a hook command (cli.md#hook). */
+/** The file names this tool installs as a hook command (cli.md#setup-hooks). */
 export const OUR_FILES = new Set([NAME, `${NAME}.js`, `${NAME}.mjs`]);
 export const TIMEOUT_SECONDS = 10;
 
@@ -94,7 +94,7 @@ function read(path: string): string | undefined {
   }
 }
 
-/** Read and shape-check a Claude Code / Codex hooks file (cli.md#hook); throws SettingsError. */
+/** Read and shape-check a Claude Code / Codex hooks file (cli.md#setup-hooks); throws SettingsError. */
 export function readHooksJson(path: string): JsonFile {
   const text = read(path);
   if (text === undefined) return { exists: false, text: "", doc: {}, indent: "  ", eol: "\n", trailing: true };
@@ -277,7 +277,7 @@ export interface FeaturesState {
 const HEADER = /^\s*(\[\[?)\s*([^\]]*?)\s*(\]\]?)\s*(?:#.*)?$/;
 const KEY = /^\s*((?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*'))*)\s*=(.*)$/;
 
-/** How `features` is declared in a Codex config (cli.md#hook). */
+/** How `features` is declared in a Codex config (cli.md#setup-hooks). */
 export function featuresState(text: string): FeaturesState {
   const lines = text.split(/\r?\n/);
   let table: string[] | null = null; // null: the root table

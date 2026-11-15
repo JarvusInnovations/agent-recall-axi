@@ -13,8 +13,8 @@ behind.)
 **Privacy: reads local files only; sends nothing.** Session logs hold everything a human typed;
 this tool never opens a network connection, never modifies a log, and writes only its own
 disposable cache under `~/.cache/agent-recall-axi/`, plus, only when you run
-`agent-recall-axi hook install`, the agent settings files that command names (`hook uninstall`
-reverts it). The rule is [`specs/behaviors/privacy.md`](specs/behaviors/privacy.md).
+`agent-recall-axi setup hooks`, the agent settings files that command names
+(`setup hooks uninstall` reverts it). The rule is [`specs/behaviors/privacy.md`](specs/behaviors/privacy.md).
 
 Agents that run for days need to read their own and each other's sessions: after a context
 compaction, to resume where they were; from a supervising session, to audit what a bot did and
@@ -79,11 +79,13 @@ lists every command, and `<command> --help` its flags.
 
 ## The session hook
 
-`agent-recall-axi hook install` registers a SessionStart hook for Claude Code, Codex and
-OpenCode (`--scope project` for one repository, `--agent` for one agent). At session start it
+`agent-recall-axi setup hooks` registers a SessionStart hook for Claude Code, Codex and
+OpenCode, or repairs one that is already there (`--scope project` for one repository, `--agent` for one agent). At session start it
 shows the project's sessions; after a compaction or a resume it prints a resume pack.
-`hook status` shows where it is installed and `hook uninstall` removes only this tool's entries.
-Nothing else ever installs a hook. Details: [`specs/cli.md#hook`](specs/cli.md#hook).
+`setup hooks status` shows where it is installed and `setup hooks uninstall` removes only this
+tool's entries. Nothing else ever installs a hook. (Up to 0.2.1 these were
+`hook install|status|uninstall`; hooks installed that way keep working and need no reinstall.)
+Details: [`specs/cli.md#setup-hooks`](specs/cli.md#setup-hooks).
 
 ## Specs and development
 

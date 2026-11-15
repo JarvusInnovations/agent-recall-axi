@@ -288,7 +288,7 @@ describe("help, planned commands, update", () => {
   it("--help lists commands, marks none planned once every plan has landed, and shows no SDK built-in block", async () => {
     const { stdout } = await run(["--help"]);
     expect(stdout).toContain("events <session>");
-    expect(stdout).toContain("hook install [--scope user|project]");
+    expect(stdout).toContain("setup hooks [--scope user|project]");
     expect(stdout).not.toContain("(planned:");
     expect(stdout).not.toContain("built-in");
     const cmd = await run(["events", "--help"]);
@@ -299,11 +299,11 @@ describe("help, planned commands, update", () => {
   });
 
   it("a usage error carries the command's usage line", async () => {
-    // `hook` with no subcommand fails before it reads or writes any file.
-    const { stdout, exitCode } = await run(["hook"]);
+    // `setup` with no action fails before it reads or writes any file.
+    const { stdout, exitCode } = await run(["setup"]);
     expect(exitCode).toBe(2);
     // errors.md#codes: a USAGE error's help is the command's usage line.
-    expect(stdout).toContain("usage: agent-recall-axi hook install [--scope user|project] [--agent claude|codex|opencode] | hook status");
+    expect(stdout).toContain("usage: agent-recall-axi setup hooks [--scope user|project] [--agent claude|codex|opencode] | setup hooks status");
     const missing = await run(["events", fx("thinking"), "--limit"]);
     expect(missing.exitCode).toBe(2);
     expect(missing.stdout).toContain("usage: agent-recall-axi events <session> [--from <when|id>]");

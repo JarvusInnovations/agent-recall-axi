@@ -1,5 +1,6 @@
 /**
- * `hook install|status|uninstall` (specs/cli.md#hook): explicit opt-in registration of the
+ * `setup hooks` and its `status` and `uninstall` actions (specs/cli.md#setup-hooks), and the
+ * retired `hook` redirect: explicit opt-in registration of the
  * SessionStart hook that runs the home view, the one command that writes outside the cache
  * (specs/behaviors/privacy.md). The settings merges are this tool's own (hook-settings.ts); the
  * SDK supplies the OpenCode plugin source and PATH-portable command resolution
@@ -14,7 +15,7 @@ import { getString, parseFlags, usageLine } from "../flags.js";
 import { renderCommandHelp } from "../output/help.js";
 import { renderDocument } from "../output/render.js";
 import { bundleShim, NAME } from "../invocation.js";
-import { BIN, type Io } from "./common.js";
+import { BIN, shellArg, type Io } from "./common.js";
 import {
   atomicWrite,
   codexHooksEnabled,
@@ -54,7 +55,7 @@ interface Targets {
   opencode: string;
 }
 
-/** The files each scope writes (cli.md#hook); user scope honours the agents' config-dir variables. */
+/** The files each scope writes (cli.md#setup-hooks); user scope honours the agents' config-dir variables. */
 export function hookTargets(scope: Scope, env: Record<string, string | undefined>, home: string, projectDir: string): Targets {
   const codexHome = env.CODEX_HOME || join(home, ".codex");
   const codexConfig = join(codexHome, "config.toml");
@@ -77,8 +78,8 @@ export function hookTargets(scope: Scope, env: Record<string, string | undefined
 
 function installFromBuildHints(): string[] {
   return [
-    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
-    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`,
+    `Run \`bun run build && node dist/bin/${NAME}.js setup hooks\` to install the built bin`,
+    `Run \`skills/${NAME}/scripts/${NAME} setup hooks\` to install the skill shim`,
   ];
 }
 
@@ -160,7 +161,7 @@ function pluginSource(execPath: string, raw: string): string {
   }
 }
 
-// ── the subcommands ───────────────────────────────────────────────────────────────────────────
+// ── the actions ───────────────────────────────────────────────────────────────────────────────
 
 interface Row {
   agent: Agent;
@@ -189,21 +190,75 @@ function parseAgent(p: ReturnType<typeof parseFlags>): Agent | undefined {
   throw new AxiError(`--agent ${v} is not an agent`, "VALIDATION_ERROR", [`--agent takes one of ${HOOK_AGENTS.join(", ")}`]);
 }
 
-const SUBCOMMANDS = ["install", "status", "uninstall"] as const;
+/** The words that may follow `setup hooks`; none of them is the install. */
+const ACTIONS = ["status", "uninstall"] as const;
+type Action = "install" | (typeof ACTIONS)[number];
 
-export async function hookCommand(args: string[], io: HookIo): Promise<string> {
-  const doc = findCommand("hook");
-  const sub = args[0];
-  if (sub === undefined) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
-  if (sub === "--help" || sub === "-h") return renderCommandHelp("hook") ?? "";
-  if (!(SUBCOMMANDS as readonly string[]).includes(sub)) throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
-  // Per-subcommand flag sets: --agent belongs to install alone.
-  const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => sub === "install" || f.name !== "agent");
-  const p = parseFlags(`hook ${sub}`, args.slice(1), specs);
-  if (p.help) return renderCommandHelp("hook") ?? "";
-  if (p.positionals.length) throw new AxiError(`hook ${sub} takes no arguments (got ${p.positionals[0]})`, "USAGE", [usageLine("hook")]);
+function isAction(word: string): word is (typeof ACTIONS)[number] {
+  return (ACTIONS as readonly string[]).includes(word);
+}
+
+function carry(args: string[]): string {
+  return args.map((a) => ` ${shellArg(a)}`).join("");
+}
+
+/**
+ * The pre-rename `hook install|status|uninstall`: one corrected call with the caller's own
+ * arguments, never an alias (cli.md#setup-hooks). Reads and writes nothing.
+ */
+export function retiredHookCommand(args: string[]): never {
+  const [sub, ...rest] = args;
+  const hints =
+    sub === "install"
+      ? [`Run \`${BIN} setup hooks${carry(rest)}\` to install or repair the hook`]
+      : sub === "status"
+        ? [`Run \`${BIN} setup hooks status${carry(rest)}\` to see where the hook is installed`]
+        : sub === "uninstall"
+          ? [`Run \`${BIN} setup hooks uninstall${carry(rest)}\` to remove the hook`]
+          : [`Run \`${BIN} setup hooks --help\` for the hook commands`];
+  throw new AxiError("hook is now `setup hooks`", "VALIDATION_ERROR", [...hints, usageLine("setup")]);
+}
+
+/** `setup hooks [status|uninstall]`: the action word comes first, then that action's flags. */
+export async function setupCommand(args: string[], io: HookIo): Promise<string> {
+  const doc = findCommand("setup");
+  const word = args[0];
+  if (word === undefined) throw new AxiError("setup needs an action: hooks", "USAGE", [usageLine("setup")]);
+  if (word === "--help" || word === "-h") return renderCommandHelp("setup") ?? "";
+  if (word !== "hooks") {
+    throw new AxiError(`unknown setup action \`${word}\``, "VALIDATION_ERROR", ["valid setup actions: hooks", usageLine("setup")]);
+  }
+  const first = args[1];
+  let action: Action = "install";
+  if (first !== undefined && !first.startsWith("-")) {
+    if (first === "install") {
+      // The habit from `hook install`: the bare form is the install, so say that with the call to make.
+      throw new AxiError("`setup hooks` installs or repairs the hook; it takes no `install` action", "VALIDATION_ERROR", [
+        `Run \`${BIN} setup hooks${carry(args.slice(2))}\` to install or repair the hook`,
+        usageLine("setup"),
+      ]);
+    }
+    if (!isAction(first)) {
+      throw new AxiError(`unknown setup hooks action \`${first}\``, "VALIDATION_ERROR", [
+        `valid setup hooks actions: ${ACTIONS.join(", ")} (none: install or repair)`,
+        usageLine("setup"),
+      ]);
+    }
+    action = first;
+  }
+  const command = action === "install" ? "setup hooks" : `setup hooks ${action}`;
+  // Per-action flag sets: --agent belongs to the install alone.
+  const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => action === "install" || f.name !== "agent");
+  const p = parseFlags(command, args.slice(action === "install" ? 1 : 2), specs);
+  if (p.help) return renderCommandHelp("setup") ?? "";
+  if (p.positionals.length) {
+    const got = p.positionals[0]!;
+    // `setup hooks --scope project status`: an action after a flag is never read as one.
+    const message = action === "install" && isAction(got) ? `the action comes before the flags: setup hooks ${got} [flags]` : `${command} takes no arguments (got ${got})`;
+    throw new AxiError(message, "USAGE", [usageLine("setup")]);
+  }
   const scope = parseScope(p);
-  const agent = sub === "install" ? parseAgent(p) : undefined;
+  const agent = action === "install" ? parseAgent(p) : undefined;
   const home = io.env.HOME || homedir();
   const ctx: Ctx = {
     scope,
@@ -211,8 +266,8 @@ export async function hookCommand(args: string[], io: HookIo): Promise<string> {
     scopeFlag: getString(p, "scope") !== undefined ? ` --scope ${scope}` : "",
     show: (path) => collapseUnder(path, home),
   };
-  if (sub === "status") return status(ctx, io);
-  if (sub === "uninstall") return uninstall(ctx);
+  if (action === "status") return status(ctx, io);
+  if (action === "uninstall") return uninstall(ctx);
   return install(ctx, agent, io);
 }
 
@@ -229,7 +284,7 @@ function codexFeatures(ctx: Ctx): string {
   const path = ctx.show(ctx.targets.codexConfig);
   if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
   return ctx.scope === "project"
-    ? `not set (needs [features] hooks = true in ${path}; run hook install --scope user or set it yourself)`
+    ? `not set (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)`
     : `${path} (not set)`;
 }
 
@@ -304,7 +359,7 @@ function install(ctx: Ctx, agent: Agent | undefined, io: HookIo): string {
     targets: rows,
   };
   if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
-  return finish(body, [`Run \`${BIN} hook status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`], failed);
+  return finish(body, [`Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`], failed);
 }
 
 function status(ctx: Ctx, io: HookIo): string {
@@ -344,8 +399,8 @@ function status(ctx: Ctx, io: HookIo): string {
   body.targets = rows;
   body.codex_features = codexFeatures(ctx);
   const help = rows.every((r) => r.state === "installed")
-    ? [`Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`]
-    : [`Run \`${BIN} hook install${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+    ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`]
+    : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
   return finish(body, help, failed);
 }
 
@@ -384,7 +439,7 @@ function uninstall(ctx: Ctx): string {
       ? `removed (${ctx.scope} scope)`
       : `nothing to remove (${ctx.scope} scope)`;
   return finish({ hook: headline, targets: rows }, [
-    `Run \`${BIN} hook status${ctx.scopeFlag}\` to confirm`,
-    `Run \`${BIN} hook install${ctx.scopeFlag}\` to add it back`,
+    `Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to confirm`,
+    `Run \`${BIN} setup hooks${ctx.scopeFlag}\` to add it back`,
   ], failed);
 }
