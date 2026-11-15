@@ -19,7 +19,7 @@ var VERSION;
 var init_version = __esm({
   "src/version.ts"() {
     "use strict";
-    VERSION = true ? "0.2.1" : readVersion();
+    VERSION = true ? "0.3.0" : readVersion();
   }
 });
 
@@ -2259,7 +2259,7 @@ var init_reference = __esm({
     HOOK_SCOPES = ["user", "project"];
     HOOK_AGENTS = ["claude", "codex", "opencode"];
     HOOK_SCOPE = { name: "scope", value: "string", arg: "<user|project>", describe: "user: each agent's home config; project: this directory's", default: "user" };
-    HOOK_AGENT = { name: "agent", value: "string", arg: "<claude|codex|opencode>", describe: "install for one agent only (install only)", default: "all three" };
+    HOOK_AGENT = { name: "agent", value: "string", arg: "<claude|codex|opencode>", describe: "install for one agent only (bare `setup hooks` only)", default: "all three" };
     HOOK_FLAGS = [HOOK_SCOPE, HOOK_AGENT];
     COMMAND_GROUPS = [
       {
@@ -2499,17 +2499,17 @@ var init_reference = __esm({
         group: "setup",
         commands: [
           {
-            name: "hook",
-            usage: "hook install [--scope user|project] [--agent claude|codex|opencode] | hook status [--scope user|project] | hook uninstall [--scope user|project]",
+            name: "setup",
+            usage: "setup hooks [--scope user|project] [--agent claude|codex|opencode] | setup hooks status [--scope user|project] | setup hooks uninstall [--scope user|project]",
             summary: "opt-in SessionStart hook (Claude Code, Codex, OpenCode): the sessions at session start, a resume pack after a compaction",
             status: "available",
             args: [
-              "install: register the hook (idempotent; repairs a moved binary path)",
-              "status: where it is installed and whether its command is current (writes nothing)",
-              "uninstall: remove only this tool's entries; every other hook stays"
+              "hooks: install the hook, or repair it (idempotent; repairs a moved binary path)",
+              "hooks status: where it is installed and whether its command is current (writes nothing)",
+              "hooks uninstall: remove only this tool's entries; every other hook stays"
             ],
             flags: HOOK_FLAGS,
-            examples: ["hook install", "hook install --scope project --agent claude", "hook status", "hook uninstall --scope project"]
+            examples: ["setup hooks", "setup hooks --scope project --agent claude", "setup hooks status", "setup hooks uninstall --scope project"]
           },
           {
             name: "cache",
@@ -2761,8 +2761,8 @@ async function* readLinesBackward(path, blockSize = BLOCK_SIZE) {
     const { size } = await fh.stat();
     if (size === 0) return;
     let end = size;
-    let carry2 = [];
-    const join15 = (head2) => carry2.length === 0 ? head2 : Buffer.concat([head2, ...carry2.reverse()]);
+    let carry3 = [];
+    const join15 = (head2) => carry3.length === 0 ? head2 : Buffer.concat([head2, ...carry3.reverse()]);
     let first = true;
     const emit = (offset, bytes) => {
       if (first) {
@@ -2780,11 +2780,11 @@ async function* readLinesBackward(path, blockSize = BLOCK_SIZE) {
         const nl = buf.lastIndexOf(NL, stop - 1);
         if (nl === -1) break;
         const line2 = emit(start + nl + 1, join15(buf.subarray(nl + 1, stop)));
-        carry2 = [];
+        carry3 = [];
         if (line2) yield line2;
         stop = nl;
       }
-      if (stop > 0) carry2.push(buf.subarray(0, stop));
+      if (stop > 0) carry3.push(buf.subarray(0, stop));
       end = start;
     }
     const line = emit(0, join15(Buffer.alloc(0)));
@@ -5442,7 +5442,8 @@ function parseFlags(command, args, specs) {
   return { flags, positionals, help };
 }
 function usageLine(command) {
-  return `usage: ${BIN} ${findCommand(command)?.usage ?? command}`;
+  const doc = findCommand(command) ?? findCommand(command.split(" ")[0]);
+  return `usage: ${BIN} ${doc?.usage ?? command}`;
 }
 function validFlagsLine(command, specs) {
   const names = specs.filter((s) => !s.planned).map((s) => `--${s.name}`);
@@ -6833,7 +6834,7 @@ function renderResumePack(pack, opts) {
   const s = pack.session;
   const ref = opts.ref ?? s.short;
   const showCarry = opts.showCarry ?? "";
-  const carry2 = opts.carry ?? "";
+  const carry3 = opts.carry ?? "";
   const header = {};
   if (opts.notice) header.notice = opts.notice;
   header.session = pack.title !== void 0 ? `${s.short} ${headCut(oneLine(pack.title).trim(), DEFAULT_HEAD).text}` : s.short;
@@ -6850,7 +6851,7 @@ function renderResumePack(pack, opts) {
   header.tz = opts.tz;
   const help = [];
   if (pack.omitted.human > 0 && pack.omitted.continueTo) {
-    const cont = `human ${ref} --window ${pack.window.index} --to ${formatId(pack.omitted.continueTo)} --budget 0${carry2}`;
+    const cont = `human ${ref} --window ${pack.window.index} --to ${formatId(pack.omitted.continueTo)} --budget 0${carry3}`;
     header.omitted = `${plural(pack.omitted.human, "earlier message")}; continue with ${cont}`;
     help.push(`Run \`${BIN} ${cont}\` for the ${plural(pack.omitted.human, "earlier message")}`);
   }
@@ -6861,12 +6862,12 @@ function renderResumePack(pack, opts) {
     if (sm.t) doc.t = time.format(sm);
     doc.text = summaryText(sm);
     parts.push(encode({ summary: doc }));
-    if (doc.text !== sm.text) help.push(`Run \`${BIN} show ${formatId(sm.id)} --full${showCarry}${carry2}\` for the whole summary (${formatSize(sm.size)} chars)`);
+    if (doc.text !== sm.text) help.push(`Run \`${BIN} show ${formatId(sm.id)} --full${showCarry}${carry3}\` for the whole summary (${formatSize(sm.size)} chars)`);
   }
   if (pack.omitted.summary) {
     const id = formatId(pack.omitted.summary);
     parts.push(encode({ summary: `dropped to meet the budget; show ${id} --full` }));
-    help.push(`Run \`${BIN} show ${id} --full${showCarry}${carry2}\` for the window's opening summary, dropped to meet the budget`);
+    help.push(`Run \`${BIN} show ${id} --full${showCarry}${carry3}\` for the window's opening summary, dropped to meet the budget`);
   }
   parts.push(renderBlockList("human", pack.human.map((m) => ({ id: formatId(m.id), t: time.format(m), kind: m.kind, text: m.text }))));
   const rows = pack.tools.map((ev) => ({
@@ -6877,10 +6878,10 @@ function renderResumePack(pack, opts) {
   }));
   parts.push(rows.length ? encode({ tools: rows }) : "tools[0]:");
   parts.push(renderBlockList("claims", pack.claims.map((c) => ({ id: formatId(c.id), t: time.format(c), text: c.text }))));
-  help.push(`Run \`${BIN} tail ${ref}${carry2}\` to see the last rows in order`);
-  help.push(`Run \`${BIN} human ${ref} --window all${carry2}\` for every human message in the session`);
+  help.push(`Run \`${BIN} tail ${ref}${carry3}\` to see the last rows in order`);
+  help.push(`Run \`${BIN} human ${ref} --window all${carry3}\` for every human message in the session`);
   const persisted = pack.tools.filter((c) => c.status?.state === "persisted" && c.result).pop();
-  if (persisted) help.push(`Run \`${BIN} show ${formatId(persisted.result)} --full${showCarry}${carry2}\` to read the newest persisted output`);
+  if (persisted) help.push(`Run \`${BIN} show ${formatId(persisted.result)} --full${showCarry}${carry3}\` to read the newest persisted output`);
   const h = renderHelp(help);
   return [...parts, ...h ? [h] : []].join("\n");
 }
@@ -7347,8 +7348,8 @@ function hookTargets(scope, env, home, projectDir) {
 }
 function installFromBuildHints() {
   return [
-    `Run \`bun run build && node dist/bin/${NAME}.js hook install\` to install the built bin`,
-    `Run \`skills/${NAME}/scripts/${NAME} hook install\` to install the skill shim`
+    `Run \`bun run build && node dist/bin/${NAME}.js setup hooks\` to install the built bin`,
+    `Run \`skills/${NAME}/scripts/${NAME} setup hooks\` to install the skill shim`
   ];
 }
 function hookExecPath(entrypoint) {
@@ -7424,18 +7425,53 @@ function parseAgent(p) {
   if (HOOK_AGENTS.includes(v)) return v;
   throw new AxiError(`--agent ${v} is not an agent`, "VALIDATION_ERROR", [`--agent takes one of ${HOOK_AGENTS.join(", ")}`]);
 }
-async function hookCommand(args, io) {
-  const doc = findCommand("hook");
-  const sub = args[0];
-  if (sub === void 0) throw new AxiError("hook needs a subcommand: install, status or uninstall", "USAGE", [usageLine("hook")]);
-  if (sub === "--help" || sub === "-h") return renderCommandHelp("hook") ?? "";
-  if (!SUBCOMMANDS.includes(sub)) throw new AxiError(`unknown hook subcommand ${sub}`, "USAGE", [usageLine("hook")]);
-  const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => sub === "install" || f.name !== "agent");
-  const p = parseFlags(`hook ${sub}`, args.slice(1), specs);
-  if (p.help) return renderCommandHelp("hook") ?? "";
-  if (p.positionals.length) throw new AxiError(`hook ${sub} takes no arguments (got ${p.positionals[0]})`, "USAGE", [usageLine("hook")]);
+function isAction(word) {
+  return ACTIONS.includes(word);
+}
+function carry2(args) {
+  return args.map((a) => ` ${shellArg(a)}`).join("");
+}
+function retiredHookCommand(args) {
+  const [sub, ...rest] = args;
+  const hints = sub === "install" ? [`Run \`${BIN} setup hooks${carry2(rest)}\` to install or repair the hook`] : sub === "status" ? [`Run \`${BIN} setup hooks status${carry2(rest)}\` to see where the hook is installed`] : sub === "uninstall" ? [`Run \`${BIN} setup hooks uninstall${carry2(rest)}\` to remove the hook`] : [`Run \`${BIN} setup hooks --help\` for the hook commands`];
+  throw new AxiError("hook is now `setup hooks`", "VALIDATION_ERROR", [...hints, usageLine("setup")]);
+}
+async function setupCommand(args, io) {
+  const doc = findCommand("setup");
+  const word = args[0];
+  if (word === void 0) throw new AxiError("setup needs an action: hooks", "USAGE", [usageLine("setup")]);
+  if (word === "--help" || word === "-h") return renderCommandHelp("setup") ?? "";
+  if (word !== "hooks") {
+    throw new AxiError(`unknown setup action \`${word}\``, "VALIDATION_ERROR", ["valid setup actions: hooks", usageLine("setup")]);
+  }
+  const first = args[1];
+  let action = "install";
+  if (first !== void 0 && !first.startsWith("-")) {
+    if (first === "install") {
+      throw new AxiError("`setup hooks` installs or repairs the hook; it takes no `install` action", "VALIDATION_ERROR", [
+        `Run \`${BIN} setup hooks${carry2(args.slice(2))}\` to install or repair the hook`,
+        usageLine("setup")
+      ]);
+    }
+    if (!isAction(first)) {
+      throw new AxiError(`unknown setup hooks action \`${first}\``, "VALIDATION_ERROR", [
+        `valid setup hooks actions: ${ACTIONS.join(", ")} (none: install or repair)`,
+        usageLine("setup")
+      ]);
+    }
+    action = first;
+  }
+  const command = action === "install" ? "setup hooks" : `setup hooks ${action}`;
+  const specs = (doc?.flags ?? HOOK_FLAGS).filter((f) => action === "install" || f.name !== "agent");
+  const p = parseFlags(command, args.slice(action === "install" ? 1 : 2), specs);
+  if (p.help) return renderCommandHelp("setup") ?? "";
+  if (p.positionals.length) {
+    const got = p.positionals[0];
+    const message = action === "install" && isAction(got) ? `the action comes before the flags: setup hooks ${got} [flags]` : `${command} takes no arguments (got ${got})`;
+    throw new AxiError(message, "USAGE", [usageLine("setup")]);
+  }
   const scope = parseScope(p);
-  const agent = sub === "install" ? parseAgent(p) : void 0;
+  const agent = action === "install" ? parseAgent(p) : void 0;
   const home = io.env.HOME || homedir9();
   const ctx = {
     scope,
@@ -7443,8 +7479,8 @@ async function hookCommand(args, io) {
     scopeFlag: getString(p, "scope") !== void 0 ? ` --scope ${scope}` : "",
     show: (path) => collapseUnder(path, home)
   };
-  if (sub === "status") return status(ctx, io);
-  if (sub === "uninstall") return uninstall(ctx);
+  if (action === "status") return status(ctx, io);
+  if (action === "uninstall") return uninstall(ctx);
   return install(ctx, agent, io);
 }
 function rowsFor(targets) {
@@ -7457,7 +7493,7 @@ function rowsFor(targets) {
 function codexFeatures(ctx) {
   const path = ctx.show(ctx.targets.codexConfig);
   if (codexHooksEnabled(readOrUndefined(ctx.targets.codexConfig))) return `${path} (hooks = true)`;
-  return ctx.scope === "project" ? `not set (needs [features] hooks = true in ${path}; run hook install --scope user or set it yourself)` : `${path} (not set)`;
+  return ctx.scope === "project" ? `not set (needs [features] hooks = true in ${path}; run setup hooks --scope user or set it yourself)` : `${path} (not set)`;
 }
 function finish(body, help, failed) {
   if (failed) process.exitCode = 1;
@@ -7515,7 +7551,7 @@ function install(ctx, agent, io) {
     targets: rows
   };
   if (chosen.some((r) => r.agent === "codex")) body.codex_features = codexFeatures(ctx);
-  return finish(body, [`Run \`${BIN} hook status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`], failed);
+  return finish(body, [`Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to check it`, `Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`], failed);
 }
 function status(ctx, io) {
   let expected;
@@ -7553,7 +7589,7 @@ function status(ctx, io) {
   else if (seen.size > 1) body.commands = [...seen];
   body.targets = rows;
   body.codex_features = codexFeatures(ctx);
-  const help = rows.every((r) => r.state === "installed") ? [`Run \`${BIN} hook uninstall${ctx.scopeFlag}\` to remove it`] : [`Run \`${BIN} hook install${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
+  const help = rows.every((r) => r.state === "installed") ? [`Run \`${BIN} setup hooks uninstall${ctx.scopeFlag}\` to remove it`] : [`Run \`${BIN} setup hooks${ctx.scopeFlag}\` to ${present === 0 ? "install" : "repair"} it`];
   return finish(body, help, failed);
 }
 function uninstall(ctx) {
@@ -7587,11 +7623,11 @@ function uninstall(ctx) {
   const removed = rows.some((r) => r.state === "removed");
   const headline = failed ? `${removed ? "partly removed" : "not removed"} (${ctx.scope} scope; see errors)` : removed ? `removed (${ctx.scope} scope)` : `nothing to remove (${ctx.scope} scope)`;
   return finish({ hook: headline, targets: rows }, [
-    `Run \`${BIN} hook status${ctx.scopeFlag}\` to confirm`,
-    `Run \`${BIN} hook install${ctx.scopeFlag}\` to add it back`
+    `Run \`${BIN} setup hooks status${ctx.scopeFlag}\` to confirm`,
+    `Run \`${BIN} setup hooks${ctx.scopeFlag}\` to add it back`
   ], failed);
 }
-var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, SUBCOMMANDS;
+var MARKER, DISABLE_ENV, OPENCODE_FILE, OPENCODE_MANAGED, COMMAND_LINE, ACTIONS;
 var init_hook2 = __esm({
   "src/commands/hook.ts"() {
     "use strict";
@@ -7608,7 +7644,7 @@ var init_hook2 = __esm({
     OPENCODE_FILE = "axi-agent-recall-axi.js";
     OPENCODE_MANAGED = `// axi-sdk-js managed opencode plugin: ${MARKER}`;
     COMMAND_LINE = /^const command = (".*");$/m;
-    SUBCOMMANDS = ["install", "status", "uninstall"];
+    ACTIONS = ["status", "uninstall"];
   }
 });
 
@@ -7839,23 +7875,23 @@ async function streamMatches(path, m, chunkSize = STREAM_CHUNK) {
   try {
     const decoder = new StringDecoder("utf8");
     const buf = Buffer.allocUnsafe(chunkSize);
-    let carry2 = "";
+    let carry3 = "";
     for (let position = 0; ; ) {
       const { bytesRead } = await fh.read(buf, 0, chunkSize, position);
       const text = bytesRead > 0 ? decoder.write(buf.subarray(0, bytesRead)) : decoder.end();
       position += bytesRead;
       const last = bytesRead === 0;
       if ("needle" in m) {
-        const hay = carry2 + text.toLowerCase();
+        const hay = carry3 + text.toLowerCase();
         if (hay.includes(m.needle)) return true;
-        carry2 = m.needle.length > 1 ? hay.slice(-(m.needle.length - 1)) : "";
+        carry3 = m.needle.length > 1 ? hay.slice(-(m.needle.length - 1)) : "";
       } else {
-        const lines = (carry2 + text).split("\n");
-        carry2 = last ? "" : lines.pop();
+        const lines = (carry3 + text).split("\n");
+        carry3 = last ? "" : lines.pop();
         for (const line of lines) if (m.re.test(line)) return true;
-        while (carry2.length > chunkSize) {
-          if (m.re.test(carry2.slice(0, chunkSize))) return true;
-          carry2 = carry2.slice(chunkSize);
+        while (carry3.length > chunkSize) {
+          if (m.re.test(carry3.slice(0, chunkSize))) return true;
+          carry3 = carry3.slice(chunkSize);
         }
       }
       if (last) return false;
@@ -9993,7 +10029,8 @@ async function main(argv = process.argv.slice(2), io = {}) {
     throw new AxiError("recall is now `search`", "VALIDATION_ERROR", [`Run \`${BIN} search ${carried}\` to search every project`, usageLine("search")]);
   };
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
-  commands.hook = (a) => hookCommand(a, { ...ctx, ...io.entrypoint ? { entrypoint: io.entrypoint } : {} });
+  commands.setup = (a) => setupCommand(a, { ...ctx, ...io.entrypoint ? { entrypoint: io.entrypoint } : {} });
+  commands.hook = (a) => retiredHookCommand(a);
   await runAxiCli({
     description: DESCRIPTION,
     version: VERSION,

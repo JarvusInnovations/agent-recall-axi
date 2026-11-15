@@ -12,8 +12,8 @@ for the life of the file, and every listing ends with the exact next command.
 **It reads local files only and sends nothing**: session logs hold everything a human typed, so
 the tool never opens a network connection, never modifies a log, and writes only its own
 disposable cache under `~/.cache/agent-recall-axi/`, plus, only when you run
-`scripts/agent-recall-axi hook install`, the agent settings files that command names (which
-`scripts/agent-recall-axi hook uninstall` reverts).
+`scripts/agent-recall-axi setup hooks`, the agent settings files that command names (which
+`scripts/agent-recall-axi setup hooks uninstall` reverts).
 
 ## Running it
 
@@ -65,10 +65,10 @@ Two ways to get the same tool; one is enough.
 - **Skill** (works offline, no registry at run time): `npx skills add JarvusInnovations/agent-recall-axi`
 - **npm**: `npm i -g agent-recall-axi`, or `npx -y agent-recall-axi <command>`
 
-Optional ambient context: `scripts/agent-recall-axi hook install` registers a SessionStart hook
+Optional ambient context: `scripts/agent-recall-axi setup hooks` registers a SessionStart hook
 for Claude Code, Codex and OpenCode (`--scope project` for one repo). At session start it shows
 the project's sessions; after a compaction or a resume it prints that session's resume pack.
-Nothing else ever installs a hook; `scripts/agent-recall-axi hook uninstall` removes only this
+Nothing else ever installs a hook; `scripts/agent-recall-axi setup hooks uninstall` removes only this
 tool's entries.
 
 ## Commands
@@ -107,7 +107,7 @@ tool's entries.
 
 ### setup
 
-- `scripts/agent-recall-axi hook install [--scope user|project] [--agent claude|codex|opencode] | hook status [--scope user|project] | hook uninstall [--scope user|project]`: opt-in SessionStart hook (Claude Code, Codex, OpenCode): the sessions at session start, a resume pack after a compaction
+- `scripts/agent-recall-axi setup hooks [--scope user|project] [--agent claude|codex|opencode] | setup hooks status [--scope user|project] | setup hooks uninstall [--scope user|project]`: opt-in SessionStart hook (Claude Code, Codex, OpenCode): the sessions at session start, a resume pack after a compaction
 - `scripts/agent-recall-axi cache status [--full] | cache clear [--project <p> | --all]`: the disposable derived cache: where it is, what is indexed, how to clear it
 - `scripts/agent-recall-axi update [--check]`: how to update this tool (print-only; never contacts a registry)
 

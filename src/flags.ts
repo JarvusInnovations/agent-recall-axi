@@ -99,7 +99,9 @@ export function parseFlags(command: string, args: string[], specs: FlagSpec[]): 
 
 /** errors.md#codes: a USAGE error's help is the command's usage line from the reference. */
 export function usageLine(command: string): string {
-  return `usage: ${BIN} ${findCommand(command)?.usage ?? command}`;
+  // `setup hooks status`, `cache clear`: a subcommand's usage is its command's reference entry.
+  const doc = findCommand(command) ?? findCommand(command.split(" ")[0]!);
+  return `usage: ${BIN} ${doc?.usage ?? command}`;
 }
 
 export function validFlagsLine(command: string, specs: FlagSpec[]): string {
