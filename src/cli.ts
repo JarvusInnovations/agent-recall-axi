@@ -9,7 +9,7 @@ import { BIN, shellArg, type Io } from "./commands/common.js";
 import { usageLine } from "./flags.js";
 import { eventsCommand, tailCommand } from "./commands/events.js";
 import { homeView } from "./commands/home.js";
-import { hookCommand } from "./commands/hook.js";
+import { retiredHookCommand, setupCommand } from "./commands/hook.js";
 import type { StdinLike } from "./hook.js";
 import { runFind } from "./commands/find.js";
 import { sessionsCommand } from "./commands/sessions.js";
@@ -111,8 +111,10 @@ export async function main(argv: string[] = process.argv.slice(2), io: MainIo = 
   };
   // Shadows the SDK's registry-querying built-in: this tool never opens a socket.
   commands.update = (a) => updateCommand(a, io.entrypoint ?? process.argv[1]);
-  // The only command that writes outside the cache, and only when invoked (cli.md#hook).
-  commands.hook = (a) => hookCommand(a, { ...ctx, ...(io.entrypoint ? { entrypoint: io.entrypoint } : {}) });
+  // The only command that writes outside the cache, and only when invoked (cli.md#setup-hooks).
+  commands.setup = (a) => setupCommand(a, { ...ctx, ...(io.entrypoint ? { entrypoint: io.entrypoint } : {}) });
+  // The pre-rename command: one corrected call with the caller's arguments, not an alias.
+  commands.hook = (a) => retiredHookCommand(a);
 
   await runAxiCli({
     description: DESCRIPTION,
